@@ -1,5 +1,6 @@
 // Central State Storage and Mutator Guard (Rule 7)
 import { DEFAULT_STUDENT_MASTER } from './studentMaster';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 // Default Gemini API Key Pool safely loaded from environment variables
 const envKeys = import.meta.env?.VITE_GEMINI_KEYS;
@@ -389,4 +390,78 @@ export function exportTrainingDataset() {
   downloadAnchor.click();
   downloadAnchor.remove();
 }
+
+/**
+ * Supabase Cloud Database Realtime Sync
+ */
+export async function fetchCloudAppState() {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('app_state')
+      .select('data, updated_at')
+      .eq('id', 'current')
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Notice from Supabase fetch:', error.message);
+      return null;
+    }
+    if (data && data.data) {
+      return data.data;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Failed to fetch from Supabase:', err);
+    return null;
+  }
+}
+
+export async function syncAppStateToCloud(state) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('app_state')
+      .upsert({
+        id: 'current',
+        data: state,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+
+    if (error) {
+      console.warn('Notice from Supabase sync:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Failed to sync to Supabase:', err);
+    return false;
+  }
+}
+
+export function subscribeToCloudAppState(onRemoteUpdate) {
+  if (!supabase) return () => {};
+  try {
+    const channel = supabase
+      .channel('public:app_state')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'app_state', filter: 'id=eq.current' },
+        (payload) => {
+          if (payload.new && payload.new.data) {
+            onRemoteUpdate(payload.new.data);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  } catch (err) {
+    console.warn('Failed to subscribe to Supabase realtime:', err);
+    return () => {};
+  }
+}
+
 

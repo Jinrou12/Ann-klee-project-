@@ -19,7 +19,10 @@ import {
   saveOfflineQueue,
   getStoredTrainingDataset,
   saveTrainingSample,
-  exportTrainingDataset
+  exportTrainingDataset,
+  fetchCloudAppState,
+  syncAppStateToCloud,
+  subscribeToCloudAppState
 } from './utils/storage';
 import { processUploadedImage } from './utils/ocrService';
 
@@ -33,15 +36,60 @@ export default function App() {
   // Active view states
   const [activeTab, setActiveTab] = useState('leave'); // 'leave' | 'finance' | 'upload'
   const [isProcessing, setIsProcessing] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState('idle'); // 'idle' | 'connected' | 'syncing' | 'error'
 
   // Modals state
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [reviewQueueItem, setReviewQueueItem] = useState(null);
 
-  // Auto-save on state change
+  // 1. Initial Cloud Sync on Mount & Realtime Subscription
+  useEffect(() => {
+    let isMounted = true;
+    fetchCloudAppState().then(cloudData => {
+      if (!isMounted) return;
+      if (cloudData && cloudData.leaves && cloudData.finance) {
+        setAppState(prev => ({
+          ...prev,
+          ...cloudData,
+          meta: { ...prev.meta, ...(cloudData.meta || {}) }
+        }));
+        setCloudStatus('connected');
+      } else {
+        // If cloud table is accessible but empty, push current initial data
+        syncAppStateToCloud(appState).then(ok => {
+          if (isMounted && ok) setCloudStatus('connected');
+        });
+      }
+    });
+
+    const unsubscribe = subscribeToCloudAppState((remoteState) => {
+      if (remoteState && remoteState.leaves && remoteState.finance) {
+        setAppState(prev => ({
+          ...prev,
+          ...remoteState,
+          meta: { ...prev.meta, ...(remoteState.meta || {}) }
+        }));
+        setCloudStatus('connected');
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  // 2. Auto-save locally and debounce sync to Cloud
   useEffect(() => {
     saveAppState(appState);
+    const timer = setTimeout(() => {
+      setCloudStatus('syncing');
+      syncAppStateToCloud(appState).then(ok => {
+        setCloudStatus(ok ? 'connected' : 'error');
+      });
+    }, 1200);
+    return () => clearTimeout(timer);
   }, [appState]);
 
   useEffect(() => {
@@ -430,6 +478,7 @@ export default function App() {
         studentCount={appState.studentMaster.length}
         trainingCount={trainingCount}
         hasApiKey={Boolean(apiKey)}
+        cloudStatus={cloudStatus}
         onExportTrainingDataset={exportTrainingDataset}
         onOpenStudentMaster={() => setIsStudentModalOpen(true)}
         onOpenSettings={() => setIsApiKeyModalOpen(true)}

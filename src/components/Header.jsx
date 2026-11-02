@@ -6,6 +6,7 @@ export default function Header({
   studentCount = 0,
   trainingCount = 0,
   hasApiKey = true,
+  cloudStatus = 'idle',
   onExportTrainingDataset,
   onOpenStudentMaster,
   onOpenSettings,
@@ -112,6 +113,42 @@ export default function Header({
               </>
             )}
           </div>
+
+          {/* Cloud Database Sync Status */}
+          {cloudStatus === 'connected' && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'rgba(15, 118, 110, 0.45)',
+              border: '1px solid rgba(45, 212, 191, 0.5)',
+              padding: '4px 10px',
+              borderRadius: 20,
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#ccfbf1'
+            }} title="ភ្ជាប់ Cloud Database (Supabase) ដោយជោគជ័យ">
+              <Database size={13} color="#2dd4bf" />
+              <span>Cloud Sync</span>
+            </div>
+          )}
+          {cloudStatus === 'syncing' && (
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'rgba(217, 119, 6, 0.45)',
+              border: '1px solid rgba(251, 191, 36, 0.5)',
+              padding: '4px 10px',
+              borderRadius: 20,
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#fef08a'
+            }}>
+              <Database size={13} color="#fde047" />
+              <span>Syncing...</span>
+            </div>
+          )}
 
           {/* Discreet Student Master Button (Rule requirement: unobtrusive/subtle) */}
           <button
