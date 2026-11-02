@@ -425,7 +425,7 @@ export default function LeaveTableView({
           lineHeight: 1.6
         }}>
           {/* Left Signature: School Director */}
-          <div style={{ textAlign: 'center', minWidth: 260 }}>
+          <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
             <div className="font-moul" style={{ fontSize: 13, marginBottom: 4 }}>
               បានឃើញ និង..................
             </div>
@@ -439,7 +439,7 @@ export default function LeaveTableView({
           </div>
 
           {/* Right Signature: Reporter */}
-          <div style={{ textAlign: 'center', minWidth: 280 }}>
+          <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
             <div>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមី អដ្ឋស័ក ព.ស ២៥៧០</div>
             <div>ត្រូវនឹងថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
             <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>

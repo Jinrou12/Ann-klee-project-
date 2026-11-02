@@ -148,7 +148,10 @@ input:focus, select:focus, textarea:focus {
   margin: 0 !important;
   box-shadow: none !important;
   border: none !important;
-  width: 794px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
   min-height: auto !important;
   background: #ffffff !important;
 }

@@ -26,9 +26,15 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
   element.classList.add('pdf-rendering-active');
   const prevInlinePadding = element.style.padding;
   const prevInlineWidth = element.style.width;
+  const prevInlineMaxWidth = element.style.maxWidth;
+  const prevInlineMinHeight = element.style.minHeight;
   const prevInlineBoxShadow = element.style.boxShadow;
+  const prevInlineBoxSizing = element.style.boxSizing;
+
   element.style.padding = '0px';
-  element.style.width = '794px';
+  element.style.width = '100%';
+  element.style.maxWidth = '100%';
+  element.style.boxSizing = 'border-box';
   element.style.boxShadow = 'none';
 
   const opt = {
@@ -42,8 +48,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
       letterRendering: true,
       logging: false,
       scrollX: 0,
-      scrollY: 0,
-      windowWidth: 794 // Standard A4 ~794px at 96 DPI
+      scrollY: 0
     },
     jsPDF: {
       unit: 'mm',
@@ -63,7 +68,10 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     element.classList.remove('pdf-rendering-active');
     element.style.padding = prevInlinePadding;
     element.style.width = prevInlineWidth;
+    element.style.maxWidth = prevInlineMaxWidth;
+    element.style.minHeight = prevInlineMinHeight;
     element.style.boxShadow = prevInlineBoxShadow;
+    element.style.boxSizing = prevInlineBoxSizing;
 
     noPrintElements.forEach((el, idx) => {
       el.style.display = originalDisplays[idx] !== undefined ? originalDisplays[idx] : '';
