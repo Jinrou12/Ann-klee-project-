@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Header from './components/Header';
 import MonthSelector from './components/MonthSelector';
 import TabNavigation from './components/TabNavigation';
@@ -54,6 +54,11 @@ export default function App() {
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [reviewQueueItem, setReviewQueueItem] = useState(null);
 
+  // Cloud-First Hydration & Echo Shield Guards (Rule 7: Single State Mutator Guard)
+  // Prevents stale local storage from stomping/overwriting Supabase on initial refresh (Zombie Data fix)
+  const isHydratedRef = useRef(false);
+  const isRemoteUpdateRef = useRef(false);
+
   // 1. Initial Cloud Sync on Mount & Realtime Subscription
   useEffect(() => {
     let isMounted = true;
@@ -66,51 +71,70 @@ export default function App() {
 
     fetchCloudAppState().then(cloudData => {
       if (!isMounted) return;
-      if (cloudData) {
+      if (cloudData && cloudData.leaves && cloudData.finance) {
         if (cloudData.meta?.geminiKey) {
           setApiKey(cloudData.meta.geminiKey);
           setStoredApiKey(cloudData.meta.geminiKey);
         }
-        if (cloudData.leaves && cloudData.finance) {
-          setAppState(prev => ({
-            ...prev,
-            ...cloudData,
-            meta: {
-              ...prev.meta,
-              ...(cloudData.meta || {}),
-              geminiKey: cloudData.meta?.geminiKey || prev.meta?.geminiKey
-            }
-          }));
-          setCloudStatus('connected');
-        } else {
-          // If cloud table has no leaves/finance yet, push current initial data
-          syncAppStateToCloud({
-            ...appState,
-            meta: {
-              ...appState.meta,
-              geminiKey: cloudData.meta?.geminiKey || apiKey || ''
-            }
-          }).then(ok => {
-            if (isMounted && ok) setCloudStatus('connected');
-          });
-        }
+        const mergedState = {
+          ...appState,
+          ...cloudData,
+          meta: {
+            ...appState.meta,
+            ...(cloudData.meta || {}),
+            geminiKey: cloudData.meta?.geminiKey || appState.meta?.geminiKey || apiKey || ''
+          }
+        };
+        // Mark as remote update so debounced auto-sync does NOT push back to Supabase!
+        isRemoteUpdateRef.current = true;
+        setAppState(mergedState);
+        saveAppState(mergedState); // Refresh local storage with true authoritative cloud data
+        isHydratedRef.current = true;
+        setCloudStatus('connected');
+      } else if (cloudData) {
+        // Table exists but is completely empty: seed with initial state
+        syncAppStateToCloud({
+          ...appState,
+          meta: {
+            ...appState.meta,
+            geminiKey: cloudData.meta?.geminiKey || apiKey || ''
+          }
+        }).then(ok => {
+          if (isMounted) {
+            isHydratedRef.current = true;
+            setCloudStatus(ok ? 'connected' : 'idle');
+          }
+        });
+      } else {
+        // Offline or cloud unreachable: allow local operation
+        isHydratedRef.current = true;
+        setCloudStatus('idle');
+      }
+    }).catch(err => {
+      console.warn('Initial cloud fetch error:', err);
+      if (isMounted) {
+        isHydratedRef.current = true;
       }
     });
 
     const unsubscribe = subscribeToCloudAppState((remoteState) => {
-      if (remoteState) {
+      if (remoteState && remoteState.leaves && remoteState.finance) {
         if (remoteState.meta?.geminiKey) {
           setApiKey(remoteState.meta.geminiKey);
           setStoredApiKey(remoteState.meta.geminiKey);
         }
-        if (remoteState.leaves && remoteState.finance) {
-          setAppState(prev => ({
+        // Mark as incoming remote update to prevent echo loop!
+        isRemoteUpdateRef.current = true;
+        setAppState(prev => {
+          const merged = {
             ...prev,
             ...remoteState,
             meta: { ...prev.meta, ...(remoteState.meta || {}) }
-          }));
-          setCloudStatus('connected');
-        }
+          };
+          saveAppState(merged); // Sync to device memory
+          return merged;
+        });
+        setCloudStatus('connected');
       }
     });
 
@@ -120,11 +144,25 @@ export default function App() {
     };
   }, []);
 
-  // 2. Auto-save locally and debounce sync to Cloud
+  // 2. Auto-save locally and debounce sync to Cloud (Guarded against Zombie overwrites)
   useEffect(() => {
+    // 1. Always persist locally
     saveAppState(appState);
+
+    // GUARD 1: If not yet hydrated from cloud, DO NOT sync to cloud (prevents stale localStorage stomping)
+    if (!isHydratedRef.current) {
+      return;
+    }
+
+    // GUARD 2: If this state change was caused by remote realtime or initial cloud fetch, DO NOT echo back!
+    if (isRemoteUpdateRef.current) {
+      isRemoteUpdateRef.current = false;
+      return;
+    }
+
+    // 2. Genuine user edit on this device: debounce sync to Cloud
+    setCloudStatus('syncing');
     const timer = setTimeout(() => {
-      setCloudStatus('syncing');
       const stateToSync = {
         ...appState,
         meta: {
@@ -136,6 +174,7 @@ export default function App() {
         setCloudStatus(ok ? 'connected' : 'error');
       });
     }, 1200);
+
     return () => clearTimeout(timer);
   }, [appState, apiKey]);
 
