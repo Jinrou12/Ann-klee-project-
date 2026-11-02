@@ -432,7 +432,9 @@ export default function LeaveTableView({
             <div>ថ្ងៃ.......................ខែ..................ឆ្នាំមមីអដ្ឋស័ក ព.ស ២៥៧០</div>
             <div>ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ២០២៦</div>
             <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
-              {metadata.directorTitle || 'នាយកសាលា'}
+              {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
+                ? 'នាយកសាលា'
+                : metadata.directorTitle}
             </div>
           </div>
 

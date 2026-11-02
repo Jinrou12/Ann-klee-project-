@@ -94,8 +94,8 @@ export function loadAppState() {
     if (!mergedMeta.school || mergedMeta.school.includes('ហ៊ុន សែន')) {
       mergedMeta.school = 'ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង';
     }
-    // Automatically migrate director title to match official PDF 2 standard
-    if (!mergedMeta.directorTitle || mergedMeta.directorTitle === 'ព្រះនាយក') {
+    // Automatically migrate director title to match official PDF 2 standard ('នាយកសាលា')
+    if (!mergedMeta.directorTitle || mergedMeta.directorTitle === 'ព្រះនាយក' || mergedMeta.directorTitle === 'ព្រះចៅអធិការ') {
       mergedMeta.directorTitle = 'នាយកសាលា';
     }
 

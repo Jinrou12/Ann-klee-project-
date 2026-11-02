@@ -76,14 +76,20 @@ export default function App() {
           setApiKey(cloudData.meta.geminiKey);
           setStoredApiKey(cloudData.meta.geminiKey);
         }
+        const cloudMeta = {
+          ...appState.meta,
+          ...(cloudData.meta || {}),
+          geminiKey: cloudData.meta?.geminiKey || appState.meta?.geminiKey || apiKey || ''
+        };
+        let needsCloudUpdate = false;
+        if (!cloudMeta.directorTitle || cloudMeta.directorTitle === 'ព្រះនាយក' || cloudMeta.directorTitle === 'ព្រះចៅអធិការ') {
+          cloudMeta.directorTitle = 'នាយកសាលា';
+          needsCloudUpdate = true;
+        }
         const mergedState = {
           ...appState,
           ...cloudData,
-          meta: {
-            ...appState.meta,
-            ...(cloudData.meta || {}),
-            geminiKey: cloudData.meta?.geminiKey || appState.meta?.geminiKey || apiKey || ''
-          }
+          meta: cloudMeta
         };
         // Mark as remote update so debounced auto-sync does NOT push back to Supabase!
         isRemoteUpdateRef.current = true;
@@ -91,6 +97,9 @@ export default function App() {
         saveAppState(mergedState); // Refresh local storage with true authoritative cloud data
         isHydratedRef.current = true;
         setCloudStatus('connected');
+        if (needsCloudUpdate) {
+          syncAppStateToCloud(mergedState).catch(e => console.warn('Sync updated director title error:', e));
+        }
       } else if (cloudData) {
         // Table exists but is completely empty: seed with initial state
         syncAppStateToCloud({
@@ -126,10 +135,14 @@ export default function App() {
         // Mark as incoming remote update to prevent echo loop!
         isRemoteUpdateRef.current = true;
         setAppState(prev => {
+          const mergedMeta = { ...prev.meta, ...(remoteState.meta || {}) };
+          if (!mergedMeta.directorTitle || mergedMeta.directorTitle === 'ព្រះនាយក' || mergedMeta.directorTitle === 'ព្រះចៅអធិការ') {
+            mergedMeta.directorTitle = 'នាយកសាលា';
+          }
           const merged = {
             ...prev,
             ...remoteState,
-            meta: { ...prev.meta, ...(remoteState.meta || {}) }
+            meta: mergedMeta
           };
           saveAppState(merged); // Sync to device memory
           return merged;

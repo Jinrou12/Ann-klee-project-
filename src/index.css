@@ -133,13 +133,24 @@ input:focus, select:focus, textarea:focus {
     box-shadow: none;
     overflow-x: auto;
   }
-  .printable-document {
+  .printable-document:not(.pdf-rendering-active) {
     width: 100%;
     min-width: 680px;
     min-height: auto;
     padding: 14px 12px;
     box-shadow: var(--shadow-sm);
   }
+}
+
+/* Temporary PDF Rendering Guard */
+.printable-document.pdf-rendering-active {
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+  width: 794px !important;
+  min-height: auto !important;
+  background: #ffffff !important;
 }
 
 /* Official Print Layout (Rule 4: Exact PDF Replica) */
@@ -183,7 +194,7 @@ input:focus, select:focus, textarea:focus {
 
   @page {
     size: A4 portrait;
-    margin: 10mm 15mm 12mm 15mm;
+    margin: 25mm 16mm 20mm 16mm;
   }
 
   table {

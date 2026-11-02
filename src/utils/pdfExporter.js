@@ -2,7 +2,8 @@ import html2pdf from 'html2pdf.js';
 
 /**
  * High-definition PDF Exporter for Khmer Administrative Documents (A4 Standard)
- * Uses high-scale canvas rendering (scale: 2) to preserve crisp Khmer cursive & typography.
+ * Uses jsPDF margin coordinates to guarantee exact Ministry 25mm top margin,
+ * 16mm left/right, and 20mm bottom margins regardless of device screen size.
  */
 export async function exportElementToPdf(elementOrSelector, filename = 'document.pdf') {
   const element = typeof elementOrSelector === 'string'
@@ -21,8 +22,18 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     el.style.display = 'none';
   });
 
+  // 2. Temporarily apply PDF rendering class so margins are controlled cleanly by jsPDF
+  element.classList.add('pdf-rendering-active');
+  const prevInlinePadding = element.style.padding;
+  const prevInlineWidth = element.style.width;
+  const prevInlineBoxShadow = element.style.boxShadow;
+  element.style.padding = '0px';
+  element.style.width = '794px';
+  element.style.boxShadow = 'none';
+
   const opt = {
-    margin: [0, 0, 0, 0], // The document already contains authentic margins
+    // Official Ministry standard A4 margins: Top 25mm, Left 16mm, Bottom 20mm, Right 16mm
+    margin: [25, 16, 20, 16],
     filename: filename.endsWith('.pdf') ? filename : `${filename}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: {
@@ -32,7 +43,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
       logging: false,
       scrollX: 0,
       scrollY: 0,
-      windowWidth: element.scrollWidth || 794 // Standard A4 ~794px at 96 DPI
+      windowWidth: 794 // Standard A4 ~794px at 96 DPI
     },
     jsPDF: {
       unit: 'mm',
@@ -48,7 +59,12 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     console.error('Error generating PDF:', err);
     throw err;
   } finally {
-    // 2. Always restore the .no-print elements back onto the live screen
+    // 3. Always restore element styles and .no-print elements back onto the live screen
+    element.classList.remove('pdf-rendering-active');
+    element.style.padding = prevInlinePadding;
+    element.style.width = prevInlineWidth;
+    element.style.boxShadow = prevInlineBoxShadow;
+
     noPrintElements.forEach((el, idx) => {
       el.style.display = originalDisplays[idx] !== undefined ? originalDisplays[idx] : '';
     });

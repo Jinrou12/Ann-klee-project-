@@ -583,8 +583,10 @@ export default function FinanceTableView({
             </div>
             <div>ថ្ងៃ………..…….ខែ………..….ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០</div>
             <div>ថ្ងៃទី………. ខែ……….. ឆ្នាំ២០២៦</div>
-            <div className="font-moul" style={{ fontSize: 13, marginTop: 8 }}>
-              {metadata.directorTitle || 'ព្រះនាយក'}
+            <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
+              {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
+                ? 'នាយកសាលា'
+                : metadata.directorTitle}
             </div>
           </div>
 
@@ -592,7 +594,7 @@ export default function FinanceTableView({
           <div style={{ textAlign: 'center', minWidth: 280 }}>
             <div>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមីអដ្ឋស័ក ព.ស.២៥៧០</div>
             <div>{metadata.wat || 'វត្តខេមវ័ន'} ថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
-            <div className="font-moul" style={{ fontSize: 13, marginTop: 8 }}>
+            <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
               {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
             </div>
           </div>
