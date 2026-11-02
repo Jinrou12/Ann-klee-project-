@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Plus, Hash } from 'lucide-react';
+import { Calendar, Plus } from 'lucide-react';
 import { KHMER_SOLAR_MONTHS } from '../utils/khmerCalendar';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 
@@ -88,29 +88,6 @@ export default function MonthSelector({
         >
           <Plus size={14} />
           <span>បង្កើតខែថ្មី</span>
-        </button>
-      </div>
-
-      {/* Numeral switcher */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          onClick={onToggleNumerals}
-          title="ប្ដូររវាងលេខខ្មែរ (១ ២ ៣) និងលេខអារ៉ាប់ (1 2 3)"
-          style={{
-            background: useKhmerNumerals ? '#fef3c7' : '#f1f5f9',
-            border: `1px solid ${useKhmerNumerals ? '#f59e0b' : '#cbd5e1'}`,
-            color: useKhmerNumerals ? '#92400e' : '#475569',
-            padding: '6px 12px',
-            borderRadius: 8,
-            fontSize: 13,
-            fontWeight: 600,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6
-          }}
-        >
-          <Hash size={14} />
-          <span>{useKhmerNumerals ? 'លេខខ្មែរ (១ ២ ៣)' : 'លេខអារ៉ាប់ (1 2 3)'}</span>
         </button>
       </div>
 

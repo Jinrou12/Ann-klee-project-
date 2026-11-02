@@ -77,68 +77,58 @@ export default function Header({
         {/* Right: Actions and Status Indicators */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {/* Online/Offline & AI Vision Status */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            background: (isOnline && hasApiKey) ? 'rgba(22, 101, 52, 0.45)' : isOnline ? 'rgba(180, 83, 9, 0.45)' : 'rgba(185, 28, 28, 0.45)',
-            border: `1px solid ${(isOnline && hasApiKey) ? 'rgba(74, 222, 128, 0.5)' : isOnline ? 'rgba(251, 191, 36, 0.5)' : 'rgba(248, 113, 113, 0.4)'}`,
-            padding: '4px 10px',
-            borderRadius: 20,
-            fontSize: 12,
-            fontWeight: 600
-          }}>
+          <div 
+            title={isOnline && hasApiKey ? "AI Vision សកម្ម (Gemini)" : isOnline ? "Online (គ្មាន AI Key)" : "Offline Mode"}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: (isOnline && hasApiKey) ? 'rgba(22, 101, 52, 0.45)' : isOnline ? 'rgba(180, 83, 9, 0.45)' : 'rgba(185, 28, 28, 0.45)',
+              border: `1px solid ${(isOnline && hasApiKey) ? 'rgba(74, 222, 128, 0.5)' : isOnline ? 'rgba(251, 191, 36, 0.5)' : 'rgba(248, 113, 113, 0.4)'}`,
+              padding: '6px 8px',
+              borderRadius: 20
+            }}
+          >
             {isOnline && hasApiKey ? (
-              <>
-                <Sparkles size={14} color="#86efac" />
-                <span style={{ color: '#dcfce7' }}>AI Vision សកម្ម (Gemini)</span>
-              </>
+              <Sparkles size={15} color="#86efac" />
             ) : isOnline ? (
-              <>
-                <Wifi size={14} color="#fde047" />
-                <span style={{ color: '#fef08a' }}>Online (គ្មាន AI Key)</span>
-              </>
+              <Wifi size={15} color="#fde047" />
             ) : (
-              <>
-                <WifiOff size={14} color="#fca5a5" />
-                <span style={{ color: '#fee2e2' }}>Offline Mode</span>
-              </>
+              <WifiOff size={15} color="#fca5a5" />
             )}
           </div>
 
           {/* Cloud Database Sync Status */}
           {cloudStatus === 'connected' && (
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              background: 'rgba(15, 118, 110, 0.45)',
-              border: '1px solid rgba(45, 212, 191, 0.5)',
-              padding: '4px 10px',
-              borderRadius: 20,
-              fontSize: 12,
-              fontWeight: 600,
-              color: '#ccfbf1'
-            }} title="ភ្ជាប់ Cloud Database (Supabase) ដោយជោគជ័យ">
-              <Database size={13} color="#2dd4bf" />
-              <span>Cloud Sync</span>
+            <div 
+              title="ភ្ជាប់ Cloud Database (Supabase) ដោយជោគជ័យ"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(15, 118, 110, 0.45)',
+                border: '1px solid rgba(45, 212, 191, 0.5)',
+                padding: '6px 8px',
+                borderRadius: 20
+              }}
+            >
+              <Database size={15} color="#2dd4bf" />
             </div>
           )}
           {cloudStatus === 'syncing' && (
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              background: 'rgba(217, 119, 6, 0.45)',
-              border: '1px solid rgba(251, 191, 36, 0.5)',
-              padding: '4px 10px',
-              borderRadius: 20,
-              fontSize: 12,
-              fontWeight: 600,
-              color: '#fef08a'
-            }}>
-              <Database size={13} color="#fde047" />
-              <span>Syncing...</span>
+            <div 
+              title="កំពុងដំណើរការ Syncing..."
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(217, 119, 6, 0.45)',
+                border: '1px solid rgba(251, 191, 36, 0.5)',
+                padding: '6px 8px',
+                borderRadius: 20
+              }}
+            >
+              <Database size={15} color="#fde047" className="spin" />
             </div>
           )}
 
