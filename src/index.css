@@ -143,7 +143,7 @@ input:focus, select:focus, textarea:focus {
   max-width: 100% !important;
   min-width: 0 !important;
   box-sizing: border-box !important;
-  min-height: 250mm !important;
+  min-height: auto !important;
   background: #ffffff !important;
 }
 
