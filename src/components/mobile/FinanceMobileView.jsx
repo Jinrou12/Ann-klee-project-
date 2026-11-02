@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { 
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, Eye, 
-  DollarSign, ArrowDownRight, ArrowUpRight, Wallet, ShoppingBag, Search 
+  DollarSign, ArrowDownRight, ArrowUpRight, Wallet, ShoppingBag, Search, Download, Loader2 
 } from 'lucide-react';
 import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber } from '../../utils/khmerNumerals';
 import { exportFinanceToExcel } from '../../utils/excelExporter';
+import { exportElementToPdf } from '../../utils/pdfExporter';
+import OfficialFinanceDocument from '../OfficialFinanceDocument';
 
 export default function FinanceMobileView({
   financeData = { income: [], expense: [] },
@@ -20,6 +22,7 @@ export default function FinanceMobileView({
   const [editForm, setEditForm] = useState({});
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Month derivation
   const [yearStr, monthStr] = (monthKey || '2026-07').split('-');
@@ -125,6 +128,20 @@ export default function FinanceMobileView({
 
   const handleExportExcel = () => {
     exportFinanceToExcel(financeData, `${monthName} ${yearDisplay}`, metadata);
+  };
+
+  const handleDownloadPdf = async () => {
+    try {
+      setIsExportingPdf(true);
+      await exportElementToPdf(
+        '#printable-finance-document',
+        `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`
+      );
+    } catch (err) {
+      alert('មិនអាចទាញយក PDF បានទេ៖ ' + (err.message || 'Error'));
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const currentList = activeSubTab === 'income' ? incomeList : expenseList;
@@ -262,7 +279,7 @@ export default function FinanceMobileView({
       </div>
 
       {/* Action Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         <button
           onClick={() => setShowAddModal(true)}
           style={{
@@ -270,40 +287,68 @@ export default function FinanceMobileView({
             color: '#ffffff',
             border: 'none',
             borderRadius: 8,
-            padding: '9px 12px',
+            padding: '10px 14px',
             fontSize: 13,
             fontWeight: 600,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: 6,
-            cursor: 'pointer'
+            cursor: 'pointer',
+            width: '100%',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
           }}
         >
           <Plus size={16} />
           <span>{activeSubTab === 'income' ? 'បន្ថែមចំណូល' : 'បន្ថែមចំណាយ'}</span>
         </button>
 
-        <button
-          onClick={handleExportExcel}
-          style={{
-            background: '#ffffff',
-            border: '1px solid #cbd5e1',
-            color: '#334155',
-            borderRadius: 8,
-            padding: '9px 12px',
-            fontSize: 13,
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            cursor: 'pointer'
-          }}
-        >
-          <FileSpreadsheet size={16} color="#15803d" />
-          <span>Export Excel</span>
-        </button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <button
+            onClick={handleExportExcel}
+            style={{
+              background: '#15803d',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '9px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              cursor: 'pointer'
+            }}
+          >
+            <FileSpreadsheet size={15} />
+            <span>Export Excel</span>
+          </button>
+
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isExportingPdf}
+            style={{
+              background: '#b91c1c',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '9px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              cursor: isExportingPdf ? 'not-allowed' : 'pointer',
+              opacity: isExportingPdf ? 0.7 : 1
+            }}
+            title="ទាញយកជាឯកសារ PDF ផ្លូវការ"
+          >
+            {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+            <span>{isExportingPdf ? 'កំពុងទាញ...' : 'Download PDF'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Toggle to Full A4 Desktop Mode */}
@@ -807,6 +852,29 @@ export default function FinanceMobileView({
           </div>
         </div>
       )}
+
+      {/* Offscreen Official A4 Document for Mobile PDF Export */}
+      <div 
+        style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          width: 794, 
+          zIndex: -9999, 
+          opacity: 1, 
+          pointerEvents: 'none' 
+        }} 
+        aria-hidden="true"
+      >
+        <OfficialFinanceDocument
+          id="printable-finance-document"
+          financeData={financeData}
+          metadata={metadata}
+          monthName={monthName}
+          yearDisplay={yearDisplay}
+          useKhmerNumerals={useKhmerNumerals}
+        />
+      </div>
     </div>
   );
 }

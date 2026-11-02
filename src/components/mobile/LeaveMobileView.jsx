@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { 
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, Eye, 
-  Calendar, Clock, AlertCircle, UserCheck, Search 
+  Calendar, Clock, AlertCircle, UserCheck, Search, Download, Loader2 
 } from 'lucide-react';
 import { toKhmerDigits } from '../../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../../utils/excelExporter';
+import { exportElementToPdf } from '../../utils/pdfExporter';
+import OfficialLeaveDocument from '../OfficialLeaveDocument';
 
 export default function LeaveMobileView({
   records = [],
@@ -21,6 +23,7 @@ export default function LeaveMobileView({
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterGrade, setFilterGrade] = useState('all');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Month derivation
   const [yearStr, monthStr] = (monthKey || '2026-07').split('-');
@@ -94,6 +97,20 @@ export default function LeaveMobileView({
     exportLeaveToExcel(records, `${monthName} ${yearDisplay}`, metadata);
   };
 
+  const handleDownloadPdf = async () => {
+    try {
+      setIsExportingPdf(true);
+      await exportElementToPdf(
+        '#printable-leave-document',
+        `របាយការណ៍សុំច្បាប់_${monthName}_${yearDisplay}`
+      );
+    } catch (err) {
+      alert('មិនអាចទាញយក PDF បានទេ៖ ' + (err.message || 'Error'));
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   // Filter records
   const filteredRecords = records.filter(r => {
     const matchesSearch = !searchQuery.trim() || 
@@ -148,7 +165,7 @@ export default function LeaveMobileView({
         </div>
 
         {/* Action Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button
             onClick={() => setShowAddModal(true)}
             style={{
@@ -156,40 +173,68 @@ export default function LeaveMobileView({
               color: '#ffffff',
               border: 'none',
               borderRadius: 8,
-              padding: '10px 12px',
+              padding: '10px 14px',
               fontSize: 13,
               fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: 6,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              width: '100%',
+              boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
             }}
           >
             <Plus size={16} />
             <span>បន្ថែមច្បាប់</span>
           </button>
 
-          <button
-            onClick={handleExportExcel}
-            style={{
-              background: '#15803d',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '10px 12px',
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              cursor: 'pointer'
-            }}
-          >
-            <FileSpreadsheet size={16} />
-            <span>Export Excel</span>
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <button
+              onClick={handleExportExcel}
+              style={{
+                background: '#15803d',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '9px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                cursor: 'pointer'
+              }}
+            >
+              <FileSpreadsheet size={15} />
+              <span>Export Excel</span>
+            </button>
+
+            <button
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              style={{
+                background: '#b91c1c',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '9px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                cursor: isExportingPdf ? 'not-allowed' : 'pointer',
+                opacity: isExportingPdf ? 0.7 : 1
+              }}
+              title="ទាញយកជាឯកសារ PDF ផ្លូវការ"
+            >
+              {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+              <span>{isExportingPdf ? 'កំពុងទាញ...' : 'Download PDF'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Toggle to Full A4 Desktop Mode */}
@@ -815,6 +860,30 @@ export default function LeaveMobileView({
           </div>
         </div>
       )}
+
+      {/* Offscreen Official A4 Document for Mobile PDF Export */}
+      <div 
+        style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          width: 794, 
+          zIndex: -9999, 
+          opacity: 1, 
+          pointerEvents: 'none' 
+        }} 
+        aria-hidden="true"
+      >
+        <OfficialLeaveDocument
+          id="printable-leave-document"
+          records={records}
+          metadata={metadata}
+          monthName={monthName}
+          yearDisplay={yearDisplay}
+          useKhmerNumerals={useKhmerNumerals}
+          studentMaster={studentMaster}
+        />
+      </div>
     </div>
   );
 }
