@@ -110,7 +110,7 @@ Instructions:
 - Retain accurate Khmer spelling for names, grades, and reasons.
 `;
 
-  const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+  const candidateModels = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'];
   const keysToTry = [
     apiKey,
     ...DEFAULT_GEMINI_KEYS.filter(k => k && k !== apiKey)
@@ -118,16 +118,14 @@ Instructions:
 
   let lastError = null;
   const badKeys = new Set();
-  let aqPrefixFailed = false;
 
   for (const model of candidateModels) {
     for (const activeKey of keysToTry) {
       if (badKeys.has(activeKey)) continue;
-      if (aqPrefixFailed && activeKey.startsWith('AQ.')) continue;
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${activeKey}`;
         const response = await fetch(url, {
           method: 'POST',
@@ -163,9 +161,6 @@ Instructions:
           }
           if (response.status === 400 || response.status === 401 || response.status === 403) {
             badKeys.add(activeKey);
-            if (activeKey.startsWith('AQ.')) {
-              aqPrefixFailed = true;
-            }
             continue;
           }
           if (response.status === 404 || response.status === 503) {
