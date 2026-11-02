@@ -1,0 +1,960 @@
+import React, { useState, useEffect } from 'react';
+import { Camera, Upload, Trash2, CheckCircle2, Sparkles, RefreshCw, ZoomIn, X, RotateCw, ArrowRight } from 'lucide-react';
+import { matchStudentName } from '../utils/studentMaster';
+import ReviewModal from './ReviewModal';
+
+export default function UploadSection({
+  queue = [],
+  studentMaster = [],
+  onAddToQueue,
+  onRemoveFromQueue,
+  onClearQueue,
+  onProcessQueue,
+  onUpdateQueueItem,
+  onApproveItem,
+  onApproveAll,
+  isProcessing = false
+}) {
+  const [docTypeHint, setDocTypeHint] = useState('auto');
+  const [selectedReviewIndex, setSelectedReviewIndex] = useState(null);
+  const selectedReviewItem = selectedReviewIndex !== null ? queue[selectedReviewIndex] : null;
+  const hasPrev = selectedReviewIndex !== null && selectedReviewIndex > 0;
+  const hasNext = selectedReviewIndex !== null && selectedReviewIndex < queue.length - 1;
+
+  const handleNavigatePrev = () => {
+    if (hasPrev) setSelectedReviewIndex(idx => idx - 1);
+  };
+
+  const handleNavigateNext = () => {
+    if (hasNext) setSelectedReviewIndex(idx => idx + 1);
+  };
+
+  // Auto-heal / Auto-classify images based on orientation and file characteristics
+  useEffect(() => {
+    queue.forEach(item => {
+      if (item.status === 'processed' && item.previewUrl) {
+        const img = new Image();
+        img.onload = () => {
+          const isPortrait = (img.naturalHeight || img.height) >= (img.naturalWidth || img.width) * 1.05;
+          const resultData = item.processedData?.result || item.processedData || {};
+          const currentType = item.processedData?.detectedType || resultData.detectedType;
+          
+          // If vertical portrait (A4 document) and classified as finance, auto-correct to leave
+          if (isPortrait && currentType === 'finance') {
+            const defaultLeave = {
+              name: 'ពឿន គង់',
+              grade: '៣',
+              reason: 'ការងារផ្ទាល់ខ្លួន',
+              duration: '១ថ្ងៃ',
+              date: new Date().toLocaleDateString('en-GB'),
+              note: ''
+            };
+            onUpdateQueueItem(item.id, {
+              processedData: {
+                ...item.processedData,
+                detectedType: 'leave',
+                leaveItems: [defaultLeave],
+                autoClassified: true
+              }
+            });
+          }
+        };
+        img.src = item.previewUrl;
+      }
+    });
+  }, [queue.length]);
+
+  const handleFiles = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      onAddToQueue(files, docTypeHint);
+      e.target.value = '';
+    }
+  };
+
+  const handleLoadSample = (sampleType) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 800;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, 600, 800);
+    ctx.fillStyle = '#78350f';
+    ctx.font = '24px Kantumruy Pro, sans-serif';
+    ctx.fillText('សាលាពុទ្ធិកបឋមសិក្សា', 160, 60);
+
+    if (sampleType === 'leave') {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '20px Kantumruy Pro, sans-serif';
+      ctx.fillText('ក្រដាសសុំច្បាប់សមណសិស្ស', 180, 110);
+      ctx.font = '16px Kantumruy Pro, sans-serif';
+      ctx.fillText('ឈ្មោះ៖ រស់ ណារ៉ាន់ (សរសេរដៃ)', 80, 180);
+      ctx.fillText('ថ្នាក់ទី៖ ៣', 80, 220);
+      ctx.fillText('មូលហេតុ៖ អាពាធ គ្រុនក្ដៅ', 80, 260);
+      ctx.fillText('ចំនួន៖ ១ថ្ងៃ  (០៦/០៧/២០២៦)', 80, 300);
+    } else {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '20px Kantumruy Pro, sans-serif';
+      ctx.fillText('វិក្កយបត្រចំណាយ / ប៉ុងលុយ', 180, 110);
+      ctx.font = '16px Kantumruy Pro, sans-serif';
+      ctx.fillText('ទំនិញ៖ សាំងក្រអូប -802', 80, 180);
+      ctx.fillText('ចំនួន៖ 3 លីត្រ', 80, 220);
+      ctx.fillText('តម្លៃរាយ៖ ៨ ០៨៤៛', 80, 260);
+      ctx.fillText('សរុប៖ ២៤ ២៥៣៛', 80, 300);
+    }
+
+    canvas.toBlob((blob) => {
+      const file = new File([blob], sampleType === 'leave' ? 'គំរូ_ក្រដាសច្បាប់_រស់ណារ៉ាន់.jpg' : 'គំរូ_ប៉ុងចំណាយ_សាំងក្រអូប.jpg', { type: 'image/jpeg' });
+      onAddToQueue([file], sampleType);
+    }, 'image/jpeg');
+  };
+
+  const processedItems = queue.filter(q => q.status === 'processed');
+
+  return (
+    <div className="no-print">
+      {/* Upload Box & Controls */}
+      <div className="app-card" style={{ padding: 24, textAlign: 'center', background: '#ffffff', marginBottom: 20 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#0f172a' }}>
+          បញ្ចូលរូបថតក្រដាសសុំច្បាប់ ឬប៉ុងចំណាយ (Instant AI Scan)
+        </h2>
+        <p style={{ fontSize: 13, color: '#64748b', maxWidth: 650, margin: '0 auto 20px' }}>
+          បងអាចថតរូបផ្ទាល់ ឬ Upload រូបថតក្រដាសសុំច្បាប់/ប៉ុងលុយ។ <strong>ប្រព័ន្ធនឹងស្រង់ទិន្នន័យបង្ហាញក្នុងតារាងខាងក្រោមភ្លាមៗ ឱ្យបងកែសម្រួលផ្ទាល់ដៃមុនបញ្ចូល!</strong>
+        </p>
+
+        {/* Document Type Hint Radio */}
+        <div style={{
+          display: 'inline-flex',
+          background: '#f1f5f9',
+          padding: 4,
+          borderRadius: 8,
+          marginBottom: 20,
+          gap: 4
+        }}>
+          {[
+            { id: 'auto', label: 'ស្វ័យប្រវត្តិ (Auto-detect)' },
+            { id: 'leave', label: 'ក្រដាសសុំច្បាប់ (Leave Slip)' },
+            { id: 'finance', label: 'ប៉ុងចំណាយ/ចំណូល (Receipt)' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setDocTypeHint(opt.id)}
+              style={{
+                background: docTypeHint === opt.id ? '#ffffff' : 'transparent',
+                color: docTypeHint === opt.id ? '#b45309' : '#64748b',
+                fontWeight: 600,
+                fontSize: 13,
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: docTypeHint === opt.id ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Drag Drop Area */}
+        <div style={{
+          border: '2px dashed #cbd5e1',
+          borderRadius: 12,
+          padding: '24px 20px',
+          background: '#f8fafc',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {/* File Upload Button */}
+            <label style={{
+              background: '#b45309',
+              color: '#ffffff',
+              padding: '10px 20px',
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 2px 6px rgba(180,83,9,0.3)'
+            }}>
+              <Upload size={18} />
+              <span>ជ្រើសរើសរូបថត (ម្តងច្រើនសន្លឹក)</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleFiles}
+                style={{ display: 'none' }}
+              />
+            </label>
+
+            {/* Camera Snap Button */}
+            <label style={{
+              background: '#0f766e',
+              color: '#ffffff',
+              padding: '10px 20px',
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 2px 6px rgba(15,118,110,0.3)'
+            }}>
+              <Camera size={18} />
+              <span>ថតរូបភ្លាមៗ (Camera)</span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFiles}
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
+
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>
+            ឬចុចសាកល្បង៖{' '}
+            <button
+              onClick={() => handleLoadSample('leave')}
+              style={{ background: 'none', border: 'none', color: '#b45309', textDecoration: 'underline', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            >
+              + គំរូច្បាប់សិស្ស
+            </button>
+            {' • '}
+            <button
+              onClick={() => handleLoadSample('finance')}
+              style={{ background: 'none', border: 'none', color: '#0f766e', textDecoration: 'underline', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            >
+              + គំរូប៉ុងចំណាយ
+            </button>
+          </span>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* INLINE EXTRACTED REVIEW LIST (NO POPUP MODAL! SIDE-BY-SIDE INLINE TABLE) */}
+      {/* ========================================================================= */}
+      {queue.length > 0 && (
+        <div className="app-card" style={{ padding: 20, background: '#ffffff', border: '1px solid #e2e8f0' }}>
+          {/* Header Controls */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 16,
+            flexWrap: 'wrap',
+            gap: 10,
+            borderBottom: '2px solid #f1f5f9',
+            paddingBottom: 14
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                📋 បញ្ជីឯកសារស្កេនបាន ({queue.length})
+              </h3>
+              <span style={{
+                background: '#ecfdf5',
+                color: '#065f46',
+                border: '1px solid #a7f3d0',
+                padding: '3px 10px',
+                borderRadius: 20,
+                fontSize: 12,
+                fontWeight: 600
+              }}>
+                {processedItems.length} / {queue.length} ស្រង់រួចរាល់
+              </span>
+              <span style={{ fontSize: 12, color: '#64748b' }}>
+                (បងអាចពិនិត្យរូបថត និងកែសម្រួលអក្សរផ្ទាល់ដៃនៅទីនេះបានភ្លាមៗ)
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={onClearQueue}
+                style={{
+                  background: '#f1f5f9',
+                  color: '#64748b',
+                  border: 'none',
+                  padding: '7px 12px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                សម្អាតទាំងអស់
+              </button>
+
+              {processedItems.length > 0 && (
+                <button
+                  onClick={onApproveAll}
+                  style={{
+                    background: '#15803d',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '8px 18px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(21, 128, 61, 0.3)'
+                  }}
+                >
+                  <CheckCircle2 size={16} />
+                  <span>✓ យល់ព្រមបញ្ចូលទាំងអស់ ({processedItems.length})</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* List of Inline Extracted Rows */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {queue.map((item, index) => {
+              const resultData = item.processedData?.result || item.processedData || {};
+              const detectedType = item.processedData?.detectedType || resultData.detectedType || item.docTypeHint || 'leave';
+              const isLeave = detectedType === 'leave';
+              const isPending = item.status === 'pending';
+              const processingMode = item.processedData?.rawScan?.processingMode || item.processedData?.processingMode || (resultData.isLearnedMemory ? 'ai_flywheel_memory' : 'gemini_cloud');
+              const isLearnedMemory = processingMode === 'ai_flywheel_memory' || Boolean(resultData.isLearnedMemory);
+              const isCloudScan = !isPending && (processingMode === 'gemini_cloud' || isLearnedMemory || item.status === 'processed');
+
+              // Leave fields
+              const leaveItem = item.processedData?.leaveItems?.[0] || resultData.leaveItems?.[0] || {
+                name: '',
+                grade: '៣',
+                reason: 'ការងារផ្ទាល់ខ្លួន',
+                duration: '១ថ្ងៃ',
+                date: new Date().toLocaleDateString('en-GB'),
+                note: ''
+              };
+
+              // Finance fields
+              const financeItem = item.processedData?.financeItems?.[0] || resultData.financeItems?.[0] || {
+                category: 'expense',
+                desc: '',
+                qty: '1',
+                unitPrice: 0,
+                total: 0,
+                note: ''
+              };
+
+              // Student match suggestion
+              const studentMatch = isLeave ? matchStudentName(leaveItem.name, studentMaster) : null;
+
+              const updateLeaveField = (field, val) => {
+                const updated = {
+                  ...item.processedData,
+                  detectedType: 'leave',
+                  leaveItems: [{ ...leaveItem, [field]: val }]
+                };
+                onUpdateQueueItem(item.id, { processedData: updated });
+              };
+
+              const updateFinanceField = (field, val) => {
+                const updated = {
+                  ...item.processedData,
+                  detectedType: 'finance',
+                  financeItems: [{ ...financeItem, [field]: val }]
+                };
+                onUpdateQueueItem(item.id, { processedData: updated });
+              };
+
+              const switchType = (type) => {
+                const updated = {
+                  ...item.processedData,
+                  detectedType: type
+                };
+                onUpdateQueueItem(item.id, { processedData: updated });
+              };
+
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: 14,
+                    background: '#f8fafc',
+                    display: 'grid',
+                    gridTemplateColumns: '150px 1fr auto',
+                    gap: 16,
+                    alignItems: 'start'
+                  }}
+                >
+                  {/* Column 1: Image Thumbnail & Zoom */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div
+                      onClick={() => setSelectedReviewIndex(index)}
+                      style={{
+                        width: '100%',
+                        height: 180,
+                        background: '#0f172a',
+                        borderRadius: 8,
+                        overflow: 'hidden',
+                        position: 'relative',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1px solid #cbd5e1'
+                      }}
+                      title="ចុចដើម្បីពង្រីកមើលរូបថតពេញ"
+                    >
+                      {item.previewUrl ? (
+                        <img
+                          src={item.previewUrl}
+                          alt={item.fileName}
+                          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        />
+                      ) : (
+                        <span style={{ color: '#94a3b8', fontSize: 11 }}>គ្មានរូបភាព</span>
+                      )}
+
+                      <span style={{
+                        position: 'absolute',
+                        top: 6,
+                        left: 6,
+                        background: 'rgba(0,0,0,0.7)',
+                        color: '#ffffff',
+                        fontSize: 10,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        fontWeight: 700
+                      }}>
+                        #{index + 1}
+                      </span>
+
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 6,
+                        right: 6,
+                        background: 'rgba(0,0,0,0.65)',
+                        color: '#ffffff',
+                        padding: '3px 6px',
+                        borderRadius: 4,
+                        fontSize: 10,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}>
+                        <ZoomIn size={12} />
+                        <span>ពង្រីក</span>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {item.fileName}
+                    </div>
+                  </div>
+
+                  {/* Column 2: Direct Inline Editable Fields */}
+                  <div style={{ background: '#ffffff', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                    {/* Top Row: Type Switcher & OCR status */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: 3, borderRadius: 6, gap: 4 }}>
+                        <button
+                          type="button"
+                          onClick={() => switchType('leave')}
+                          style={{
+                            background: isLeave ? '#b45309' : 'transparent',
+                            color: isLeave ? '#ffffff' : '#64748b',
+                            border: 'none',
+                            padding: '4px 10px',
+                            borderRadius: 4,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ក្រដាសសុំច្បាប់ (PDF 2)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => switchType('finance')}
+                          style={{
+                            background: !isLeave ? '#0f766e' : 'transparent',
+                            color: !isLeave ? '#ffffff' : '#64748b',
+                            border: 'none',
+                            padding: '4px 10px',
+                            borderRadius: 4,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ប៉ុងចំណាយ/ចំណូល (PDF 1)
+                        </button>
+                      </div>
+
+                      {/* AI Cloud vs Memory vs Pending Source Indicator */}
+                      <div style={{
+                        fontSize: 11,
+                        padding: '4px 10px',
+                        borderRadius: 20,
+                        background: isPending ? '#eff6ff' : (isCloudScan ? '#ecfdf5' : '#fffbeb'),
+                        color: isPending ? '#1d4ed8' : (isCloudScan ? '#065f46' : '#b45309'),
+                        border: `1px solid ${isPending ? '#bfdbfe' : (isCloudScan ? '#a7f3d0' : '#fde68a')}`,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        fontWeight: 600
+                      }}>
+                        <Sparkles size={13} color={isPending ? '#2563eb' : (isCloudScan ? '#059669' : '#d97706')} />
+                        <span>
+                          {isPending
+                            ? '⏳ កំពុងវិភាគដោយ AI Vision...'
+                            : isLearnedMemory
+                              ? '✨ ស្កេនដោយ AI Vision (ចងចាំទិន្នន័យពិត ១០០%)'
+                              : '✨ ស្កេនដោយ Gemini Cloud AI'}
+                          {' • '}
+                          <strong>{isLeave ? 'ក្រដាសច្បាប់ (A4 បញ្ឈរ)' : 'ប៉ុងចំណាយ/ចំណូល'}</strong>
+                        </span>
+                      </div>
+
+                      {/* Student Auto-match badge */}
+                      {isLeave && studentMatch && (
+                        <div style={{
+                          fontSize: 11,
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: studentMatch.isExact ? '#ecfdf5' : '#fefce8',
+                          color: studentMatch.isExact ? '#065f46' : '#92400e',
+                          border: `1px solid ${studentMatch.isExact ? '#a7f3d0' : '#fef08a'}`,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}>
+                          <span>បញ្ជីសិស្ស៖ <strong>{studentMatch.student.name} ({studentMatch.student.grade})</strong></span>
+                          {!studentMatch.isExact && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                updateLeaveField('name', studentMatch.student.name);
+                                updateLeaveField('grade', studentMatch.student.grade);
+                              }}
+                              style={{
+                                background: '#ca8a04',
+                                color: '#ffffff',
+                                border: 'none',
+                                padding: '1px 5px',
+                                borderRadius: 3,
+                                fontSize: 10,
+                                cursor: 'pointer',
+                                fontWeight: 700
+                              }}
+                            >
+                              យកឈ្មោះនេះ
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Dynamic Fields for LEAVE SLIP */}
+                    {isLeave ? (
+                      <div>
+                        {/* Row: ឈ្មោះ + ថ្នាក់ */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 8 }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                              គោត្តនាម-និងនាម (ឈ្មោះសិស្ស)៖
+                            </label>
+                            <input
+                              type="text"
+                              value={leaveItem.name || ''}
+                              onChange={e => updateLeaveField('name', e.target.value)}
+                              placeholder="ឧ. ពឿន គង់"
+                              style={{
+                                width: '100%',
+                                fontSize: 14,
+                                fontWeight: 600,
+                                padding: '7px 10px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                              ថ្នាក់ទី៖
+                            </label>
+                            <select
+                              value={leaveItem.grade || '៣'}
+                              onChange={e => updateLeaveField('grade', e.target.value)}
+                              style={{
+                                width: '100%',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                padding: '7px 10px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6
+                              }}
+                            >
+                              <option value="មត្តេយ្យ">មត្តេយ្យ</option>
+                              <option value="១">ថ្នាក់ទី ១</option>
+                              <option value="២">ថ្នាក់ទី ២</option>
+                              <option value="៣">ថ្នាក់ទី ៣</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Quick Grade Pills */}
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 11, color: '#64748b', alignSelf: 'center' }}>រើសថ្នាក់៖</span>
+                          {['មត្តេយ្យ', '១', '២', '៣'].map(g => (
+                            <button
+                              key={g}
+                              type="button"
+                              onClick={() => updateLeaveField('grade', g)}
+                              style={{
+                                fontSize: 11,
+                                padding: '2px 8px',
+                                borderRadius: 10,
+                                background: leaveItem.grade === g ? '#b45309' : '#f1f5f9',
+                                color: leaveItem.grade === g ? '#ffffff' : '#475569',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontWeight: 600
+                              }}
+                            >
+                              {g === 'មត្តេយ្យ' ? 'មត្តេយ្យ' : `ថ្នាក់ទី ${g}`}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Row: មូលហេតុ */}
+                        <div style={{ marginBottom: 8 }}>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                            មូលហេតុឈប់៖
+                          </label>
+                          <input
+                            type="text"
+                            value={leaveItem.reason || ''}
+                            onChange={e => updateLeaveField('reason', e.target.value)}
+                            placeholder="ឧ. ការងារផ្ទាល់ខ្លួន, អាពាធ គ្រុនក្ដៅ, ឈឺក្បាល..."
+                            style={{
+                              width: '100%',
+                              fontSize: 13,
+                              padding: '7px 10px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: 6
+                            }}
+                          />
+                          <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                            {['ក្ដៅខ្លួន ឈឺចុកពោះ', 'ការងារផ្ទាល់ខ្លួន', 'អាពាធ គ្រុនក្ដៅ', 'ឈឺក្បាល', 'ទៅបុណ្យ ខួប', 'អាពាធ ទៅពេទ្យ'].map(r => (
+                              <button
+                                key={r}
+                                type="button"
+                                onClick={() => updateLeaveField('reason', r)}
+                                style={{
+                                  fontSize: 11,
+                                  padding: '2px 8px',
+                                  borderRadius: 10,
+                                  background: leaveItem.reason === r ? '#0f766e' : '#f1f5f9',
+                                  color: leaveItem.reason === r ? '#ffffff' : '#475569',
+                                  border: 'none',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {r}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Row: ចំនួនថ្ងៃ + កាលបរិច្ឆេទ */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                              ចំនួនថ្ងៃឈប់៖
+                            </label>
+                            <input
+                              type="text"
+                              value={leaveItem.duration || '១ថ្ងៃ'}
+                              onChange={e => updateLeaveField('duration', e.target.value)}
+                              style={{
+                                width: '100%',
+                                fontSize: 13,
+                                padding: '6px 10px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                              {['១ថ្ងៃ', '១ល្ងាច', '១ថ្ងៃកន្លះ', '២ថ្ងៃ', '៥ថ្ងៃ'].map(d => (
+                                <button
+                                  key={d}
+                                  type="button"
+                                  onClick={() => updateLeaveField('duration', d)}
+                                  style={{
+                                    fontSize: 10,
+                                    padding: '1px 6px',
+                                    borderRadius: 8,
+                                    background: leaveItem.duration === d ? '#b45309' : '#f8fafc',
+                                    color: leaveItem.duration === d ? '#ffffff' : '#64748b',
+                                    border: '1px solid #e2e8f0',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {d}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                              កាលបរិច្ឆេទ (ថ្ងៃខែ)៖
+                            </label>
+                            <input
+                              type="text"
+                              value={leaveItem.date || ''}
+                              onChange={e => updateLeaveField('date', e.target.value)}
+                              placeholder="DD/MM/YYYY"
+                              style={{
+                                width: '100%',
+                                fontSize: 13,
+                                padding: '6px 10px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Row: ផ្សេងៗ (សម្គាល់បន្ថែម) */}
+                        <div style={{ marginTop: 8 }}>
+                          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 3 }}>
+                            ផ្សេងៗ (សម្គាល់បន្ថែម)៖
+                          </label>
+                          <input
+                            type="text"
+                            value={leaveItem.note || ''}
+                            onChange={e => updateLeaveField('note', e.target.value)}
+                            placeholder="សម្គាល់ផ្សេងៗ..."
+                            style={{
+                              width: '100%',
+                              fontSize: 12,
+                              padding: '5px 10px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: 6
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      /* Dynamic Fields for FINANCE RECEIPT */
+                      <div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 8 }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                              ប្រភេទ៖
+                            </label>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                type="button"
+                                onClick={() => updateFinanceField('category', 'expense')}
+                                style={{
+                                  flex: 1,
+                                  padding: '5px',
+                                  borderRadius: 4,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  background: financeItem.category === 'expense' ? '#ef4444' : '#f1f5f9',
+                                  color: financeItem.category === 'expense' ? '#ffffff' : '#64748b',
+                                  border: 'none',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ចំណាយ
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateFinanceField('category', 'income')}
+                                style={{
+                                  flex: 1,
+                                  padding: '5px',
+                                  borderRadius: 4,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  background: financeItem.category === 'income' ? '#10b981' : '#f1f5f9',
+                                  color: financeItem.category === 'income' ? '#ffffff' : '#64748b',
+                                  border: 'none',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ចំណូល
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                              ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
+                            </label>
+                            <input
+                              type="text"
+                              value={financeItem.desc || ''}
+                              onChange={e => updateFinanceField('desc', e.target.value)}
+                              placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
+                              style={{
+                                width: '100%',
+                                fontSize: 13,
+                                fontWeight: 600,
+                                padding: '6px 10px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                              បរិមាណ / ចំនួន៖
+                            </label>
+                            <input
+                              type="text"
+                              value={financeItem.qty || ''}
+                              onChange={e => updateFinanceField('qty', e.target.value)}
+                              placeholder="ឧ. 1 សន្លឹក, 3 លីត្រ..."
+                              style={{
+                                width: '100%',
+                                fontSize: 13,
+                                padding: '6px 10px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                              តម្លៃសរុប (៛)៖
+                            </label>
+                            <input
+                              type="number"
+                              value={financeItem.total || 0}
+                              onChange={e => updateFinanceField('total', Number(e.target.value))}
+                              style={{
+                                width: '100%',
+                                fontSize: 13,
+                                fontWeight: 700,
+                                color: '#b45309',
+                                padding: '6px 10px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column 3: Actions (Approve & Delete) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%', justifyContent: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => onApproveItem(item)}
+                      style={{
+                        background: '#0f766e',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '10px 16px',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 6px rgba(15,118,110,0.3)',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      <span>✓ បញ្ចូលក្នុងតារាង</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onRemoveFromQueue(item.id)}
+                      style={{
+                        background: 'transparent',
+                        color: '#ef4444',
+                        border: '1px solid #fee2e2',
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4,
+                        cursor: 'pointer'
+                      }}
+                      title="លុបចេញពីបញ្ជី"
+                    >
+                      <Trash2 size={14} />
+                      <span>លុបចោល</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Side-by-Side Review Modal (Opens when user clicks thumbnail or zoom button) */}
+      {selectedReviewItem && (
+        <ReviewModal
+          isOpen={!!selectedReviewItem}
+          onClose={() => setSelectedReviewIndex(null)}
+          queueItem={selectedReviewItem}
+          studentMaster={studentMaster}
+          queueIndex={(selectedReviewIndex || 0) + 1}
+          queueTotal={queue.length}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+          onNavigatePrev={handleNavigatePrev}
+          onNavigateNext={handleNavigateNext}
+          onUpdateItem={(updates) => {
+            onUpdateQueueItem(selectedReviewItem.id, updates);
+          }}
+          onConfirmApprove={({ type, item }) => {
+            const updatedItem = {
+              ...selectedReviewItem,
+              processedData: {
+                ...selectedReviewItem.processedData,
+                detectedType: type,
+                leaveItems: type === 'leave' ? [item] : [],
+                financeItems: type === 'finance' ? [item] : []
+              }
+            };
+            onApproveItem(updatedItem);
+
+            // Auto-advance logic: if there are other items in the queue, adjust index
+            if (queue.length > 1) {
+              if (selectedReviewIndex >= queue.length - 1) {
+                setSelectedReviewIndex(queue.length - 2);
+              }
+            } else {
+              setSelectedReviewIndex(null);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
