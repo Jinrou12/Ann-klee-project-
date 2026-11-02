@@ -243,29 +243,29 @@ export default function FinanceTableView({
           marginBottom: 16
         }}>
           {/* Left: Ministry & School with Centered Logo on top */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.45 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.5 }}>
             <img
               src="/logo.png"
               alt="Logo"
               style={{ width: 55, height: 55, objectFit: 'contain', marginBottom: 4 }}
             />
-            <div className="font-moul" style={{ fontSize: 13, fontWeight: 700, textAlign: 'center' }}>
+            <div className="font-moul" style={{ fontSize: 12, textAlign: 'center' }}>
               {metadata.ministry}
             </div>
-            <div className="font-moul" style={{ fontSize: 13, fontWeight: 700, textAlign: 'center' }}>
+            <div className="font-moul" style={{ fontSize: 12, textAlign: 'center' }}>
               {metadata.school}
             </div>
-            <div className="font-moul" style={{ fontSize: 13, fontWeight: 700, textAlign: 'center' }}>
+            <div className="font-moul" style={{ fontSize: 12, textAlign: 'center' }}>
               {metadata.location}
             </div>
           </div>
 
           {/* Right: National Kingdom & Motto */}
-          <div style={{ textAlign: 'center', lineHeight: 1.45 }}>
-            <div className="font-moul" style={{ fontSize: 14, fontWeight: 700 }}>
+          <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
+            <div className="font-moul" style={{ fontSize: 13.5 }}>
               ព្រះរាជាណាចក្រកម្ពុជា
             </div>
-            <div className="font-moul" style={{ fontSize: 14, fontWeight: 700 }}>
+            <div className="font-moul" style={{ fontSize: 13 }}>
               ជាតិ សាសនា ព្រះមហាក្សត្រ
             </div>
             <KhmerRoyalDivider />
@@ -274,13 +274,13 @@ export default function FinanceTableView({
 
         {/* Report Title */}
         <div style={{ textAlign: 'center', marginTop: 10, marginBottom: 16 }}>
-          <div className="font-moul" style={{ fontSize: 16, marginBottom: 4 }}>
+          <div className="font-moul" style={{ fontSize: 15, marginBottom: 4 }}>
             របាយការណ៍
           </div>
-          <div className="font-moul" style={{ fontSize: 14, marginBottom: 4 }}>
+          <div className="font-moul" style={{ fontSize: 13.5, marginBottom: 4 }}>
             ស្ដីពី
           </div>
-          <div className="font-moul" style={{ fontSize: 15 }}>
+          <div className="font-moul" style={{ fontSize: 14.5 }}>
             តារាងចំណូលចំណាយប្រចាំខែ{monthName} ឆ្នាំ{yearDisplay}
           </div>
         </div>

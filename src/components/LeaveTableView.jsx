@@ -182,24 +182,24 @@ export default function LeaveTableView({
           marginBottom: 16
         }}>
           {/* Left: Ministry & School (No logo in PDF 2) */}
-          <div style={{ textAlign: 'center', lineHeight: 1.45 }}>
-            <div className="font-moul" style={{ fontSize: 13, fontWeight: 700 }}>
+          <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
+            <div className="font-moul" style={{ fontSize: 12 }}>
               {metadata.ministry}
             </div>
-            <div className="font-moul" style={{ fontSize: 13, fontWeight: 700 }}>
+            <div className="font-moul" style={{ fontSize: 12 }}>
               {metadata.school}
             </div>
-            <div className="font-moul" style={{ fontSize: 13, fontWeight: 700 }}>
+            <div className="font-moul" style={{ fontSize: 12 }}>
               {metadata.location}
             </div>
           </div>
 
           {/* Right: National Kingdom & Motto */}
-          <div style={{ textAlign: 'center', lineHeight: 1.45 }}>
-            <div className="font-moul" style={{ fontSize: 14, fontWeight: 700 }}>
+          <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
+            <div className="font-moul" style={{ fontSize: 13.5 }}>
               ព្រះរាជាណាចក្រកម្ពុជា
             </div>
-            <div className="font-moul" style={{ fontSize: 14, fontWeight: 700 }}>
+            <div className="font-moul" style={{ fontSize: 13 }}>
               ជាតិ សាសនា ព្រះមហាក្សត្រ
             </div>
             <KhmerRoyalDivider />
@@ -208,10 +208,10 @@ export default function LeaveTableView({
 
         {/* Report Title */}
         <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 20 }}>
-          <div className="font-moul" style={{ fontSize: 16, marginBottom: 4 }}>
+          <div className="font-moul" style={{ fontSize: 15, marginBottom: 4 }}>
             របាយការណ៍ ស្ដីពី
           </div>
-          <div className="font-moul" style={{ fontSize: 15 }}>
+          <div className="font-moul" style={{ fontSize: 14.5 }}>
             ចំនួនសមណសិស្សសុំច្បាប់ ក្នុងខែ{monthName} ឆ្នាំ{yearDisplay}
           </div>
         </div>
