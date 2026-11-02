@@ -75,5 +75,5 @@
 * **គោលការណ៍ Rolling Snapshot**: ផ្នែកនេះត្រូវតែប្រើប្រព័ន្ធ **In-Place Overwrite** រក្សាត្រឹមតែ ៣-៤ បន្ទាត់សង្ខេបចុងក្រោយ (ហាម append logs នាំឱ្យឯកសាររីកធំ)។
 * **កាលបរិច្ឆេទ**: 2026-11-02
 * **គម្រោង**: Ann Klee Project (ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស និងចំណូលចំណាយ)
-* **ស្ថានភាព**: បាន Push គម្រោងទៅកាន់ GitHub (https://github.com/Jinrou12/Ann-klee-project-) ដោយជោគជ័យ ១០០% ដោយបានរៀបចំ .env.local ការពារ API Keys សម្ងាត់យ៉ាងមានសុវត្ថិភាព
+* **ស្ថានភាព**: បានភ្ជាប់ Supabase Cloud Database Realtime Sync ដោយជោគជ័យ ១០០% (បង្កើត Table app_state, RLS Read/Write, Realtime Publication រួចរាល់)
 * **ការងារបន្ទាប់**: ត្រៀមទទួលការកែសម្រួល ឬមុខងារថ្មីៗបន្តតាមតម្រូវការអ្នកប្រើប្រាស់
