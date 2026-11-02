@@ -201,6 +201,14 @@ export function getStoredApiKey() {
   try {
     const saved = localStorage.getItem(STORAGE_KEYS.API_KEY);
     if (saved && saved.trim()) return saved.trim();
+
+    // Check if cached in app_state meta
+    const rawState = localStorage.getItem(STORAGE_KEYS.APP_STATE);
+    if (rawState) {
+      const parsed = JSON.parse(rawState);
+      if (parsed.meta?.geminiKey) return parsed.meta.geminiKey;
+    }
+
     return DEFAULT_GEMINI_KEYS[0] || '';
   } catch (err) {
     console.error('Error reading API key from localStorage:', err);

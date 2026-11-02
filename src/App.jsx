@@ -15,6 +15,7 @@ import {
   exportBackup,
   importBackup,
   getStoredApiKey,
+  setStoredApiKey,
   getOfflineQueue,
   saveOfflineQueue,
   getStoredTrainingDataset,
@@ -48,29 +49,51 @@ export default function App() {
     let isMounted = true;
     fetchCloudAppState().then(cloudData => {
       if (!isMounted) return;
-      if (cloudData && cloudData.leaves && cloudData.finance) {
-        setAppState(prev => ({
-          ...prev,
-          ...cloudData,
-          meta: { ...prev.meta, ...(cloudData.meta || {}) }
-        }));
-        setCloudStatus('connected');
-      } else {
-        // If cloud table is accessible but empty, push current initial data
-        syncAppStateToCloud(appState).then(ok => {
-          if (isMounted && ok) setCloudStatus('connected');
-        });
+      if (cloudData) {
+        if (cloudData.meta?.geminiKey) {
+          setApiKey(cloudData.meta.geminiKey);
+          setStoredApiKey(cloudData.meta.geminiKey);
+        }
+        if (cloudData.leaves && cloudData.finance) {
+          setAppState(prev => ({
+            ...prev,
+            ...cloudData,
+            meta: {
+              ...prev.meta,
+              ...(cloudData.meta || {}),
+              geminiKey: cloudData.meta?.geminiKey || prev.meta?.geminiKey
+            }
+          }));
+          setCloudStatus('connected');
+        } else {
+          // If cloud table has no leaves/finance yet, push current initial data
+          syncAppStateToCloud({
+            ...appState,
+            meta: {
+              ...appState.meta,
+              geminiKey: cloudData.meta?.geminiKey || apiKey || ''
+            }
+          }).then(ok => {
+            if (isMounted && ok) setCloudStatus('connected');
+          });
+        }
       }
     });
 
     const unsubscribe = subscribeToCloudAppState((remoteState) => {
-      if (remoteState && remoteState.leaves && remoteState.finance) {
-        setAppState(prev => ({
-          ...prev,
-          ...remoteState,
-          meta: { ...prev.meta, ...(remoteState.meta || {}) }
-        }));
-        setCloudStatus('connected');
+      if (remoteState) {
+        if (remoteState.meta?.geminiKey) {
+          setApiKey(remoteState.meta.geminiKey);
+          setStoredApiKey(remoteState.meta.geminiKey);
+        }
+        if (remoteState.leaves && remoteState.finance) {
+          setAppState(prev => ({
+            ...prev,
+            ...remoteState,
+            meta: { ...prev.meta, ...(remoteState.meta || {}) }
+          }));
+          setCloudStatus('connected');
+        }
       }
     });
 
@@ -85,12 +108,19 @@ export default function App() {
     saveAppState(appState);
     const timer = setTimeout(() => {
       setCloudStatus('syncing');
-      syncAppStateToCloud(appState).then(ok => {
+      const stateToSync = {
+        ...appState,
+        meta: {
+          ...appState.meta,
+          geminiKey: apiKey || appState.meta?.geminiKey || ''
+        }
+      };
+      syncAppStateToCloud(stateToSync).then(ok => {
         setCloudStatus(ok ? 'connected' : 'error');
       });
     }, 1200);
     return () => clearTimeout(timer);
-  }, [appState]);
+  }, [appState, apiKey]);
 
   useEffect(() => {
     saveOfflineQueue(queue);
