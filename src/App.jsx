@@ -9,6 +9,12 @@ import StudentMasterModal from './components/StudentMasterModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import ReviewModal from './components/ReviewModal';
 
+// Mobile-Dedicated Components (Rule: Strict PC vs Mobile Isolation)
+import LeaveMobileView from './components/mobile/LeaveMobileView';
+import FinanceMobileView from './components/mobile/FinanceMobileView';
+import MobileBottomNav from './components/mobile/MobileBottomNav';
+import { useDeviceMode } from './utils/useDeviceMode';
+
 import {
   loadAppState,
   saveAppState,
@@ -29,6 +35,9 @@ import {
 import { processUploadedImage } from './utils/ocrService';
 
 export default function App() {
+  // Device mode detection (Rule: Clean PC vs Mobile Separation)
+  const { isMobile, isDesktop, overrideMode, setViewMode } = useDeviceMode();
+
   // 1. Central App State (Rule 7: Single State Mutator Guard)
   const [appState, setAppState] = useState(() => loadAppState());
   const [apiKey, setApiKey] = useState(() => getStoredApiKey());
@@ -537,41 +546,107 @@ export default function App() {
           onToggleNumerals={mutateToggleNumerals}
         />
 
-        {/* Tab Navigation */}
-        <TabNavigation
-          activeTab={activeTab}
-          onSelectTab={setActiveTab}
-          leaveCount={currentLeaves.length}
-          queueCount={queue.filter(q => q.status === 'pending').length}
-          useKhmerNumerals={appState.meta.useKhmerNumerals}
-        />
+        {/* View Switcher Banner for Mobile users who manually forced PC view */}
+        {overrideMode === 'desktop' && (
+          <div style={{
+            background: '#fef3c7',
+            border: '1px solid #fcd34d',
+            borderRadius: 8,
+            padding: '8px 12px',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: 12,
+            color: '#92400e'
+          }}>
+            <span>កំពុងមើលទម្រង់ <strong>PC A4 (Desktop View)</strong></span>
+            <button
+              onClick={() => setViewMode('auto')}
+              style={{
+                background: '#b45309',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 6,
+                padding: '4px 10px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              📱 ប្ដូរមក Mobile វិញ
+            </button>
+          </div>
+        )}
 
-        {/* View 1: Student Leave Table (PDF 2) */}
+        {/* Desktop Tab Navigation (Hidden on Mobile since Mobile has bottom nav) */}
+        {!isMobile && (
+          <TabNavigation
+            activeTab={activeTab}
+            onSelectTab={setActiveTab}
+            leaveCount={currentLeaves.length}
+            queueCount={queue.filter(q => q.status === 'pending').length}
+            useKhmerNumerals={appState.meta.useKhmerNumerals}
+          />
+        )}
+
+        {/* ======================================================== */}
+        {/* VIEW 1: STUDENT LEAVE VIEW (PDF 2)                       */}
+        {/* ======================================================== */}
         {activeTab === 'leave' && (
-          <LeaveTableView
-            records={currentLeaves}
-            monthKey={currentMonthKey}
-            metadata={appState.meta}
-            useKhmerNumerals={appState.meta.useKhmerNumerals}
-            studentMaster={appState.studentMaster}
-            onUpdateRecords={mutateLeaves}
-            onPrint={handlePrint}
-          />
+          isMobile ? (
+            <LeaveMobileView
+              records={currentLeaves}
+              monthKey={currentMonthKey}
+              metadata={appState.meta}
+              useKhmerNumerals={appState.meta.useKhmerNumerals}
+              studentMaster={appState.studentMaster}
+              onUpdateRecords={mutateLeaves}
+              onPrint={handlePrint}
+              onSwitchToDesktop={() => setViewMode('desktop')}
+            />
+          ) : (
+            <LeaveTableView
+              records={currentLeaves}
+              monthKey={currentMonthKey}
+              metadata={appState.meta}
+              useKhmerNumerals={appState.meta.useKhmerNumerals}
+              studentMaster={appState.studentMaster}
+              onUpdateRecords={mutateLeaves}
+              onPrint={handlePrint}
+            />
+          )
         )}
 
-        {/* View 2: Finance Table (PDF 1) */}
+        {/* ======================================================== */}
+        {/* VIEW 2: FINANCE VIEW (PDF 1)                             */}
+        {/* ======================================================== */}
         {activeTab === 'finance' && (
-          <FinanceTableView
-            financeData={currentFinance}
-            monthKey={currentMonthKey}
-            metadata={appState.meta}
-            useKhmerNumerals={appState.meta.useKhmerNumerals}
-            onUpdateFinance={mutateFinance}
-            onPrint={handlePrint}
-          />
+          isMobile ? (
+            <FinanceMobileView
+              financeData={currentFinance}
+              monthKey={currentMonthKey}
+              metadata={appState.meta}
+              useKhmerNumerals={appState.meta.useKhmerNumerals}
+              onUpdateFinance={mutateFinance}
+              onPrint={handlePrint}
+              onSwitchToDesktop={() => setViewMode('desktop')}
+            />
+          ) : (
+            <FinanceTableView
+              financeData={currentFinance}
+              monthKey={currentMonthKey}
+              metadata={appState.meta}
+              useKhmerNumerals={appState.meta.useKhmerNumerals}
+              onUpdateFinance={mutateFinance}
+              onPrint={handlePrint}
+            />
+          )
         )}
 
-        {/* View 3: Upload & OCR Scanner (Direct Inline Review Table) */}
+        {/* ======================================================== */}
+        {/* VIEW 3: UPLOAD & OCR SCANNER                             */}
+        {/* ======================================================== */}
         {activeTab === 'upload' && (
           <UploadSection
             queue={queue}
@@ -587,6 +662,19 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Mobile Fixed Bottom Navigation Bar */}
+      {isMobile && (
+        <MobileBottomNav
+          activeTab={activeTab}
+          onSelectTab={setActiveTab}
+          leaveCount={currentLeaves.length}
+          queueCount={queue.filter(q => q.status === 'pending').length}
+          useKhmerNumerals={appState.meta.useKhmerNumerals}
+          isForcedDesktop={overrideMode === 'desktop'}
+          onToggleViewMode={() => setViewMode(overrideMode === 'desktop' ? 'mobile' : 'desktop')}
+        />
+      )}
 
       {/* Modals */}
       <StudentMasterModal

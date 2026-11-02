@@ -280,7 +280,7 @@ input:focus, select:focus, textarea:focus {
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .monastic-app .app-container {
-    padding: 10px 12px 60px;
+    padding: 10px 12px 84px;
   }
 
   .hide-on-mobile {
