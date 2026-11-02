@@ -125,8 +125,9 @@ async function callGeminiVision(base64Data, mimeType, apiKey, docTypeHint, stude
 You are an expert OCR and administrative assistant in Cambodia specializing in Khmer documents for monastic Buddhist primary schools (សាលាពុទ្ធិកបឋមសិក្សា).
 Examine this image carefully. The image is either a handwritten/printed Student Leave Slip (ក្រដាសសុំច្បាប់សមណសិស្ស) OR an Expense/Income Receipt (ប៉ុងលុយ/វិក្កយបត្រចំណាយ-ចំណូល).
 
-Geometric Layout:
-Image Orientation: ${isPortrait ? 'Portrait vertical format (Standard A4 letter ratio - high probability of Leave Slip / ក្រដាសសុំច្បាប់)' : 'Landscape/square slip (Typical of store receipts / ប៉ុងចំណាយ)'}.
+Geometric Layout & Focus:
+Image Orientation: ${isPortrait ? 'Portrait vertical format' : 'Landscape or close-up cropped format'}.
+Note: Users frequently take zoomed-in close-up camera photos focusing directly on the student name, grade, or reason slip. Do NOT assume a landscape image is a store receipt!
 
 DOCUMENT CLASSIFICATION RULES:
 1. LEAVE SLIP ("detectedType": "leave"):
@@ -134,6 +135,7 @@ DOCUMENT CLASSIFICATION RULES:
    - Header: "មន្ទីរធម្មការ និងសាសនា", "សាលាពុទ្ធិកបឋមសិក្សា", "លិខិតសុំច្បាប់", "សមណសិស្ស"
    - Body phrases: "ខ្ញុំបាទ/នាងខ្ញុំ", "ថ្នាក់ទី", "កម្មវត្ថុ", "សុំឈប់សម្រាក", "មូលហេតុ"
    - Signatures: "នាយកសាលា", "លោកគ្រូបន្ទុកថ្នាក់", or student thumbprint.
+   - Close-up / Zoomed camera shots: If the user zoomed in on handwritten text containing student name, class, leave reason, or monk status (e.g. សាមណេរ, ភិក្ខុ, ថ្នាក់ទី, សុំច្បាប់, ឈឺ, ក្ដៅខ្លួន, អាពាធ), ALWAYS classify as "detectedType": "leave".
    - If ANY of these are found, detectedType MUST be "leave".
 
 2. FINANCE RECEIPT ("detectedType": "finance"):
@@ -142,8 +144,10 @@ ${studentListContext}
 ${fewShotContext}
 KHMER CURSIVE (អក្សរក្វៀស/អក្សររអិល) EXPERT EXTRACTION RULES:
 1. Student Name:
-   - Khmer cursive handwriting often connects strokes smoothly (ligatures).
-   - ALWAYS map the handwritten cursive name to the closest name in the Official School Student Roster above.
+   - The user often takes a close-up camera photo zoomed in directly on the handwritten student name.
+   - Read the exact handwritten Khmer consonants, subscripts (ជើង), and vowels written on the slip faithfully.
+   - Cross-check against the Official Monastic School Student Roster above to resolve minor handwriting ambiguity or cursive ligatures.
+   - CRITICAL: NEVER fabricate or substitute a completely different student name from the roster! If the written letters clearly do not match a student in the roster, return the exact handwritten text faithfully.
    - Example: Cursive writing resembling "ណា. តិ.ច.គា.ង", "ណា តិចគាង", "ណាត ធីណាង", or "ណា ទិចគាង" MUST be extracted as "ណា ទិចគាង" with grade "៣".
 2. Reason for Leave (មូលហេតុ):
    - Cursive handwriting: "ក្ដៅខ្លួន...ឈឺចុកពោះ" -> Extract strictly as "ក្ដៅខ្លួន ឈឺចុកពោះ" (Fever and abdominal/stomach ache).
@@ -317,13 +321,22 @@ function createManualBlankItem(file, docTypeHint, isPortrait = true, errorMessag
  */
 export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey = '', studentMaster = [] } = {}) {
   // 1. Instant 0ms AI Flywheel Ground-Truth Memory Check (before heavy base64 encoding)
+  // CRITICAL: Generic camera file names (e.g. image.jpg, photo.jpg, camera.jpg, etc.) MUST NEVER be recalled from flywheel cache by filename alone!
+  // Live camera shots are distinct physical slips every single time, despite mobile browsers assigning "image.jpg".
+  const isGenericCameraName = (name) => {
+    const n = String(name || '').toLowerCase().trim();
+    return /^(image|img|photo|camera|capture|file|pic|snapshot|frame)[\w-]*\.(jpe?g|png|webp|heic)$/i.test(n)
+      || n === 'image.jpg'
+      || n === 'image.jpeg';
+  };
+
   const normalizeFileName = (n) => String(n || '').toLowerCase().replace(/\s*\(\d+\)\s*(?=\.[^.]+$|$)/, '').trim();
   const targetName = normalizeFileName(file.name);
   const trainingDataset = getStoredTrainingDataset();
-  const matchedSample = Array.isArray(trainingDataset)
+  const matchedSample = (!isGenericCameraName(file.name) && Array.isArray(trainingDataset))
     ? trainingDataset.find(s => 
-        (s.fileName && file.name && normalizeFileName(s.fileName) === targetName) ||
-        (s.fileSize && file.size && s.fileSize === file.size && normalizeFileName(s.fileName) === targetName)
+        (s.fileName && file.name && normalizeFileName(s.fileName) === targetName && !isGenericCameraName(s.fileName)) ||
+        (s.fileSize && file.size && s.fileSize === file.size && normalizeFileName(s.fileName) === targetName && !isGenericCameraName(s.fileName))
       )
     : null;
 
@@ -423,7 +436,7 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
       }
 
       const match = matchStudentName(item.name, studentMaster);
-      if (match && match.confidence >= 0.5) {
+      if (match && match.confidence >= 0.78) {
         return {
           ...item,
           name: match.student.name,

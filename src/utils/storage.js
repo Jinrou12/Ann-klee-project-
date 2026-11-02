@@ -341,21 +341,25 @@ export function getStoredTrainingDataset() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.TRAINING_DATASET);
     const parsed = raw ? JSON.parse(raw) : INITIAL_TRAINING_SAMPLES;
-    // Auto-clean any dates in stored ground truth
-    return (Array.isArray(parsed) ? parsed : INITIAL_TRAINING_SAMPLES).map(s => {
-      if (s.groundTruth?.date) {
-        let cleanDate = String(s.groundTruth.date).trim();
-        cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
-        if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
-          const parts = cleanDate.split(/ដល់|-|\/to\//i);
-          if (parts[0] && parts[0].trim().length >= 6) {
-            cleanDate = parts[0].trim();
+    const isGenericCamera = (fn) => /^(image|img|photo|camera|capture|file|pic|snapshot)[\w-]*\.(jpe?g|png|webp|heic)$/i.test(String(fn || '').trim());
+
+    // Auto-clean any dates in stored ground truth and purge generic camera filenames
+    return (Array.isArray(parsed) ? parsed : INITIAL_TRAINING_SAMPLES)
+      .filter(s => !isGenericCamera(s.fileName))
+      .map(s => {
+        if (s.groundTruth?.date) {
+          let cleanDate = String(s.groundTruth.date).trim();
+          cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
+          if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
+            const parts = cleanDate.split(/ដល់|-|\/to\//i);
+            if (parts[0] && parts[0].trim().length >= 6) {
+              cleanDate = parts[0].trim();
+            }
           }
+          s.groundTruth.date = cleanDate;
         }
-        s.groundTruth.date = cleanDate;
-      }
-      return s;
-    });
+        return s;
+      });
   } catch (e) {
     console.error('Failed to parse training dataset:', e);
     return INITIAL_TRAINING_SAMPLES;
@@ -365,8 +369,9 @@ export function getStoredTrainingDataset() {
 export function saveTrainingSample(sample) {
   try {
     // Sanitize groundTruth date before saving
-    if (sample.groundTruth?.date) {
-      let cleanDate = String(sample.groundTruth.date).trim();
+    let sampleToSave = { ...sample };
+    if (sampleToSave.groundTruth?.date) {
+      let cleanDate = String(sampleToSave.groundTruth.date).trim();
       cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
       if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
         const parts = cleanDate.split(/ដល់|-|\/to\//i);
@@ -374,12 +379,18 @@ export function saveTrainingSample(sample) {
           cleanDate = parts[0].trim();
         }
       }
-      sample.groundTruth.date = cleanDate;
+      sampleToSave.groundTruth.date = cleanDate;
+    }
+
+    // Assign timestamped unique name to generic camera uploads to prevent collisions
+    const rawName = String(sampleToSave.fileName || '').toLowerCase().trim();
+    if (/^(image|photo|camera|capture|file|pic|snapshot)[\w-]*\.(jpe?g|png|webp|heic)$/i.test(rawName)) {
+      sampleToSave.fileName = `camera_${Date.now()}_${rawName}`;
     }
 
     const current = getStoredTrainingDataset();
     // Overwrite if same id or same fileName exists to maintain updated ground truth
-    const updated = [sample, ...current.filter(s => s.id !== sample.id && s.fileName !== sample.fileName)];
+    const updated = [sampleToSave, ...current.filter(s => s.id !== sampleToSave.id && s.fileName !== sampleToSave.fileName)];
     localStorage.setItem(STORAGE_KEYS.TRAINING_DATASET, JSON.stringify(updated));
 
     // Auto-sync to Supabase cloud (fire-and-forget — non-blocking)

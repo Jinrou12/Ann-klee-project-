@@ -135,15 +135,17 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER) 
   });
   if (exact) return { student: exact, confidence: 1.0, isExact: true };
 
-  // 2. Substring match
+  // 2. Substring match (Only when input contains full student name e.g. "សមណសិស្ស ណា ទិចគាង" or high overlap)
   const sub = studentList.find(s => {
     const sClean = s.name.replace(/[\s\u200B]/g, '');
-    if (sClean.includes(cleanInput) || cleanInput.includes(sClean)) return true;
-    if (s.aliases && s.aliases.some(a => {
-      const aClean = a.replace(/[\s\u200B]/g, '');
-      return aClean.includes(cleanInput) || cleanInput.includes(aClean);
-    })) return true;
-    return false;
+    const candidates = [sClean, ...(s.aliases || []).map(a => a.replace(/[\s\u200B]/g, ''))];
+    return candidates.some(candidate => {
+      // Input contains the full student name (e.g. "សមណសិស្ស ណា ទិចគាង" includes "ណាទិចគាង")
+      if (cleanInput.includes(candidate) && candidate.length >= 4) return true;
+      // Or candidate contains input, but input must cover at least 85% of student name length
+      if (candidate.includes(cleanInput) && cleanInput.length >= candidate.length * 0.85) return true;
+      return false;
+    });
   });
   if (sub) return { student: sub, confidence: 0.90, isExact: false };
 
@@ -158,7 +160,8 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER) 
       const maxLen = Math.max(cleanInput.length, sClean.length);
       const similarity = 1 - (dist / maxLen);
 
-      if (dist < minDistance && similarity > 0.5) {
+      // Only match if similarity is high (>= 75%) to avoid misidentifying distinct Khmer names
+      if (dist < minDistance && similarity >= 0.75) {
         minDistance = dist;
         bestMatch = { student: s, confidence: similarity, isExact: false };
       }
