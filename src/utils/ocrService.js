@@ -19,6 +19,85 @@ export function fileToBase64(file) {
 }
 
 /**
+ * Smart Image Compressor — Safe for Khmer Cursive Handwriting
+ *
+ * Strategy:
+ *  - Max long-edge: 1800px  (ល្អសម្រាប់ Khmer cursive — លាក់ detail ទំនញ)
+ *  - JPEG quality: 0.88     (ខ្ពស់ — preserve fine strokes)
+ *  - Only compress if image > 1800px OR file > 2.5MB
+ *  - Always return { base64, dataUrl, mimeType, wasCompressed, originalSize, compressedSize }
+ */
+export function compressImageForOCR(dataUrl, originalFileSizeBytes, mimeType = 'image/jpeg') {
+  return new Promise((resolve) => {
+    const MAX_LONG_EDGE = 1800;
+    const QUALITY = 0.88;
+    const SIZE_THRESHOLD_BYTES = 2.5 * 1024 * 1024; // 2.5MB
+
+    const img = new Image();
+    img.onload = () => {
+      const { naturalWidth: w, naturalHeight: h } = img;
+      const longEdge = Math.max(w, h);
+
+      // Skip compression if image is already small enough
+      if (longEdge <= MAX_LONG_EDGE && originalFileSizeBytes <= SIZE_THRESHOLD_BYTES) {
+        const base64 = dataUrl.split(',')[1];
+        return resolve({
+          base64,
+          dataUrl,
+          mimeType,
+          wasCompressed: false,
+          originalSize: originalFileSizeBytes,
+          compressedSize: originalFileSizeBytes,
+        });
+      }
+
+      // Scale down proportionally
+      let targetW = w;
+      let targetH = h;
+      if (longEdge > MAX_LONG_EDGE) {
+        const ratio = MAX_LONG_EDGE / longEdge;
+        targetW = Math.round(w * ratio);
+        targetH = Math.round(h * ratio);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      // Sharpen rendering for fine Khmer strokes
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+
+      // Always output JPEG for consistent compression (PNG too large for base64)
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', QUALITY);
+      const compressedBase64 = compressedDataUrl.split(',')[1];
+      const compressedSize = Math.round((compressedBase64.length * 3) / 4);
+
+      console.log(
+        `🗜️ [OCR Compress] ${Math.round(originalFileSizeBytes / 1024)}KB → ${Math.round(compressedSize / 1024)}KB` +
+        ` | ${w}×${h} → ${targetW}×${targetH} | quality=0.88`
+      );
+
+      resolve({
+        base64: compressedBase64,
+        dataUrl: compressedDataUrl,
+        mimeType: 'image/jpeg',
+        wasCompressed: true,
+        originalSize: originalFileSizeBytes,
+        compressedSize,
+      });
+    };
+    img.onerror = () => {
+      // Fallback: return original if compression fails
+      const base64 = dataUrl.split(',')[1];
+      resolve({ base64, dataUrl, mimeType, wasCompressed: false, originalSize: originalFileSizeBytes, compressedSize: originalFileSizeBytes });
+    };
+    img.src = dataUrl;
+  });
+}
+
+/**
  * Perform extraction using Gemini Vision API if API Key is available
  */
 async function callGeminiVision(base64Data, mimeType, apiKey, docTypeHint, studentMaster, isPortrait = true) {
@@ -286,7 +365,22 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     };
   }
 
-  const { base64, dataUrl } = await fileToBase64(file);
+  // Step 1: Read raw file → dataUrl
+  const { dataUrl: rawDataUrl } = await fileToBase64(file);
+
+  // Step 2: Smart-compress for OCR (safe for Khmer cursive: max 1800px, quality 0.88)
+  //         Bypasses compression if image already small — no quality loss for small files
+  const {
+    base64,
+    dataUrl,
+    mimeType: compressedMimeType,
+    wasCompressed,
+  } = await compressImageForOCR(rawDataUrl, file.size, file.type);
+
+  if (wasCompressed) {
+    console.log('🗜️ [OCR] Image compressed before Gemini API call (safe for Khmer cursive)');
+  }
+
   const dimensions = await getImageDimensions(dataUrl);
   // Vertical / Portrait documents (height >= width * 1.05) are almost exclusively A4 leave slips
   const isPortrait = dimensions.height >= dimensions.width * 1.05;
@@ -303,7 +397,7 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     processingMode = 'missing_api_key';
   } else {
     try {
-      extractionResult = await callGeminiVision(base64, file.type, effectiveApiKey, docTypeHint, studentMaster, isPortrait);
+      extractionResult = await callGeminiVision(base64, compressedMimeType || file.type, effectiveApiKey, docTypeHint, studentMaster, isPortrait);
       processingMode = 'gemini_cloud';
     } catch (err) {
       console.warn('Gemini Cloud OCR failed:', err);
@@ -352,7 +446,8 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     id: `scan-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
     fileName: file.name,
     fileSize: file.size,
-    previewUrl: dataUrl,
+    // Use raw (uncompressed) dataUrl for preview so image quality is sharp for user review
+    previewUrl: rawDataUrl,
     processingMode,
     timestamp: new Date().toISOString(),
     result: extractionResult

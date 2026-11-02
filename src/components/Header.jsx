@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Settings, Database, Printer, Wifi, WifiOff, UploadCloud, Sparkles } from 'lucide-react';
+import { Users, Sparkles, Database, Wifi, WifiOff } from 'lucide-react';
 
 export default function Header({
   metadata,
@@ -28,14 +28,6 @@ export default function Header({
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onImportBackup(file);
-      e.target.value = '';
-    }
-  };
 
   return (
     <header className="no-print" style={{
@@ -181,130 +173,7 @@ export default function Header({
             </span>
           </button>
 
-          {/* AI Settings Button */}
-          <button
-            onClick={onOpenSettings}
-            title={hasApiKey ? 'AI Vision Key បានភ្ជាប់រួចរាល់' : 'ការកំណត់ AI Vision Key'}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: hasApiKey ? 'rgba(22, 101, 52, 0.35)' : 'rgba(255, 255, 255, 0.12)',
-              border: `1px solid ${hasApiKey ? 'rgba(74, 222, 128, 0.4)' : 'rgba(255, 255, 255, 0.25)'}`,
-              color: '#ffffff',
-              padding: '6px 10px',
-              borderRadius: 8,
-              fontSize: 13,
-              cursor: 'pointer'
-            }}
-          >
-            <Settings size={16} />
-            <span className="hide-on-mobile">AI Key</span>
-            {hasApiKey && (
-              <span style={{
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
-                background: '#4ade80',
-                boxShadow: '0 0 6px #4ade80'
-              }} />
-            )}
-          </button>
-
-          {/* AI Training Dataset Harvester Badge */}
-          <button
-            onClick={onExportTrainingDataset}
-            title={`ទិន្នន័យបង្វឹក AI ប្រមូលបានចំនួន ${trainingCount} សន្លឹក (ចុចដើម្បីទាញយក .json)`}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: trainingCount > 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.12)',
-              border: `1px solid ${trainingCount > 0 ? 'rgba(52, 211, 153, 0.4)' : 'rgba(255, 255, 255, 0.25)'}`,
-              color: '#ffffff',
-              padding: '6px 10px',
-              borderRadius: 8,
-              fontSize: 13,
-              cursor: 'pointer'
-            }}
-          >
-            <Sparkles size={16} color={trainingCount > 0 ? '#6ee7b7' : '#ffffff'} />
-            <span className="hide-on-mobile">ទិន្នន័យបង្វឹក</span>
-            <span style={{
-              background: trainingCount > 0 ? '#059669' : 'rgba(255, 255, 255, 0.2)',
-              color: '#ffffff',
-              fontSize: 11,
-              fontWeight: 700,
-              padding: '1px 6px',
-              borderRadius: 10
-            }}>
-              {trainingCount}
-            </span>
-          </button>
-
-
-          {/* Backup / Restore Dropdown or Button */}
-          <button
-            onClick={onExportBackup}
-            title="ទាញយកទិន្នន័យបម្រុងទុក (Backup JSON)"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'rgba(255, 255, 255, 0.12)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              color: '#ffffff',
-              padding: '6px 10px',
-              borderRadius: 8,
-              fontSize: 13,
-              cursor: 'pointer'
-            }}
-          >
-            <Database size={16} />
-            <span className="hide-on-mobile">Backup</span>
-          </button>
-
-          <label
-            title="បញ្ចូលទិន្នន័យបម្រុងទុក (Restore JSON)"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'rgba(255, 255, 255, 0.12)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              color: '#ffffff',
-              padding: '6px 10px',
-              borderRadius: 8,
-              fontSize: 13,
-              cursor: 'pointer'
-            }}
-          >
-            <UploadCloud size={16} />
-            <span className="hide-on-mobile">Restore</span>
-            <input type="file" accept=".json" onChange={handleFileChange} style={{ display: 'none' }} />
-          </label>
-
-          {/* Direct Print Button */}
-          <button
-            onClick={onPrint}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              background: '#ffffff',
-              color: '#92400e',
-              border: 'none',
-              padding: '6px 14px',
-              borderRadius: 8,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
-            }}
-          >
-            <Printer size={16} />
-            <span>បោះពុម្ព</span>
-          </button>
+          {/* AI Key, Backup, Restore, Print — managed automatically in backend (hidden from UI) */}
         </div>
       </div>
     </header>

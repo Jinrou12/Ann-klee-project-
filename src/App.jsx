@@ -23,7 +23,8 @@ import {
   exportTrainingDataset,
   fetchCloudAppState,
   syncAppStateToCloud,
-  subscribeToCloudAppState
+  subscribeToCloudAppState,
+  fetchTrainingFromCloud
 } from './utils/storage';
 import { processUploadedImage } from './utils/ocrService';
 
@@ -47,6 +48,13 @@ export default function App() {
   // 1. Initial Cloud Sync on Mount & Realtime Subscription
   useEffect(() => {
     let isMounted = true;
+    // Auto-load Training Dataset from Supabase cloud on startup (silent background)
+    fetchTrainingFromCloud().then(merged => {
+      if (isMounted && merged) {
+        setTrainingCount(merged.length);
+      }
+    });
+
     fetchCloudAppState().then(cloudData => {
       if (!isMounted) return;
       if (cloudData) {

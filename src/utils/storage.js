@@ -377,10 +377,79 @@ export function saveTrainingSample(sample) {
     // Overwrite if same id or same fileName exists to maintain updated ground truth
     const updated = [sample, ...current.filter(s => s.id !== sample.id && s.fileName !== sample.fileName)];
     localStorage.setItem(STORAGE_KEYS.TRAINING_DATASET, JSON.stringify(updated));
+
+    // Auto-sync to Supabase cloud (fire-and-forget — non-blocking)
+    syncTrainingToCloud(updated).catch(err =>
+      console.warn('[Training Sync] Cloud sync failed silently:', err)
+    );
+
     return updated;
   } catch (e) {
     console.error('Failed to save training sample:', e);
     return [];
+  }
+}
+
+/**
+ * AI Training Dataset — Auto-Sync to Supabase Cloud
+ * Runs silently in background. User never needs to touch Backup/Export manually.
+ */
+export async function syncTrainingToCloud(dataset) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('training_samples')
+      .upsert({
+        id: 'current',
+        data: dataset,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+
+    if (error) {
+      console.warn('[Training Sync] Supabase error:', error.message);
+      return false;
+    }
+    console.log(`☁️ [Training Sync] ${dataset.length} samples synced to cloud.`);
+    return true;
+  } catch (err) {
+    console.warn('[Training Sync] Failed:', err);
+    return false;
+  }
+}
+
+/**
+ * AI Training Dataset — Auto-Load from Supabase on App Start
+ * Merges cloud data with local, cloud wins if newer.
+ */
+export async function fetchTrainingFromCloud() {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('training_samples')
+      .select('data, updated_at')
+      .eq('id', 'current')
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[Training Sync] Fetch error:', error.message);
+      return null;
+    }
+    if (data?.data && Array.isArray(data.data)) {
+      // Merge: cloud samples take priority, then fill in any local-only samples
+      const local = getStoredTrainingDataset();
+      const cloudIds = new Set(data.data.map(s => s.id));
+      const localOnly = local.filter(s => !cloudIds.has(s.id));
+      const merged = [...data.data, ...localOnly];
+
+      // Persist merged result back to localStorage
+      localStorage.setItem(STORAGE_KEYS.TRAINING_DATASET, JSON.stringify(merged));
+      console.log(`☁️ [Training Sync] Loaded ${data.data.length} samples from cloud, merged ${localOnly.length} local-only.`);
+      return merged;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[Training Sync] Fetch failed:', err);
+    return null;
   }
 }
 
