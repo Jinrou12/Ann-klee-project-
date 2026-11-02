@@ -32,23 +32,23 @@ export default function OfficialLeaveDocument({
       }}>
         {/* Left: Ministry & School (No logo in PDF 2) */}
         <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 12 }}>
+          <div className="font-moul" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
             {metadata.ministry}
           </div>
-          <div className="font-moul" style={{ fontSize: 12 }}>
+          <div className="font-moul" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
             {metadata.school}
           </div>
-          <div className="font-moul" style={{ fontSize: 12 }}>
+          <div className="font-moul" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
             {metadata.location}
           </div>
         </div>
 
         {/* Right: National Kingdom & Motto */}
         <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 13.5 }}>
+          <div className="font-moul" style={{ fontSize: 13.5, whiteSpace: 'nowrap' }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
-          <div className="font-moul" style={{ fontSize: 13 }}>
+          <div className="font-moul" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
             ជាតិ សាសនា ព្រះមហាក្សត្រ
           </div>
           <KhmerRoyalDivider />
@@ -57,10 +57,10 @@ export default function OfficialLeaveDocument({
 
       {/* Report Title */}
       <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 20 }}>
-        <div className="font-moul" style={{ fontSize: 15, marginBottom: 4 }}>
+        <div className="font-moul" style={{ fontSize: 15, marginBottom: 4, whiteSpace: 'nowrap' }}>
           របាយការណ៍ ស្ដីពី
         </div>
-        <div className="font-moul" style={{ fontSize: 14.5 }}>
+        <div className="font-moul" style={{ fontSize: 14.5, whiteSpace: 'nowrap' }}>
           ចំនួនសមណសិស្សសុំច្បាប់ ក្នុងខែ{monthName} ឆ្នាំ{yearDisplay}
         </div>
       </div>
@@ -281,12 +281,12 @@ export default function OfficialLeaveDocument({
       }}>
         {/* Left Signature: School Director */}
         <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
-          <div className="font-moul" style={{ fontSize: 13, marginBottom: 4 }}>
+          <div className="font-moul" style={{ fontSize: 13, marginBottom: 4, whiteSpace: 'nowrap' }}>
             បានឃើញ និង..................
           </div>
-          <div>ថ្ងៃ.......................ខែ..................ឆ្នាំមមីអដ្ឋស័ក ព.ស ២៥៧០</div>
-          <div>ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ២០២៦</div>
-          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ.......................ខែ..................ឆ្នាំមមីអដ្ឋស័ក ព.ស ២៥៧០</div>
+          <div style={{ whiteSpace: 'nowrap' }}>ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ២០២៦</div>
+          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
               : metadata.directorTitle}
@@ -295,9 +295,9 @@ export default function OfficialLeaveDocument({
 
         {/* Right Signature: Reporter */}
         <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
-          <div>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមី អដ្ឋស័ក ព.ស ២៥៧០</div>
-          <div>ត្រូវនឹងថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
-          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមី អដ្ឋស័ក ព.ស ២៥៧០</div>
+          <div style={{ whiteSpace: 'nowrap' }}>ត្រូវនឹងថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
+          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>
         </div>

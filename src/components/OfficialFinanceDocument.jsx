@@ -42,23 +42,23 @@ export default function OfficialFinanceDocument({
             alt="Logo"
             style={{ width: 55, height: 55, objectFit: 'contain', marginBottom: 4 }}
           />
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center' }}>
+          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.ministry}
           </div>
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center' }}>
+          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.school}
           </div>
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center' }}>
+          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.location}
           </div>
         </div>
 
         {/* Right: National Kingdom & Motto */}
         <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 13.5 }}>
+          <div className="font-moul" style={{ fontSize: 13.5, whiteSpace: 'nowrap' }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
-          <div className="font-moul" style={{ fontSize: 13 }}>
+          <div className="font-moul" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
             ជាតិ សាសនា ព្រះមហាក្សត្រ
           </div>
           <KhmerRoyalDivider />
@@ -67,13 +67,13 @@ export default function OfficialFinanceDocument({
 
       {/* Report Title */}
       <div style={{ textAlign: 'center', marginTop: 10, marginBottom: 16 }}>
-        <div className="font-moul" style={{ fontSize: 15, marginBottom: 4 }}>
+        <div className="font-moul" style={{ fontSize: 15, marginBottom: 4, whiteSpace: 'nowrap' }}>
           របាយការណ៍
         </div>
-        <div className="font-moul" style={{ fontSize: 13.5, marginBottom: 4 }}>
+        <div className="font-moul" style={{ fontSize: 13.5, marginBottom: 4, whiteSpace: 'nowrap' }}>
           ស្ដីពី
         </div>
-        <div className="font-moul" style={{ fontSize: 14.5 }}>
+        <div className="font-moul" style={{ fontSize: 14.5, whiteSpace: 'nowrap' }}>
           តារាងចំណូលចំណាយប្រចាំខែ{monthName} ឆ្នាំ{yearDisplay}
         </div>
       </div>
@@ -409,12 +409,12 @@ export default function OfficialFinanceDocument({
       }}>
         {/* Left Signature: School Director */}
         <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
-          <div className="font-moul" style={{ fontSize: 13, marginBottom: 4 }}>
+          <div className="font-moul" style={{ fontSize: 13, marginBottom: 4, whiteSpace: 'nowrap' }}>
             បានឃើញ និង……………..
           </div>
-          <div>ថ្ងៃ………..…….ខែ………..….ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០</div>
-          <div>ថ្ងៃទី………. ខែ……….. ឆ្នាំ២០២៦</div>
-          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ………..…….ខែ………..….ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០</div>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃទី………. ខែ……….. ឆ្នាំ២០២៦</div>
+          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
               : metadata.directorTitle}
@@ -423,9 +423,9 @@ export default function OfficialFinanceDocument({
 
         {/* Right Signature: Reporter */}
         <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
-          <div>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមីអដ្ឋស័ក ព.ស.២៥៧០</div>
-          <div>{metadata.wat || 'វត្តខេមវ័ន'} ថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
-          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមីអដ្ឋស័ក ព.ស.២៥៧០</div>
+          <div style={{ whiteSpace: 'nowrap' }}>{metadata.wat || 'វត្តខេមវ័ន'} ថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
+          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>
         </div>

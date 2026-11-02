@@ -92,11 +92,17 @@ input:focus, select:focus, textarea:focus {
 .font-moul {
   font-family: var(--font-moul);
   font-weight: 400;
-  letter-spacing: 0.2px;
+  letter-spacing: 0 !important;
 }
 
 .font-content {
   font-family: var(--font-content);
+  letter-spacing: 0 !important;
+}
+
+.printable-document,
+.printable-document * {
+  letter-spacing: 0 !important;
 }
 
 /* Authentic A4 Paper Sheet Simulation (Screen Display) */
@@ -166,6 +172,25 @@ input:focus, select:focus, textarea:focus {
   }
 
   .no-print {
+    display: none !important;
+  }
+
+  /* Support Mobile Print: When printing from mobile view, show offscreen container */
+  .offscreen-print-container {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  .mobile-leave-container > *:not(.offscreen-print-container),
+  .mobile-finance-container > *:not(.offscreen-print-container),
+  .mobile-bottom-nav,
+  header {
     display: none !important;
   }
 

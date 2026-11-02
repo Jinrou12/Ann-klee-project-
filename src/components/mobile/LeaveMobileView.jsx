@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, Eye, 
-  Calendar, Clock, AlertCircle, UserCheck, Search, Download, Loader2 
+  Calendar, Clock, AlertCircle, UserCheck, Search, Download, Loader2, Printer 
 } from 'lucide-react';
 import { toKhmerDigits } from '../../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../../utils/excelExporter';
@@ -235,6 +235,30 @@ export default function LeaveMobileView({
               <span>{isExportingPdf ? 'កំពុងទាញ...' : 'Download PDF'}</span>
             </button>
           </div>
+
+          <button
+            onClick={onPrint || (() => window.print())}
+            style={{
+              background: '#0f172a',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '9px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              width: '100%',
+              boxShadow: '0 2px 4px rgba(15, 23, 42, 0.15)'
+            }}
+            title="បើកផ្ទាំងបោះពុម្ពជា PDF (Print Preview)"
+          >
+            <Printer size={15} />
+            <span>បោះពុម្ពជា PDF (Print Preview)</span>
+          </button>
         </div>
 
         {/* Toggle to Full A4 Desktop Mode */}
@@ -861,8 +885,9 @@ export default function LeaveMobileView({
         </div>
       )}
 
-      {/* Offscreen Official A4 Document for Mobile PDF Export */}
+      {/* Offscreen Official A4 Document for Mobile PDF Export & Native Print */}
       <div 
+        className="offscreen-print-container"
         style={{ 
           position: 'fixed', 
           top: 0, 
