@@ -4,6 +4,7 @@ import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber } from '../utils/k
 import { exportFinanceToExcel } from '../utils/excelExporter';
 import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
+import A4SheetScaler from './A4SheetScaler';
 
 export default function FinanceTableView({
   financeData,
@@ -233,7 +234,7 @@ export default function FinanceTableView({
       </div>
 
       {/* Authentic A4 Paper Sheet (100% Exact PDF 1 Replica) */}
-      <div className="paper-sheet-wrapper">
+      <A4SheetScaler>
         <div id="printable-finance-document" className="printable-document">
           {/* Header Block */}
         <div style={{
@@ -600,7 +601,7 @@ export default function FinanceTableView({
           </div>
         </div>
       </div>
-    </div>
+    </A4SheetScaler>
   </div>
   );
 }

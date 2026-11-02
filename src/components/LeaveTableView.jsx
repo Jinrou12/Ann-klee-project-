@@ -4,6 +4,7 @@ import { toKhmerDigits } from '../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../utils/excelExporter';
 import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
+import A4SheetScaler from './A4SheetScaler';
 
 export default function LeaveTableView({
   records,
@@ -172,7 +173,7 @@ export default function LeaveTableView({
       </div>
 
       {/* Authentic A4 Paper Sheet (100% Exact PDF 2 replica) */}
-      <div className="paper-sheet-wrapper">
+      <A4SheetScaler>
         <div id="printable-leave-document" className="printable-document">
           {/* Header Block */}
         <div style={{
@@ -448,7 +449,7 @@ export default function LeaveTableView({
           </div>
         </div>
       </div>
-    </div>
+    </A4SheetScaler>
   </div>
   );
 }

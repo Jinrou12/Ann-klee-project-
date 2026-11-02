@@ -112,8 +112,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 .printable-document {
-  width: 210mm;
-  min-height: 297mm;
+  width: 794px;
+  min-height: 1123px;
   background: #ffffff;
   padding: 25mm 16mm 20mm 16mm;
   box-shadow: 0 14px 38px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -125,22 +125,6 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-}
-
-@media (max-width: 820px) {
-  .paper-sheet-wrapper {
-    background: transparent;
-    padding: 0;
-    box-shadow: none;
-    overflow-x: auto;
-  }
-  .printable-document:not(.pdf-rendering-active) {
-    width: 100%;
-    min-width: 680px;
-    min-height: auto;
-    padding: 14px 12px;
-    box-shadow: var(--shadow-sm);
-  }
 }
 
 /* Temporary PDF Rendering Guard */
@@ -159,6 +143,20 @@ input:focus, select:focus, textarea:focus {
 
 /* Official Print Layout (Rule 4: Exact PDF Replica) */
 @media print {
+  .a4-scaler-root {
+    width: 100% !important;
+  }
+  .a4-scaler-root > div {
+    background: transparent !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .a4-scaler-root > div > div {
+    transform: none !important;
+    width: 100% !important;
+  }
   body {
     background: #ffffff !important;
     color: #000000 !important;
