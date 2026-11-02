@@ -66,7 +66,7 @@ export const INITIAL_METADATA = {
   school: 'ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង',
   location: 'ក្រុងកំពង់ចាម',
   wat: 'វត្តខេមវ័ន',
-  directorTitle: 'ព្រះនាយក',
+  directorTitle: 'នាយកសាលា',
   reporterTitle: 'អ្នកធ្វើរបាយការណ៍',
   currentMonth: '2026-07',
   lunarDateHeader: 'ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមីអដ្ឋស័ក ព.ស.២៥៧០',
@@ -93,6 +93,10 @@ export function loadAppState() {
     // Automatically migrate school name if it was using the older version
     if (!mergedMeta.school || mergedMeta.school.includes('ហ៊ុន សែន')) {
       mergedMeta.school = 'ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង';
+    }
+    // Automatically migrate director title to match official PDF 2 standard
+    if (!mergedMeta.directorTitle || mergedMeta.directorTitle === 'ព្រះនាយក') {
+      mergedMeta.directorTitle = 'នាយកសាលា';
     }
 
     // Normalize any cached quantities in finance to avoid line-breaks

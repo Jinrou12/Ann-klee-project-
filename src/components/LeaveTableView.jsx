@@ -411,7 +411,7 @@ export default function LeaveTableView({
 
         {/* Summary Count Row */}
         <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>
-          ចំនួនសមណសិស្សសុំច្បាប់ក្នុងខែ{monthName} សរុប {useKhmerNumerals ? toKhmerDigits(records.length) : records.length} អង្គ
+          ចំនួនសមណសិស្សសុំច្បាប់ក្នុងខែ{monthName} សរុប {useKhmerNumerals ? toKhmerDigits(records.length) : records.length}អង្គ
         </div>
 
         {/* Official Signatures & Dates Block (Exact match with PDF 2) */}
@@ -420,6 +420,7 @@ export default function LeaveTableView({
           justifyContent: 'space-between',
           alignItems: 'flex-start',
           marginTop: 24,
+          marginBottom: 30,
           fontSize: 13,
           lineHeight: 1.6
         }}>
@@ -430,7 +431,7 @@ export default function LeaveTableView({
             </div>
             <div>ថ្ងៃ.......................ខែ..................ឆ្នាំមមីអដ្ឋស័ក ព.ស ២៥៧០</div>
             <div>ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ២០២៦</div>
-            <div className="font-moul" style={{ fontSize: 13, marginTop: 8 }}>
+            <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
               {metadata.directorTitle || 'នាយកសាលា'}
             </div>
           </div>
@@ -439,7 +440,7 @@ export default function LeaveTableView({
           <div style={{ textAlign: 'center', minWidth: 280 }}>
             <div>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមី អដ្ឋស័ក ព.ស ២៥៧០</div>
             <div>ត្រូវនឹងថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
-            <div className="font-moul" style={{ fontSize: 13, marginTop: 8 }}>
+            <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45 }}>
               {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
             </div>
           </div>

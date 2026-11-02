@@ -114,7 +114,7 @@ input:focus, select:focus, textarea:focus {
   width: 210mm;
   min-height: 297mm;
   background: #ffffff;
-  padding: 16mm 16mm 16mm 16mm;
+  padding: 25mm 16mm 20mm 16mm;
   box-shadow: 0 14px 38px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05);
   border-radius: 2px;
   color: #000000;

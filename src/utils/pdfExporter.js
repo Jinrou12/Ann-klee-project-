@@ -14,8 +14,15 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     throw new Error('រកមិនឃើញផ្ទាំងឯកសារសម្រាប់ទាញយកជា PDF ឡើយ');
   }
 
+  // 1. Temporarily hide all .no-print elements (e.g. trash cans, action buttons) during PDF generation
+  const noPrintElements = Array.from(element.querySelectorAll('.no-print'));
+  const originalDisplays = noPrintElements.map(el => el.style.display);
+  noPrintElements.forEach(el => {
+    el.style.display = 'none';
+  });
+
   const opt = {
-    margin: [0, 0, 0, 0], // The document already contains authentic 16mm margins
+    margin: [0, 0, 0, 0], // The document already contains authentic margins
     filename: filename.endsWith('.pdf') ? filename : `${filename}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: {
@@ -40,5 +47,10 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
   } catch (err) {
     console.error('Error generating PDF:', err);
     throw err;
+  } finally {
+    // 2. Always restore the .no-print elements back onto the live screen
+    noPrintElements.forEach((el, idx) => {
+      el.style.display = originalDisplays[idx] !== undefined ? originalDisplays[idx] : '';
+    });
   }
 }
