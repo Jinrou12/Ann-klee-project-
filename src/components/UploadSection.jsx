@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Upload, Trash2, CheckCircle2, Sparkles, RefreshCw, ZoomIn, X, RotateCw, ArrowRight } from 'lucide-react';
+import { Camera, Upload, Trash2, CheckCircle2, Sparkles, RefreshCw, ZoomIn, X, RotateCw, ArrowRight, AlertTriangle } from 'lucide-react';
 import { matchStudentName } from '../utils/studentMaster';
 import ReviewModal from './ReviewModal';
 
@@ -41,13 +41,14 @@ export default function UploadSection({
           
           // If vertical portrait (A4 document) and classified as finance, auto-correct to leave
           if (isPortrait && currentType === 'finance') {
+            const existingLeave = item.processedData?.leaveItems?.[0] || {};
             const defaultLeave = {
-              name: 'ពឿន គង់',
-              grade: '៣',
-              reason: 'ការងារផ្ទាល់ខ្លួន',
-              duration: '១ថ្ងៃ',
-              date: new Date().toLocaleDateString('en-GB'),
-              note: ''
+              name: existingLeave.name || '',
+              grade: existingLeave.grade || '៣',
+              reason: existingLeave.reason || '',
+              duration: existingLeave.duration || '១ថ្ងៃ',
+              date: existingLeave.date || new Date().toLocaleDateString('en-GB'),
+              note: existingLeave.note || ''
             };
             onUpdateQueueItem(item.id, {
               processedData: {
@@ -497,30 +498,48 @@ export default function UploadSection({
                         </button>
                       </div>
 
-                      {/* AI Cloud vs Memory vs Pending Source Indicator */}
-                      <div style={{
-                        fontSize: 11,
-                        padding: '4px 10px',
-                        borderRadius: 20,
-                        background: isPending ? '#eff6ff' : (isCloudScan ? '#ecfdf5' : '#fffbeb'),
-                        color: isPending ? '#1d4ed8' : (isCloudScan ? '#065f46' : '#b45309'),
-                        border: `1px solid ${isPending ? '#bfdbfe' : (isCloudScan ? '#a7f3d0' : '#fde68a')}`,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        fontWeight: 600
-                      }}>
-                        <Sparkles size={13} color={isPending ? '#2563eb' : (isCloudScan ? '#059669' : '#d97706')} />
-                        <span>
-                          {isPending
-                            ? '⏳ កំពុងវិភាគដោយ AI Vision...'
-                            : isLearnedMemory
-                              ? '✨ ស្កេនដោយ AI Vision (ចងចាំទិន្នន័យពិត ១០០%)'
-                              : '✨ ស្កេនដោយ Gemini Cloud AI'}
-                          {' • '}
-                          <strong>{isLeave ? 'ក្រដាសច្បាប់ (A4 បញ្ឈរ)' : 'ប៉ុងចំណាយ/ចំណូល'}</strong>
-                        </span>
-                      </div>
+                      {/* AI Cloud vs Memory vs Offline Error Indicator */}
+                      {resultData.isOfflineNoScan ? (
+                        <div style={{
+                          fontSize: 11,
+                          padding: '4px 10px',
+                          borderRadius: 20,
+                          background: '#fee2e2',
+                          color: '#b91c1c',
+                          border: '1px solid #fecaca',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          fontWeight: 600
+                        }}>
+                          <AlertTriangle size={13} color="#dc2626" />
+                          <span>{resultData.scanError || 'មិនទាន់បានស្កេន (Offline)'}</span>
+                        </div>
+                      ) : (
+                        <div style={{
+                          fontSize: 11,
+                          padding: '4px 10px',
+                          borderRadius: 20,
+                          background: isPending ? '#eff6ff' : (isCloudScan ? '#ecfdf5' : '#fffbeb'),
+                          color: isPending ? '#1d4ed8' : (isCloudScan ? '#065f46' : '#b45309'),
+                          border: `1px solid ${isPending ? '#bfdbfe' : (isCloudScan ? '#a7f3d0' : '#fde68a')}`,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          fontWeight: 600
+                        }}>
+                          <Sparkles size={13} color={isPending ? '#2563eb' : (isCloudScan ? '#059669' : '#d97706')} />
+                          <span>
+                            {isPending
+                              ? '⏳ កំពុងវិភាគដោយ AI Vision...'
+                              : isLearnedMemory
+                                ? '✨ ស្កេនដោយ AI Vision (ចងចាំទិន្នន័យពិត ១០០%)'
+                                : '✨ ស្កេនដោយ Gemini Cloud AI'}
+                            {' • '}
+                            <strong>{isLeave ? 'ក្រដាសច្បាប់ (A4 បញ្ឈរ)' : 'ប៉ុងចំណាយ/ចំណូល'}</strong>
+                          </span>
+                        </div>
+                      )}
 
                       {/* Student Auto-match badge */}
                       {isLeave && studentMatch && (

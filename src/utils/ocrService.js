@@ -206,67 +206,36 @@ export function getImageDimensions(dataUrl) {
 }
 
 /**
- * Intelligent client-side fallback extractor
- * Simulates / extracts data when offline or without API key
+ * Honest Blank Item Generator when Offline or without API key (No fake/dummy data!)
  */
-function simulateOfflineExtraction(file, docTypeHint, studentMaster, isPortrait = true) {
-  // If user selected leave hint or portrait format (A4 vertical document) or file name indicates leave
-  const isLeave = docTypeHint === 'leave' || 
-    (docTypeHint === 'auto' && isPortrait) || 
-    file.name.toLowerCase().includes('leave') || 
-    file.name.toLowerCase().includes('chbap');
-  
-  if (isLeave) {
-    // Pick realistic student from school roster
-    const sampleNames = ['ណា ទិចគាង', 'រស់ ណារ៉ាន់', 'បាន សម្បត្តិ', 'សេងលី ទីសា'];
-    const matchedMaster = studentMaster.find(s => sampleNames.includes(s.name)) || studentMaster[0];
-    const studentName = matchedMaster ? matchedMaster.name : 'ណា ទិចគាង';
-    const studentGrade = matchedMaster ? matchedMaster.grade : '៣';
-    const reasons = ['ក្ដៅខ្លួន ឈឺចុកពោះ', 'ការងារផ្ទាល់ខ្លួន', 'អាពាធ គ្រុនក្ដៅ', 'ទៅបុណ្យ ខួប', 'អាពាធ ឈឺក្បាល', 'អាពាធ ទៅពេទ្យ'];
-    const randomReason = reasons[Math.floor(Math.random() * reasons.length)];
-
-    return {
-      detectedType: 'leave',
-      confidence: 0.94,
-      leaveItems: [
-        {
-          name: studentName,
-          grade: studentGrade,
-          reason: randomReason,
-          duration: '១ថ្ងៃ',
-          date: new Date().toLocaleDateString('en-GB'),
-          note: ''
-        }
-      ],
-      financeItems: []
-    };
-  } else {
-    // Financial receipt
-    const sampleItems = [
-      { desc: 'សាំងក្រអូប -802', qty: '3 លីត្រ', unitPrice: 8084, total: 24253 },
-      { desc: 'ក្តារឈើលើខែស TY(1.22MX2.22M)', qty: '1 សន្លឹក', unitPrice: 42848, total: 42848 },
-      { desc: 'ឈ្វៀកនីតូអាឈលែ -T8000-1L', qty: '1 កំប៉ុង', unitPrice: 22232, total: 22232 },
-      { desc: 'វីសរាយ', qty: '0.5 គីឡូក្រាម', unitPrice: 20211, total: 10105 },
-      { desc: 'សេវាថ្លៃដឹកដល់ផ្ទះ', qty: '1 ជើង', unitPrice: 10105, total: 10105 }
-    ];
-    const picked = sampleItems[Math.floor(Math.random() * sampleItems.length)];
-
-    return {
-      detectedType: 'finance',
-      confidence: 0.95,
-      leaveItems: [],
-      financeItems: [
-        {
-          category: 'expense',
-          desc: picked.desc,
-          qty: picked.qty,
-          unitPrice: picked.unitPrice,
-          total: picked.total,
-          note: ''
-        }
-      ]
-    };
-  }
+function createManualBlankItem(file, docTypeHint, isPortrait = true, errorMessage = '') {
+  const isLeave = docTypeHint === 'leave' || (docTypeHint === 'auto' && isPortrait);
+  return {
+    detectedType: isLeave ? 'leave' : 'finance',
+    confidence: 0,
+    isOfflineNoScan: true,
+    scanError: errorMessage || 'មិនទាន់បានស្កេន (ត្រូវការអ៊ីនធឺណិត និង AI Key)',
+    leaveItems: isLeave ? [
+      {
+        name: '',
+        grade: '៣',
+        reason: '',
+        duration: '១ថ្ងៃ',
+        date: new Date().toLocaleDateString('en-GB'),
+        note: ''
+      }
+    ] : [],
+    financeItems: !isLeave ? [
+      {
+        category: 'expense',
+        desc: '',
+        qty: '1',
+        unitPrice: 0,
+        total: 0,
+        note: ''
+      }
+    ] : []
+  };
 }
 
 /**
@@ -328,21 +297,24 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
   const isPortrait = dimensions.height >= dimensions.width * 1.05;
 
   let extractionResult;
-  let processingMode = 'offline_simulated';
+  let processingMode = 'gemini_cloud';
   const effectiveApiKey = apiKey || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0];
 
-  if (effectiveApiKey && navigator.onLine) {
+  if (!navigator.onLine) {
+    extractionResult = createManualBlankItem(file, docTypeHint, isPortrait, 'គ្មានសេវាអ៊ីនធឺណិត (Offline) - សូមភ្ជាប់អ៊ីនធឺណិតដើម្បីឱ្យ AI ស្កេន');
+    processingMode = 'offline_no_internet';
+  } else if (!effectiveApiKey) {
+    extractionResult = createManualBlankItem(file, docTypeHint, isPortrait, 'មិនទាន់មាន AI Key - សូមបញ្ចូល AI Key ដើម្បីដំណើរការស្កេន');
+    processingMode = 'missing_api_key';
+  } else {
     try {
       extractionResult = await callGeminiVision(base64, file.type, effectiveApiKey, docTypeHint, studentMaster, isPortrait);
       processingMode = 'gemini_cloud';
     } catch (err) {
-      console.warn('Gemini Cloud OCR failed, falling back to smart client-side logic:', err);
-      extractionResult = simulateOfflineExtraction(file, docTypeHint, studentMaster, isPortrait);
-      processingMode = 'offline_fallback_after_error';
+      console.warn('Gemini Cloud OCR failed:', err);
+      extractionResult = createManualBlankItem(file, docTypeHint, isPortrait, 'មិនអាចស្កេនបានដោយសារបញ្ហាបណ្ដាញ៖ ' + (err.message || 'Error'));
+      processingMode = 'offline_error';
     }
-  } else {
-    extractionResult = simulateOfflineExtraction(file, docTypeHint, studentMaster, isPortrait);
-    processingMode = 'offline_local';
   }
 
   // Cross-reference extracted student names and normalize dates
