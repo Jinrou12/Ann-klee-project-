@@ -858,10 +858,8 @@ export default function FinanceMobileView({
         style={{ 
           position: 'fixed', 
           top: 0, 
-          left: 0, 
+          left: -9999, 
           width: 794, 
-          zIndex: -9999, 
-          opacity: 1, 
           pointerEvents: 'none' 
         }} 
         aria-hidden="true"
