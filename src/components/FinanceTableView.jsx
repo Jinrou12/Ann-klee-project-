@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Printer, FileSpreadsheet, DollarSign, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { Plus, Trash2, Printer, FileSpreadsheet, DollarSign, ArrowDownRight, ArrowUpRight, Download, Loader2 } from 'lucide-react';
 import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber } from '../utils/khmerNumerals';
 import { exportFinanceToExcel } from '../utils/excelExporter';
+import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 
 export default function FinanceTableView({
@@ -13,6 +14,7 @@ export default function FinanceTableView({
   onPrint
 }) {
   const [editingId, setEditingId] = useState(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const [yearStr, monthStr] = monthKey.split('-');
   const monthNames = [
@@ -80,6 +82,20 @@ export default function FinanceTableView({
 
   const handleExportExcel = () => {
     exportFinanceToExcel(financeData, `${monthName} ${yearDisplay}`, metadata);
+  };
+
+  const handleDownloadPdf = async () => {
+    try {
+      setIsExportingPdf(true);
+      await exportElementToPdf(
+        '#printable-finance-document',
+        `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`
+      );
+    } catch (err) {
+      alert('មិនអាចទាញយក PDF បានទេ៖ ' + (err.message || 'Error'));
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   return (
@@ -150,7 +166,7 @@ export default function FinanceTableView({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             onClick={handleExportExcel}
             style={{
@@ -162,12 +178,38 @@ export default function FinanceTableView({
               fontWeight: 600,
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6
+              gap: 6,
+              border: 'none',
+              cursor: 'pointer'
             }}
           >
             <FileSpreadsheet size={16} />
             <span>Export Excel</span>
           </button>
+
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isExportingPdf}
+            style={{
+              background: '#b91c1c',
+              color: '#ffffff',
+              padding: '7px 14px',
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              border: 'none',
+              cursor: isExportingPdf ? 'not-allowed' : 'pointer',
+              opacity: isExportingPdf ? 0.7 : 1
+            }}
+            title="ទាញយកជាឯកសារ PDF ផ្ទាល់ចូលកុំព្យូទ័រ"
+          >
+            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+          </button>
+
           <button
             onClick={onPrint}
             style={{
@@ -179,7 +221,9 @@ export default function FinanceTableView({
               fontWeight: 600,
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6
+              gap: 6,
+              border: 'none',
+              cursor: 'pointer'
             }}
           >
             <Printer size={16} />
@@ -190,7 +234,7 @@ export default function FinanceTableView({
 
       {/* Authentic A4 Paper Sheet (100% Exact PDF 1 Replica) */}
       <div className="paper-sheet-wrapper">
-        <div className="printable-document">
+        <div id="printable-finance-document" className="printable-document">
           {/* Header Block */}
         <div style={{
           display: 'flex',

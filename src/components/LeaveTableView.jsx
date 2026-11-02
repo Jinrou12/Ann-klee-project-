@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Printer, FileSpreadsheet, Edit3 } from 'lucide-react';
+import { Plus, Trash2, Printer, FileSpreadsheet, Edit3, Download, Loader2 } from 'lucide-react';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../utils/excelExporter';
+import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 
 export default function LeaveTableView({
@@ -14,6 +15,7 @@ export default function LeaveTableView({
   onPrint
 }) {
   const [editingRowId, setEditingRowId] = useState(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Month label derivation
   const [yearStr, monthStr] = monthKey.split('-');
@@ -49,6 +51,20 @@ export default function LeaveTableView({
 
   const handleExportExcel = () => {
     exportLeaveToExcel(records, `${monthName} ${yearDisplay}`, metadata);
+  };
+
+  const handleDownloadPdf = async () => {
+    try {
+      setIsExportingPdf(true);
+      await exportElementToPdf(
+        '#printable-leave-document',
+        `របាយការណ៍សុំច្បាប់_${monthName}_${yearDisplay}`
+      );
+    } catch (err) {
+      alert('មិនអាចទាញយក PDF បានទេ៖ ' + (err.message || 'Error'));
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   return (
@@ -89,7 +105,7 @@ export default function LeaveTableView({
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button
             onClick={handleExportExcel}
             style={{
@@ -101,12 +117,38 @@ export default function LeaveTableView({
               fontWeight: 600,
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6
+              gap: 6,
+              border: 'none',
+              cursor: 'pointer'
             }}
           >
             <FileSpreadsheet size={16} />
             <span>Export Excel</span>
           </button>
+
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isExportingPdf}
+            style={{
+              background: '#b91c1c',
+              color: '#ffffff',
+              padding: '7px 14px',
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              border: 'none',
+              cursor: isExportingPdf ? 'not-allowed' : 'pointer',
+              opacity: isExportingPdf ? 0.7 : 1
+            }}
+            title="ទាញយកជាឯកសារ PDF ផ្ទាល់ចូលកុំព្យូទ័រ"
+          >
+            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+          </button>
+
           <button
             onClick={onPrint}
             style={{
@@ -118,7 +160,9 @@ export default function LeaveTableView({
               fontWeight: 600,
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6
+              gap: 6,
+              border: 'none',
+              cursor: 'pointer'
             }}
           >
             <Printer size={16} />
@@ -129,7 +173,7 @@ export default function LeaveTableView({
 
       {/* Authentic A4 Paper Sheet (100% Exact PDF 2 replica) */}
       <div className="paper-sheet-wrapper">
-        <div className="printable-document">
+        <div id="printable-leave-document" className="printable-document">
           {/* Header Block */}
         <div style={{
           display: 'flex',
