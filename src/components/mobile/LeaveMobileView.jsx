@@ -868,6 +868,8 @@ export default function LeaveMobileView({
           top: 0, 
           left: -9999, 
           width: 794, 
+          minWidth: 794, 
+          maxWidth: 794, 
           pointerEvents: 'none' 
         }} 
         aria-hidden="true"

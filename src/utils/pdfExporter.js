@@ -15,6 +15,15 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     throw new Error('រកមិនឃើញផ្ទាំងឯកសារសម្រាប់ទាញយកជា PDF ឡើយ');
   }
 
+  // Ensure all custom fonts (Moul, Kantumruy Pro, Siemreap) are 100% loaded before rendering
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Continue even if font readiness promise rejects
+    }
+  }
+
   // 1. Temporarily hide all .no-print elements (e.g. trash cans, action buttons) during PDF generation
   const noPrintElements = Array.from(element.querySelectorAll('.no-print'));
   const originalDisplays = noPrintElements.map(el => el.style.display);
@@ -45,10 +54,11 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     html2canvas: {
       scale: 2, // 2x scale guarantees high-res rendering for Khmer diacritics
       useCORS: true,
-      letterRendering: true,
+      letterRendering: false, // CRITICAL: false allows native browser Khmer ligature/vowel shaping
       logging: false,
       scrollX: 0,
-      scrollY: 0
+      scrollY: 0,
+      windowWidth: 794 // CRITICAL: Standardizes viewport to 794px desktop width across Mobile & PC
     },
     jsPDF: {
       unit: 'mm',
