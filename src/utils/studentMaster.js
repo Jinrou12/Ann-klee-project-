@@ -116,15 +116,59 @@ function levenshteinDistance(s1, s2) {
 }
 
 /**
- * Fuzzy search to match an OCR extracted student name with master list
+ * Normalize grade string to standard Khmer grade ('មត្តេយ្យ', '១', '២', '៣')
+ */
+export function normalizeStudentGrade(gradeStr) {
+  const g = String(gradeStr || '').trim();
+  if (!g) return '';
+  if (g.includes('មត្តេយ្យ') || g.includes('មតេយ្យ') || g.toLowerCase().includes('k')) return 'មត្តេយ្យ';
+  if (g.includes('១') || g.includes('1') || g.includes('មួយ')) return '១';
+  if (g.includes('២') || g.includes('2') || g.includes('ពីរ')) return '២';
+  if (g.includes('៣') || g.includes('3') || g.includes('បី')) return '៣';
+  return g;
+}
+
+/**
+ * Strip printed form prefixes/titles around a handwritten student name
+ */
+export function cleanHandwrittenStudentName(rawName) {
+  return String(rawName || '')
+    .replace(/^(ខ្ញុំបាទ|នាងខ្ញុំ|សមណសិស្សឈ្មោះ|សមណសិស្ស|សាមណេរ|ភិក្ខុ|ព្រះនាម|ឈ្មោះ|នាម)[\s៖:.…]*/gi, '')
+    .replace(/[៖:.…_()[\]]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Normalize Khmer cursive pen-ink skeleton (collapsing visually similar vowels & faint pen diacritics)
+ */
+function normalizeKhmerHandwritingSkeleton(str) {
+  return String(str || '')
+    .replace(/[\s\u200B.…]/g, '')
+    .replace(/្ដ/g, '្ត')
+    .replace(/[ិីឹឺ]/g, 'ិ')
+    .replace(/[ុូួ]/g, 'ុ')
+    .replace(/[េែៃ]/g, 'េ')
+    .replace(/[ោៅ]/g, 'ោ')
+    .replace(/[់័៏៌៉៊ំះ]/g, '');
+}
+
+/**
+ * Fuzzy search to match an OCR extracted student name with master list.
+ * Supports Grade-First priority and Khmer Pen-Ink Cursive Skeleton matching.
  * @param {string} rawName 
  * @param {Array} studentList 
+ * @param {string} extractedGrade
  * @returns {object|null} Matched student object or null
  */
-export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER) {
+export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER, extractedGrade = '') {
   if (!rawName || !studentList || studentList.length === 0) return null;
-  const cleanInput = rawName.replace(/[\s\u200B]/g, '').trim();
+  const strippedName = cleanHandwrittenStudentName(rawName);
+  const cleanInput = strippedName.replace(/[\s\u200B]/g, '').trim();
   if (!cleanInput) return null;
+
+  const normGrade = normalizeStudentGrade(extractedGrade);
+  const skelInput = normalizeKhmerHandwritingSkeleton(strippedName);
 
   // 1. Exact match (ignoring whitespace and checking aliases)
   const exact = studentList.find(s => {
@@ -135,35 +179,68 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER) 
   });
   if (exact) return { student: exact, confidence: 1.0, isExact: true };
 
-  // 2. Substring match (Only when input contains full student name e.g. "សមណសិស្ស ណា ទិចគាង" or high overlap)
-  const sub = studentList.find(s => {
+  // 2. Exact Khmer Handwriting Skeleton match (when only faint pen diacritics/vowels differ, e.g. ៉/៊ or ិ/ី)
+  if (skelInput.length >= 4) {
+    const skelMatches = studentList.filter(s => {
+      const candidates = [s.name, ...(s.aliases || [])];
+      return candidates.some(c => normalizeKhmerHandwritingSkeleton(c) === skelInput);
+    });
+    if (skelMatches.length === 1) {
+      return { student: skelMatches[0], confidence: 0.95, isExact: false };
+    } else if (skelMatches.length > 1 && normGrade) {
+      const gradeFiltered = skelMatches.find(s => s.grade === normGrade);
+      if (gradeFiltered) return { student: gradeFiltered, confidence: 0.96, isExact: false };
+    }
+  }
+
+  // 3. Substring match (Only when input contains full student name e.g. "សមណសិស្ស ណា ទិចគាង" or high overlap)
+  const subMatches = studentList.filter(s => {
     const sClean = s.name.replace(/[\s\u200B]/g, '');
     const candidates = [sClean, ...(s.aliases || []).map(a => a.replace(/[\s\u200B]/g, ''))];
     return candidates.some(candidate => {
-      // Input contains the full student name (e.g. "សមណសិស្ស ណា ទិចគាង" includes "ណាទិចគាង")
       if (cleanInput.includes(candidate) && candidate.length >= 4) return true;
-      // Or candidate contains input, but input must cover at least 85% of student name length
       if (candidate.includes(cleanInput) && cleanInput.length >= candidate.length * 0.85) return true;
       return false;
     });
   });
-  if (sub) return { student: sub, confidence: 0.90, isExact: false };
+  if (subMatches.length === 1) {
+    return { student: subMatches[0], confidence: 0.90, isExact: false };
+  } else if (subMatches.length > 1 && normGrade) {
+    const gradeSub = subMatches.find(s => s.grade === normGrade) || subMatches[0];
+    return { student: gradeSub, confidence: 0.92, isExact: false };
+  }
 
-  // 3. Levenshtein fuzzy match
+  // 4. Grade-Aware + Khmer Cursive Skeleton & Levenshtein Fuzzy Match
   let bestMatch = null;
-  let minDistance = 999;
+  let bestScore = 0;
+
   for (const s of studentList) {
     const namesToTest = [s.name, ...(s.aliases || [])];
     for (const nameCandidate of namesToTest) {
       const sClean = nameCandidate.replace(/[\s\u200B]/g, '');
       const dist = levenshteinDistance(cleanInput, sClean);
       const maxLen = Math.max(cleanInput.length, sClean.length);
-      const similarity = 1 - (dist / maxLen);
+      const rawSim = maxLen > 0 ? 1 - (dist / maxLen) : 0;
 
-      // Only match if similarity is high (>= 75%) to avoid misidentifying distinct Khmer names
-      if (dist < minDistance && similarity >= 0.75) {
-        minDistance = dist;
-        bestMatch = { student: s, confidence: similarity, isExact: false };
+      const sSkel = normalizeKhmerHandwritingSkeleton(nameCandidate);
+      const skelDist = levenshteinDistance(skelInput, sSkel);
+      const maxSkelLen = Math.max(skelInput.length, sSkel.length);
+      const skelSim = maxSkelLen > 0 ? (1 - (skelDist / maxSkelLen)) * 0.96 : 0;
+
+      let combinedScore = Math.max(rawSim, skelSim);
+
+      // Apply Grade-First Bonus/Penalty if grade was extracted from the slip
+      if (normGrade) {
+        if (s.grade === normGrade) {
+          combinedScore = Math.min(0.99, combinedScore + 0.06);
+        } else if (rawSim < 0.90) {
+          combinedScore = Math.max(0, combinedScore - 0.05);
+        }
+      }
+
+      if (combinedScore > bestScore && combinedScore >= 0.74) {
+        bestScore = combinedScore;
+        bestMatch = { student: s, confidence: combinedScore, isExact: false };
       }
     }
   }

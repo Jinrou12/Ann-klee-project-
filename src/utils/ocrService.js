@@ -1,5 +1,5 @@
 // Hybrid OCR & Multimodal Vision Service for Leave Slips and Receipts
-import { matchStudentName } from './studentMaster';
+import { matchStudentName, normalizeStudentGrade, cleanHandwrittenStudentName } from './studentMaster';
 import { parseKhmerNumber, toArabicDigits } from './khmerNumerals';
 import {
   DEFAULT_GEMINI_KEYS,
@@ -247,119 +247,152 @@ function normalizeDateForComparison(dateStr) {
 }
 
 /**
- * Perform extraction using Gemini Vision API if API Key is available
+ * Auto-Crop & Contrast-Boost the Student Pen-Ink Zone on a Leave Slip (y: 15%..68%, x: 3%..97%).
+ * Cuts out the top printed national/ministry header and bottom teacher/director signatures,
+ * zooming 2x-3x into the 5 handwritten ballpoint pen ink lines (Name, Grade, Duration, Date, Reason).
  */
-async function callGeminiVision(base64Data, mimeType, apiKey, docTypeHint, studentMaster, isPortrait = true, allLeaves = {}) {
-  const studentListContext = (studentMaster && studentMaster.length > 0)
-    ? `\nOFFICIAL MONASTIC SCHOOL STUDENT ROSTER (Use for precise name & grade matching):\n` +
-      studentMaster.map(s => {
-        const aliasNote = s.aliases && s.aliases.length > 0 ? ` [Aliases: ${s.aliases.join(', ')}]` : '';
-        return `- ${s.name} (ថ្នាក់ទី ${s.grade})${aliasNote}`;
-      }).join('\n') + '\n'
-    : '';
+export function cropLeaveSlipPenInkZone(dataUrl) {
+  return new Promise((resolve) => {
+    if (!dataUrl) return resolve('');
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) return resolve('');
 
-  // AI Flywheel: Feed ALL verified ground truths from previous verifications + approved leave records
-  const trainingDataset = getStoredTrainingDataset();
-  const verifiedSamples = Array.isArray(trainingDataset) ? trainingDataset.slice(0, 35) : [];
+        // Only crop vertical/portrait full-page slips; if already a close-up landscape shot, keep full frame
+        const isFullPagePortrait = h >= w * 1.12;
+        const sx = isFullPagePortrait ? Math.round(w * 0.03) : 0;
+        const sy = isFullPagePortrait ? Math.round(h * 0.15) : 0;
+        const sw = isFullPagePortrait ? Math.round(w * 0.94) : w;
+        const sh = isFullPagePortrait ? Math.round(h * 0.53) : h;
 
-  // Also gather approved leave records from allLeaves (especially recent months like 2026-10)
-  const historicalLeaveRecords = [];
-  if (allLeaves && typeof allLeaves === 'object') {
-    Object.keys(allLeaves).sort().reverse().forEach(monthKey => {
-      const list = allLeaves[monthKey];
-      if (Array.isArray(list)) {
-        list.forEach(r => {
-          if (r && r.name && r.reason) {
-            historicalLeaveRecords.push(r);
-          }
-        });
+        const MAX_CROP_EDGE = 1600;
+        const longEdge = Math.max(sw, sh);
+        const scale = longEdge > MAX_CROP_EDGE ? MAX_CROP_EDGE / longEdge : 1;
+        const targetW = Math.max(1, Math.round(sw * scale));
+        const targetH = Math.max(1, Math.round(sh * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        // Enhance ballpoint pen ink contrast slightly against paper background
+        ctx.filter = 'contrast(1.16) saturate(1.15)';
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+
+        const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+        resolve(croppedDataUrl.split(',')[1] || '');
+      } catch (e) {
+        console.warn('Pen-ink zone crop failed:', e);
+        resolve('');
       }
-    });
-  }
+    };
+    img.onerror = () => resolve('');
+    img.src = dataUrl;
+  });
+}
 
-  // Build Learned OCR Name Corrections map (rawOcrName -> verified groundTruth.name)
-  const learnedCorrections = [];
-  verifiedSamples.forEach(s => {
-    const rawN = s.rawOcrName || s.rawOcr?.initialOcrName;
-    const trueN = s.groundTruth?.name;
-    if (rawN && trueN && rawN.replace(/\s+/g, '') !== trueN.replace(/\s+/g, '')) {
-      learnedCorrections.push(`- If handwriting looks like "${rawN}", the verified student is "${trueN}" (ថ្នាក់ទី ${s.groundTruth.grade || ''})`);
+/**
+ * Group student roster by grade ('មត្តេយ្យ', '១', '២', '៣') for Grade-First AI matching
+ */
+function buildGradeGroupedRosterPrompt(studentMaster = []) {
+  if (!Array.isArray(studentMaster) || studentMaster.length === 0) return '';
+  const groups = {
+    'មត្តេយ្យ': [],
+    '១': [],
+    '២': [],
+    '៣': [],
+    'ផ្សេងៗ': []
+  };
+  studentMaster.forEach(s => {
+    const g = normalizeStudentGrade(s.grade);
+    const aliasText = s.aliases && s.aliases.length > 0 ? ` (អាចសរសេរ: ${s.aliases.join(', ')})` : '';
+    const entry = `${s.name}${aliasText}`;
+    if (groups[g]) {
+      groups[g].push(entry);
+    } else {
+      groups['ផ្សេងៗ'].push(`${entry} [ថ្នាក់ ${s.grade}]`);
     }
   });
 
-  const fewShotContext = (verifiedSamples.length > 0 || historicalLeaveRecords.length > 0)
-    ? `\nVERIFIED MONASTIC SCHOOL GROUND-TRUTH SAMPLES (Carefully reviewed and approved by the Abbot/Principal - strictly follow these formatting patterns and match if the same slip is uploaded):\n` +
-      verifiedSamples.map((s, idx) => {
-        const gt = s.groundTruth || {};
-        if (s.docType === 'leave') {
-          return `Example ${idx + 1} [Leave Slip "${s.originalFileName || s.fileName || ''}"]: Student: "${gt.name}" (ថ្នាក់ទី ${gt.grade}), Reason: "${gt.reason}", Duration: "${gt.duration}", Date: "${gt.date}".`;
-        } else {
-          return `Example ${idx + 1} [Finance "${s.originalFileName || s.fileName || ''}"]: Desc: "${gt.desc}", Qty: "${gt.qty}", Total: ${gt.total} Riel.`;
-        }
-      }).join('\n') +
-      (historicalLeaveRecords.length > 0
-        ? `\nRECENTLY APPROVED LEAVE SLIPS AT THIS SCHOOL (If the slip's date, class, and illness/reason match one of these verified slips, ensure the exact verified student name is used):\n` +
-          historicalLeaveRecords.slice(0, 25).map((r, i) =>
-            `- Approved Slip ${i + 1}: Student="${r.name}" (ថ្នាក់ទី ${r.grade}), Reason="${r.reason}", Duration="${r.duration || '១ ថ្ងៃ'}", Date="${r.date}"`
-          ).join('\n')
-        : '') +
-      (learnedCorrections.length > 0
-        ? `\nLEARNED HANDWRITING CORRECTIONS:\n` + learnedCorrections.join('\n')
-        : '') + '\n'
-    : '';
+  let out = `\nOFFICIAL MONASTIC SCHOOL STUDENT ROSTER GROUPED BY GRADE (បញ្ជីឈ្មោះសមណសិស្សតាមថ្នាក់ទី):\n`;
+  if (groups['មត្តេយ្យ'].length > 0) {
+    out += `- ថ្នាក់មត្តេយ្យ (${groups['មត្តេយ្យ'].length} អង្គ): ${groups['មត្តេយ្យ'].join(' | ')}\n`;
+  }
+  if (groups['១'].length > 0) {
+    out += `- ថ្នាក់ទី ១ (${groups['១'].length} អង្គ): ${groups['១'].join(' | ')}\n`;
+  }
+  if (groups['២'].length > 0) {
+    out += `- ថ្នាក់ទី ២ (${groups['២'].length} អង្គ): ${groups['២'].join(' | ')}\n`;
+  }
+  if (groups['៣'].length > 0) {
+    out += `- ថ្នាក់ទី ៣ (${groups['៣'].length} អង្គ): ${groups['៣'].join(' | ')}\n`;
+  }
+  if (groups['ផ្សេងៗ'].length > 0) {
+    out += `- ថ្នាក់ផ្សេងៗ: ${groups['ផ្សេងៗ'].join(' | ')}\n`;
+  }
+  return out;
+}
+
+/**
+ * Perform extraction using Gemini Vision API if API Key is available
+ */
+async function callGeminiVision(base64Data, mimeType, apiKey, docTypeHint, studentMaster, isPortrait = true, penInkCropBase64 = '') {
+  const studentListContext = buildGradeGroupedRosterPrompt(studentMaster);
 
   const prompt = `
 You are an expert OCR and administrative assistant in Cambodia specializing in Khmer documents for monastic Buddhist primary schools (សាលាពុទ្ធិកបឋមសិក្សា).
-Examine this image carefully. The image is either a handwritten/printed Student Leave Slip (ក្រដាសសុំច្បាប់សមណសិស្ស) OR an Expense/Income Receipt (ប៉ុងលុយ/វិក្កយបត្រចំណាយ-ចំណូល).
+Examine the provided image(s) carefully. The document is either a Student Leave Slip (ក្រដាសសុំច្បាប់សមណសិស្ស) OR an Expense/Income Receipt (ប៉ុងលុយ/វិក្កយបត្រចំណាយ-ចំណូល).
+${penInkCropBase64 ? 'Note: Image 1 is the full document, and Image 2 is a zoomed-in close-up of the middle student handwritten Pen-Ink section.' : ''}
 
-Geometric Layout & Focus:
-Image Orientation: ${isPortrait ? 'Portrait vertical format' : 'Landscape or close-up cropped format'}.
-Note: Users frequently take zoomed-in close-up camera photos focusing directly on the student name, grade, or reason slip. Do NOT assume a landscape image is a store receipt!
-
-DOCUMENT CLASSIFICATION RULES:
+STEP 1 — DOCUMENT CLASSIFICATION RULES:
 1. LEAVE SLIP ("detectedType": "leave"):
-   - Contains Cambodian national motto: "ព្រះរាជាណាចក្រកម្ពុជា ជាតិ សាសនា ព្រះមហាក្សត្រ"
-   - Header: "មន្ទីរធម្មការ និងសាសនា", "សាលាពុទ្ធិកបឋមសិក្សា", "លិខិតសុំច្បាប់", "សមណសិស្ស"
-   - Body phrases: "ខ្ញុំបាទ/នាងខ្ញុំ", "ថ្នាក់ទី", "កម្មវត្ថុ", "សុំឈប់សម្រាក", "មូលហេតុ"
-   - Signatures: "នាយកសាលា", "លោកគ្រូបន្ទុកថ្នាក់", or student thumbprint.
-   - Close-up / Zoomed camera shots: If the user zoomed in on handwritten text containing student name, class, leave reason, or monk status (e.g. សាមណេរ, ភិក្ខុ, ថ្នាក់ទី, សុំច្បាប់, ឈឺ, ក្ដៅខ្លួន, អាពាធ), ALWAYS classify as "detectedType": "leave".
-   - If ANY of these are found, detectedType MUST be "leave".
-
+   - Contains Cambodian national motto, "មន្ទីរធម្មការ និងសាសនា", "សាលាពុទ្ធិកបឋមសិក្សា", "លិខិតសុំច្បាប់", "សមណសិស្ស", "ខ្ញុំបាទ/នាងខ្ញុំ", "ថ្នាក់ទី", "កម្មវត្ថុ", "សុំឈប់សម្រាក", "មូលហេតុ", or close-up handwritten student name/class/illness reason.
 2. FINANCE RECEIPT ("detectedType": "finance"):
-   - Contains itemized purchase lines, gasoline/fuel, hardware, store name, or totals in Riel (៛) or USD ($).
-${studentListContext}
-${fewShotContext}
-KHMER CURSIVE (អក្សរក្វៀស/អក្សររអិល) EXPERT EXTRACTION RULES:
-1. Student Name:
-   - The user often takes a close-up camera photo zoomed in directly on the handwritten student name.
-   - Read the exact handwritten Khmer consonants, subscripts (ជើង), and vowels written on the slip faithfully.
-   - Cross-check against the Official Monastic School Student Roster AND the Recently Approved Leave Slips above to resolve minor handwriting ambiguity or cursive ligatures.
-   - CRITICAL: NEVER fabricate or substitute a completely different student name! If the slip's date, grade, and handwritten reason match a Recently Approved Leave Slip above, verify whether the handwritten name matches that student.
-   - Example: Cursive writing resembling "ណា. តិ.ច.គា.ង", "ណា តិចគាង", "ណាត ធីណាង", or "ណា ទិចគាង" MUST be extracted as "ណា ទិចគាង" with grade "៣".
-2. Reason for Leave (មូលហេតុ):
-   - Cursive handwriting: "ក្ដៅខ្លួន...ឈឺចុកពោះ" -> Extract strictly as "ក្ដៅខ្លួន ឈឺចុកពោះ" (Fever and abdominal/stomach ache).
-   - CRITICAL: Do NOT misread "ក្ដៅខ្លួន" as "កិច្ចខ្លួន", and do NOT misread "ឈឺចុកពោះ" as "ឈឺក្បាល"!
-   - Common illness reasons: "ក្ដៅខ្លួន ឈឺចុកពោះ", "អាពាធ គ្រុនក្ដៅ", "អាពាធ គ្រិចដៃ", "អាពាធ ទៅពេទ្យ", "ឈឺក្បាល វិលមុខ", "កិច្ចការផ្ទាល់ខ្លួន".
-3. Leave Dates and Duration Rules:
-   - ACADEMIC YEAR: The current academic year for the school is strictly 2026 (២០២៦). NEVER output 2024 (២០២៤). If the date in the slip mentions 2024 or omits the year, ALWAYS normalize to 2026 (២០២៦).
-   - SINGLE START DATE ONLY: In the school official leave report, the "date" field MUST ALWAYS be a single start date: "DD/MM/2026" (e.g. "២១/១០/២០២៦" or "១៥/០៩/២០២៦").
-   - NEVER output "ដល់..." or return dates under any circumstances! The duration is already stored separately in the "duration" field (e.g. "១ ថ្ងៃ", "២ ថ្ងៃ"). The "date" field MUST ALWAYS be a single date.
-   - Duration: e.g. "១ ថ្ងៃ", "២ ថ្ងៃ", "៥ ថ្ងៃ", "១ ល្ងាច".
+   - Contains itemized store purchase lines, gasoline/fuel, hardware, store name, or totals in Riel (៛) or USD ($).
 
+STEP 2 — IF THE DOCUMENT IS A LEAVE SLIP ("detectedType": "leave"):
+CRITICAL PEN-INK ONLY FOCUS RULE (ច្បាប់មើលតែអក្សរទឹកប៊ិចសម្រាប់ក្រដាសសុំច្បាប់):
+- On a Leave Slip, 90% of the page is black printed template text (អក្សរពុម្ពខ្មៅ). You MUST IGNORE all printed template words ("ព្រះរាជាណាចក្រកម្ពុជា", "សាលាពុទ្ធិកបឋមសិក្សា", "ខ្ញុំបាទ", "សមណសិស្សឈ្មោះ", "សាមណេរ", "ភិក្ខុ", "សូមគោរពជូន") and IGNORE the teacher/principal signatures at the bottom ("លោកគ្រូបន្ទុកថ្នាក់", "នាយកសាលា").
+- FOCUS 100% ON THE HANDWRITTEN BALLPOINT PEN INK (អក្សរសរសេរដៃដោយទឹកប៊ិចពណ៌ខៀវ ឬខ្មៅ) written on the dotted fill-in lines (......) in the middle of the slip!
+- Extract ONLY these 5 Pen-Ink handwritten values in this exact order:
+  1. PEN-INK GRADE ("grade"):
+     - Look at the pen ink written after "ថ្នាក់ទី ......".
+     - Read the grade first ("មត្តេយ្យ", "១", "២", or "៣").
+  2. PEN-INK RAW HANDWRITTEN NAME ("rawHandwrittenName"):
+     - Look closely at the pen ink written after "ឈ្មោះ ........................" (use Image 2 zoomed crop if provided).
+     - Transcribe the exact Khmer consonants, subscripts (ជើងអក្សរ), and vowels written in pen ink character-by-character BEFORE looking at the student roster.
+  3. PEN-INK MATCHED STUDENT NAME ("name"):
+     - Compare your "rawHandwrittenName" against the students listed under that specific "grade" in the Official Monastic School Student Roster below.
+     - If the pen-ink letters match or closely resemble a student in that grade (accounting for cursive pen-ink handwriting), output that student's exact official name from the roster.
+     - CRITICAL: Read the actual pen ink on THIS slip! NEVER guess a random student name that does not match the written pen-ink consonants! If the pen-ink name is a new student not in the roster, output the exact pen-ink name.
+  4. PEN-INK DURATION ("duration"):
+     - Read the pen ink written after "ចំនួន ......" (e.g. "១ ថ្ងៃ", "២ ថ្ងៃ", "១ ព្រឹក", "១ ល្ងាច").
+  5. PEN-INK START DATE ("date"):
+     - Read the pen ink written on the start date line "ចាប់ពីថ្ងៃទី... ខែ... ឆ្នាំ..." and format as a single start date "DD/MM/2026" in Khmer numerals (e.g. "១៥/០៩/២០២៦").
+     - Academic year is strictly 2026 (២០២៦). NEVER include "ដល់..." or end dates.
+  6. PEN-INK REASON ("reason"):
+     - Read the pen ink written after "មូលហេតុ ........................" (e.g. "ក្ដៅខ្លួន ឈឺចុកពោះ", "អាពាធ គ្រុនក្ដៅ", "អាពាធ ឈឺក្បាល", "កិច្ចការផ្ទាល់ខ្លួន").
+${studentListContext}
 Task:
-Extract all items found in this image and output strictly valid JSON with this exact schema:
+Output strictly valid JSON with this exact schema:
 
 {
   "detectedType": "leave" | "finance",
   "confidence": 0.0 to 1.0,
   "leaveItems": [
     {
-      "name": "ឈ្មោះ/គោត្តនាម-នាម សមណសិស្ស (ឧ. ណា ទិចគាង)",
-      "grade": "ថ្នាក់ទី (ឧ. ១, ២, ៣, មត្តេយ្យ)",
-      "reason": "មូលហេតុឈប់ (ឧ. ក្ដៅខ្លួន ឈឺចុកពោះ, ការងារផ្ទាល់ខ្លួន, អាពាធ គ្រុនក្ដៅ)",
-      "duration": "ចំនួនថ្ងៃឈប់ (ឧ. ១ ថ្ងៃ, ១ល្ងាច, ២ថ្ងៃ)",
-      "date": "កាលបរិច្ឆេទចាប់ផ្ដើម (ឧ. ២១/១០/២០២៦ ឬ ១៥/០៩/២០២៦ ដាក់តែថ្ងៃមួយគត់ ហាមដាច់ខាតដាក់ពាក្យ ដល់)",
-      "note": "ផ្សេងៗ"
+      "rawHandwrittenName": "តួអក្សរទឹកប៊ិចឆៅដែលអានឃើញផ្ទាល់លើបន្ទាត់ឈ្មោះ",
+      "name": "ឈ្មោះសមណសិស្សដែលផ្គូផ្គងតាមទឹកប៊ិច និងថ្នាក់ទី",
+      "grade": "ថ្នាក់ទី (មត្តេយ្យ, ១, ២, ឬ ៣)",
+      "reason": "មូលហេតុសរសេរទឹកប៊ិច",
+      "duration": "ចំនួនថ្ងៃឈប់សរសេរទឹកប៊ិច (ឧ. ១ ថ្ងៃ, ២ ថ្ងៃ, ១ ព្រឹក, ១ ល្ងាច)",
+      "date": "កាលបរិច្ឆេទចាប់ផ្ដើមសរសេរទឹកប៊ិច (DD/MM/២០២៦ តែថ្ងៃមួយគត់ ហាមដាក់ពាក្យ ដល់)",
+      "note": ""
     }
   ],
   "financeItems": [
@@ -377,7 +410,6 @@ Extract all items found in this image and output strictly valid JSON with this e
 Instructions:
 - Return ONLY the raw JSON object without markdown or code fences (\`\`\`json).
 - If currency is written in Riel (៛) or USD ($), convert numeric value to pure numbers in unitPrice and total.
-- Retain accurate Khmer spelling for names, grades, and reasons.
 `;
 
   // Use gemini-3.8-flash as primary candidate model (active & verified)
@@ -389,6 +421,26 @@ Instructions:
 
   let lastError = null;
   const badKeys = new Set();
+
+  const messageParts = [
+    { text: prompt },
+    {
+      inlineData: {
+        mimeType: mimeType || 'image/jpeg',
+        data: base64Data
+      }
+    }
+  ];
+
+  // Attach zoomed Pen-Ink Crop as second image for Leave Slips so AI sees pen-ink handwriting 3x clearer
+  if (penInkCropBase64 && docTypeHint !== 'finance') {
+    messageParts.push({
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: penInkCropBase64
+      }
+    });
+  }
 
   for (const model of candidateModels) {
     for (const activeKey of keysToTry) {
@@ -405,15 +457,7 @@ Instructions:
           body: JSON.stringify({
             contents: [
               {
-                parts: [
-                  { text: prompt },
-                  {
-                    inlineData: {
-                      mimeType: mimeType || 'image/jpeg',
-                      data: base64Data
-                    }
-                  }
-                ]
+                parts: messageParts
               }
             ],
             generationConfig: {
@@ -601,6 +645,11 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
   // Vertical / Portrait documents (height >= width * 1.05) are almost exclusively A4 leave slips
   const isPortrait = dimensions.height >= dimensions.width * 1.05;
 
+  // Step 2B: For Leave Slips, create a zoomed, contrast-boosted Pen-Ink Zone crop (middle student fill-in lines)
+  const penInkCropBase64 = (docTypeHint !== 'finance')
+    ? await cropLeaveSlipPenInkZone(rawDataUrl)
+    : '';
+
   let extractionResult;
   let processingMode = 'gemini_cloud';
   const effectiveApiKey = apiKey || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0];
@@ -613,7 +662,15 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     processingMode = 'missing_api_key';
   } else {
     try {
-      extractionResult = await callGeminiVision(base64, compressedMimeType || file.type, effectiveApiKey, docTypeHint, studentMaster, isPortrait, allLeaves);
+      extractionResult = await callGeminiVision(
+        base64,
+        compressedMimeType || file.type,
+        effectiveApiKey,
+        docTypeHint,
+        studentMaster,
+        isPortrait,
+        penInkCropBase64
+      );
       processingMode = 'gemini_cloud';
     } catch (err) {
       console.warn('Gemini Cloud OCR failed:', err);
@@ -622,52 +679,29 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     }
   }
 
-  // Build Learned OCR Name Correction dictionaries from trainingDataset:
-  //  1) (rawOcrName + '|' + normalizedDate) -> groundTruth (handles cases where AI misread different slips as the same name on different dates)
-  //  2) rawOcrName -> groundTruth (only when rawOcrName always maps to a single student and is not a conflicting real student name)
-  const learnedNameAndDateMap = new Map();
-  const learnedNameCandidates = new Map();
-
+  // Build safe non-conflicting alias map from user corrections (only when rawOcrName is NOT another real student's official name)
+  const officialStudentNames = new Set(
+    (studentMaster || []).map(s => String(s.name || '').replace(/[\s\u200B]/g, ''))
+  );
+  const safeLearnedAliasMap = new Map();
   if (Array.isArray(trainingDataset)) {
     trainingDataset.forEach(s => {
       if (s.docType === 'finance' || !s.groundTruth?.name) return;
       const rawN = (s.rawOcrName || s.rawOcr?.initialOcrName || '').replace(/[\s\u200B]/g, '');
-      const gtDate = normalizeDateForComparison(s.groundTruth.date);
-      if (rawN) {
-        if (gtDate) {
-          learnedNameAndDateMap.set(`${rawN}|${gtDate}`, s.groundTruth);
-        }
-        if (!learnedNameCandidates.has(rawN)) {
-          learnedNameCandidates.set(rawN, []);
-        }
-        learnedNameCandidates.get(rawN).push(s.groundTruth);
+      if (rawN && !officialStudentNames.has(rawN)) {
+        safeLearnedAliasMap.set(rawN, s.groundTruth);
       }
     });
   }
 
-  // Collect all verified historical leave records (from trainingDataset + allLeaves) for post-OCR verification
-  const allHistoricalLeaves = [];
-  if (Array.isArray(trainingDataset)) {
-    trainingDataset.forEach(s => {
-      if (s.docType !== 'finance' && s.groundTruth?.name) {
-        allHistoricalLeaves.push(s.groundTruth);
-      }
-    });
-  }
-  if (allLeaves && typeof allLeaves === 'object') {
-    Object.values(allLeaves).forEach(list => {
-      if (Array.isArray(list)) {
-        list.forEach(r => {
-          if (r && r.name) allHistoricalLeaves.push(r);
-        });
-      }
-    });
-  }
-
-  // Cross-reference extracted student names and normalize dates
+  // Cross-reference extracted pen-ink student names (using Grade-First + Khmer Cursive Skeleton matching) and normalize dates
   if (extractionResult.leaveItems && extractionResult.leaveItems.length > 0) {
     extractionResult.leaveItems = extractionResult.leaveItems.map((item) => {
-      const initialOcrName = String(item.name || '').trim();
+      const rawHandwritten = cleanHandwrittenStudentName(item.rawHandwrittenName || '');
+      const cleanedPrimaryName = cleanHandwrittenStudentName(item.name || rawHandwritten || '');
+      const initialOcrName = cleanedPrimaryName || rawHandwritten;
+      const normGrade = normalizeStudentGrade(item.grade);
+
       let cleanDate = String(item.date || '').trim();
       let cleanReason = String(item.reason || '').replace(/\s+/g, ' ').trim();
       // Enforce year 2026 instead of 2024
@@ -681,105 +715,47 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
         }
       }
 
-      const cleanRawNameKey = initialOcrName.replace(/[\s\u200B]/g, '');
-      const normExtractedDate = normalizeDateForComparison(cleanDate);
-
-      // 1. Check (rawOcrName + normalizedDate) exact learned correction pair first
-      if (cleanRawNameKey && normExtractedDate && learnedNameAndDateMap.has(`${cleanRawNameKey}|${normExtractedDate}`)) {
-        const learnedGt = learnedNameAndDateMap.get(`${cleanRawNameKey}|${normExtractedDate}`);
+      // 1. Check safe non-conflicting learned spelling alias (e.g. "ឆានឆៃអ៊ង" -> "ចាន់ ឆៃអ៊ង")
+      const cleanRawKey = initialOcrName.replace(/[\s\u200B]/g, '');
+      if (cleanRawKey && safeLearnedAliasMap.has(cleanRawKey)) {
+        const learnedGt = safeLearnedAliasMap.get(cleanRawKey);
         return {
           ...item,
           name: learnedGt.name,
-          grade: learnedGt.grade || item.grade,
-          reason: learnedGt.reason || cleanReason,
-          duration: learnedGt.duration || item.duration,
-          date: learnedGt.date || cleanDate,
+          grade: normGrade || learnedGt.grade || item.grade,
+          reason: cleanReason || learnedGt.reason,
+          date: cleanDate,
           initialOcrName
         };
       }
 
-      // Special disambiguation for 15/09 vs 15/12 ("ម៉ែន សីហា" with headache "ឈឺក្បាល" vs "ម៉េង ស្រ៊ីស៊ីរ៉ា")
-      if ((normExtractedDate === '15/09' || normExtractedDate === '15/12') && (cleanReason.includes('ក្បាល') || cleanRawNameKey.includes('រិទ្ធ'))) {
+      // 2. Grade-First + Khmer Cursive Skeleton Fuzzy Match on both `name` and `rawHandwrittenName`
+      const matchPrimary = matchStudentName(cleanedPrimaryName, studentMaster, normGrade);
+      const matchRaw = rawHandwritten && rawHandwritten !== cleanedPrimaryName
+        ? matchStudentName(rawHandwritten, studentMaster, normGrade)
+        : null;
+
+      const bestMatch = (matchPrimary && matchRaw)
+        ? (matchPrimary.confidence >= matchRaw.confidence ? matchPrimary : matchRaw)
+        : (matchPrimary || matchRaw);
+
+      if (bestMatch && bestMatch.confidence >= 0.74) {
         return {
           ...item,
-          name: 'ម៉ែន សីហា',
-          grade: '២',
-          reason: 'អាពាធ ក្ដៅខ្លូន ឈឺក្បាល',
-          duration: '១ ថ្ងៃ',
-          date: '១៥/១២/២០២៦',
-          initialOcrName
-        };
-      }
-
-      // 2. Check unambiguous single-target learned name correction (e.g. "ឆានឆៃអ៊ង" -> "ចាន់ ឆៃអ៊ង")
-      if (cleanRawNameKey && learnedNameCandidates.has(cleanRawNameKey)) {
-        const cands = learnedNameCandidates.get(cleanRawNameKey);
-        const uniqueNames = Array.from(new Set(cands.map(c => c.name)));
-        if (uniqueNames.length === 1) {
-          const learnedGt = cands[0];
-          return {
-            ...item,
-            name: learnedGt.name,
-            grade: learnedGt.grade || item.grade,
-            reason: cleanReason || learnedGt.reason,
-            date: cleanDate,
-            initialOcrName
-          };
-        }
-      }
-
-      // 3. Check if this slip's normalized date matches a verified historical slip in trainingDataset / allLeaves
-      if (normExtractedDate) {
-        const dateMatches = allHistoricalLeaves.filter(h => normalizeDateForComparison(h.date) === normExtractedDate);
-        if (dateMatches.length > 0) {
-          const cleanExtractedReason = cleanReason.replace(/[\s\u200B()]/g, '');
-          // Prefer exact reason overlap if multiple slips exist on the same date (e.g. 11/09)
-          const reasonMatch = dateMatches.find(h => {
-            const hReason = String(h.reason || '').replace(/[\s\u200B()]/g, '');
-            return hReason && cleanExtractedReason && (hReason === cleanExtractedReason || hReason.includes(cleanExtractedReason) || cleanExtractedReason.includes(hReason));
-          });
-          const uniqueDateStudents = Array.from(new Set(dateMatches.map(d => d.name)));
-          if (reasonMatch) {
-            return {
-              ...item,
-              name: reasonMatch.name,
-              grade: reasonMatch.grade || item.grade,
-              reason: reasonMatch.reason || cleanReason,
-              duration: reasonMatch.duration || item.duration,
-              date: reasonMatch.date || cleanDate,
-              initialOcrName
-            };
-          } else if (uniqueDateStudents.length === 1) {
-            const hist = dateMatches[0];
-            return {
-              ...item,
-              name: hist.name,
-              grade: hist.grade || item.grade,
-              reason: hist.reason || cleanReason,
-              duration: hist.duration || item.duration,
-              date: hist.date || cleanDate,
-              initialOcrName
-            };
-          }
-        }
-      }
-
-      // 4. Fuzzy match against Student Master Roster
-      const match = matchStudentName(item.name, studentMaster);
-      if (match && match.confidence >= 0.78) {
-        return {
-          ...item,
-          name: match.student.name,
-          grade: item.grade || match.student.grade,
+          name: bestMatch.student.name,
+          grade: bestMatch.student.grade || normGrade || item.grade,
           reason: cleanReason,
           date: cleanDate,
-          matchedStudent: match.student,
-          matchConfidence: match.confidence,
+          matchedStudent: bestMatch.student,
+          matchConfidence: bestMatch.confidence,
           initialOcrName
         };
       }
+
       return {
         ...item,
+        name: cleanedPrimaryName || item.name,
+        grade: normGrade || item.grade,
         reason: cleanReason,
         date: cleanDate,
         initialOcrName
