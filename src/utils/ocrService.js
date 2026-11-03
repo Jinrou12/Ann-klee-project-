@@ -1,5 +1,10 @@
 // Hybrid OCR & Multimodal Vision Service for Leave Slips and Receipts
-import { matchStudentName, normalizeStudentGrade, cleanHandwrittenStudentName } from './studentMaster';
+import {
+  matchStudentName,
+  normalizeStudentGrade,
+  cleanHandwrittenStudentName,
+  computeKhmerNameSimilarity
+} from './studentMaster';
 import { parseKhmerNumber, toArabicDigits } from './khmerNumerals';
 import {
   DEFAULT_GEMINI_KEYS,
@@ -247,9 +252,59 @@ function normalizeDateForComparison(dateStr) {
 }
 
 /**
+ * Dedicated 3x Super-Zoom Crop on Line 1 of a Leave Slip (Student Name & Grade Line: y: 15%..40%, x: 4%..96%).
+ * Works on BOTH Portrait and Landscape photos!
+ * Isolates "ខ្ញុំបាទសមណសិស្សឈ្មោះ [NAME] អាយុ [AGE] ឆ្នាំ ជាសមណសិស្សថ្នាក់ទី [GRADE]" and upscales to >=1600px width
+ * with enhanced ballpoint pen contrast so Gemini Vision allocates 10x more visual tokens to the student's name.
+ */
+export function cropLeaveSlipNameLineZone(dataUrl) {
+  return new Promise((resolve) => {
+    if (!dataUrl) return resolve('');
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) return resolve('');
+
+        // Crop the upper-middle student identity band (Line 1 below "លិខិតសុំច្បាប់") on BOTH Portrait and Landscape photos
+        const sx = Math.round(w * 0.04);
+        const sy = Math.round(h * 0.15);
+        const sw = Math.max(1, Math.round(w * 0.92));
+        const sh = Math.max(1, Math.round(h * 0.25));
+
+        // Upscale width to at least 1600px (up to 2000px) so small cursive Khmer subscripts & vowels are magnified 2.5x-3x
+        const targetW = Math.min(2000, Math.max(1600, Math.round(sw * 2.2)));
+        const scale = targetW / sw;
+        const targetH = Math.max(1, Math.round(sh * scale));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        // Boost ballpoint pen ink contrast & saturation against paper background
+        ctx.filter = 'contrast(1.22) saturate(1.20)';
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+
+        const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        resolve(croppedDataUrl.split(',')[1] || '');
+      } catch (e) {
+        console.warn('Name-line super-zoom crop failed:', e);
+        resolve('');
+      }
+    };
+    img.onerror = () => resolve('');
+    img.src = dataUrl;
+  });
+}
+
+/**
  * Auto-Crop & Contrast-Boost the Student Pen-Ink Zone on a Leave Slip (y: 15%..68%, x: 3%..97%).
+ * Works on BOTH Portrait and Landscape photos!
  * Cuts out the top printed national/ministry header and bottom teacher/director signatures,
- * zooming 2x-3x into the 5 handwritten ballpoint pen ink lines (Name, Grade, Duration, Date, Reason).
+ * zooming into all 5 handwritten ballpoint pen ink lines (Name, Grade, Duration, Date, Reason).
  */
 export function cropLeaveSlipPenInkZone(dataUrl) {
   return new Promise((resolve) => {
@@ -261,17 +316,14 @@ export function cropLeaveSlipPenInkZone(dataUrl) {
         const h = img.naturalHeight || img.height;
         if (!w || !h) return resolve('');
 
-        // Only crop vertical/portrait full-page slips; if already a close-up landscape shot, keep full frame
-        const isFullPagePortrait = h >= w * 1.12;
-        const sx = isFullPagePortrait ? Math.round(w * 0.03) : 0;
-        const sy = isFullPagePortrait ? Math.round(h * 0.15) : 0;
-        const sw = isFullPagePortrait ? Math.round(w * 0.94) : w;
-        const sh = isFullPagePortrait ? Math.round(h * 0.53) : h;
+        // Crop middle pen-ink zone on BOTH Portrait and Landscape leave slip photos
+        const sx = Math.round(w * 0.03);
+        const sy = Math.round(h * 0.15);
+        const sw = Math.max(1, Math.round(w * 0.94));
+        const sh = Math.max(1, Math.round(h * 0.54));
 
-        const MAX_CROP_EDGE = 1600;
-        const longEdge = Math.max(sw, sh);
-        const scale = longEdge > MAX_CROP_EDGE ? MAX_CROP_EDGE / longEdge : 1;
-        const targetW = Math.max(1, Math.round(sw * scale));
+        const targetW = Math.min(1800, Math.max(1400, Math.round(sw * 1.5)));
+        const scale = targetW / sw;
         const targetH = Math.max(1, Math.round(sh * scale));
 
         const canvas = document.createElement('canvas');
@@ -341,13 +393,22 @@ function buildGradeGroupedRosterPrompt(studentMaster = []) {
 /**
  * Perform extraction using Gemini Vision API if API Key is available
  */
-async function callGeminiVision(base64Data, mimeType, apiKey, docTypeHint, studentMaster, isPortrait = true, penInkCropBase64 = '') {
+async function callGeminiVision(
+  base64Data,
+  mimeType,
+  apiKey,
+  docTypeHint,
+  studentMaster,
+  isPortrait = true,
+  penInkCropBase64 = '',
+  nameLineCropBase64 = ''
+) {
   const studentListContext = buildGradeGroupedRosterPrompt(studentMaster);
 
   const prompt = `
 You are an expert OCR and administrative assistant in Cambodia specializing in Khmer documents for monastic Buddhist primary schools (សាលាពុទ្ធិកបឋមសិក្សា).
 Examine the provided image(s) carefully. The document is either a Student Leave Slip (ក្រដាសសុំច្បាប់សមណសិស្ស) OR an Expense/Income Receipt (ប៉ុងលុយ/វិក្កយបត្រចំណាយ-ចំណូល).
-${penInkCropBase64 ? 'Note: Image 1 is the full document, and Image 2 is a zoomed-in close-up of the middle student handwritten Pen-Ink section.' : ''}
+${nameLineCropBase64 ? 'Note: Image 1 is the full document. Image 2 is a 3x SUPER-ZOOMED close-up of Line 1 (where the Student Name and Grade are written in pen ink). Image 3 is a zoomed close-up of the middle fill-in section.' : ''}
 
 STEP 1 — DOCUMENT CLASSIFICATION RULES:
 1. LEAVE SLIP ("detectedType": "leave"):
@@ -356,27 +417,40 @@ STEP 1 — DOCUMENT CLASSIFICATION RULES:
    - Contains itemized store purchase lines, gasoline/fuel, hardware, store name, or totals in Riel (៛) or USD ($).
 
 STEP 2 — IF THE DOCUMENT IS A LEAVE SLIP ("detectedType": "leave"):
-CRITICAL PEN-INK ONLY FOCUS RULE (ច្បាប់មើលតែអក្សរទឹកប៊ិចសម្រាប់ក្រដាសសុំច្បាប់):
-- On a Leave Slip, 90% of the page is black printed template text (អក្សរពុម្ពខ្មៅ). You MUST IGNORE all printed template words ("ព្រះរាជាណាចក្រកម្ពុជា", "សាលាពុទ្ធិកបឋមសិក្សា", "ខ្ញុំបាទ", "សមណសិស្សឈ្មោះ", "សាមណេរ", "ភិក្ខុ", "សូមគោរពជូន") and IGNORE the teacher/principal signatures at the bottom ("លោកគ្រូបន្ទុកថ្នាក់", "នាយកសាលា").
-- FOCUS 100% ON THE HANDWRITTEN BALLPOINT PEN INK (អក្សរសរសេរដៃដោយទឹកប៊ិចពណ៌ខៀវ ឬខ្មៅ) written on the dotted fill-in lines (......) in the middle of the slip!
-- Extract ONLY these 5 Pen-Ink handwritten values in this exact order:
+CRITICAL PEN-INK ONLY FOCUS & LINE-BY-LINE ANATOMY RULE (ច្បាប់មើលតែអក្សរទឹកប៊ិចតាមបន្ទាត់នីមួយៗ):
+- On a Leave Slip, 90% of the page is black printed template text (អក្សរពុម្ពខ្មៅ). IGNORE all printed template words and IGNORE the bottom signature ("ហត្ថលេខា/ស្នាមមេដៃសាមីខ្លួន").
+- Understand the EXACT Line-by-Line Anatomy below the heading "លិខិតសុំច្បាប់":
+  * LINE 1 (បន្ទាត់ទី ១ — កន្លែងសរសេរឈ្មោះសិស្ស និងថ្នាក់ទី):
+    Printed template: "ខ្ញុំបាទសមណសិស្សឈ្មោះ ........................ អាយុ ....... ឆ្នាំ ជាសមណសិស្សថ្នាក់ទី ....... នៃសាលា"
+    -> THE STUDENT'S NAME IS WRITTEN IN PEN INK STRICTLY ON LINE 1, in the blank space immediately after "ខ្ញុំបាទសមណសិស្សឈ្មោះ" and before "អាយុ"!
+  * LINE 2 (បន្ទាត់ទី ២ — គ្រោះថ្នាក់! ជាឈ្មោះវត្ត/សាលា ហាមអានយកមកធ្វើជាឈ្មោះសិស្សដាច់ខាត!):
+    Printed template: "ពុទ្ធិកបឋមសិក្សា ........................................................ ។"
+    -> WARNING: On Line 2 (directly underneath the student's name!), the student writes the school/monastery name in pen ink, such as "វត្តខេមវ័ន (បឹងកុក)" or "ហ៊ុន ណេង".
+    -> NEVER read or blend the pen-ink letters of "វត្តខេមវ័ន (បឹងកុក)" on Line 2 into the student's name! (For example, NEVER misread "វត្ត" on Line 2 as "ចិត្រា" or "ជួង ចិត្រា"!).
+  * LINE 3 (បន្ទាត់ទី ៣):
+    Printed template: "តាមរយៈ ៖ លោកគ្រូបន្ទុកថ្នាក់ទី ......." -> The grade is written a second time here in pen ink.
+
+- Extract the Pen-Ink handwritten values in this exact step-by-step order:
   1. PEN-INK GRADE ("grade"):
-     - Look at the pen ink written after "ថ្នាក់ទី ......".
-     - Read the grade first ("មត្តេយ្យ", "១", "២", or "៣").
-  2. PEN-INK RAW HANDWRITTEN NAME ("rawHandwrittenName"):
-     - Look closely at the pen ink written after "ឈ្មោះ ........................" (use Image 2 zoomed crop if provided).
-     - Transcribe the exact Khmer consonants, subscripts (ជើងអក្សរ), and vowels written in pen ink character-by-character BEFORE looking at the student roster.
-  3. PEN-INK MATCHED STUDENT NAME ("name"):
-     - Compare your "rawHandwrittenName" against the students listed under that specific "grade" in the Official Monastic School Student Roster below.
-     - If the pen-ink letters match or closely resemble a student in that grade (accounting for cursive pen-ink handwriting), output that student's exact official name from the roster.
-     - CRITICAL: Read the actual pen ink on THIS slip! NEVER guess a random student name that does not match the written pen-ink consonants! If the pen-ink name is a new student not in the roster, output the exact pen-ink name.
+     - Read the grade written in pen ink after "ជាសមណសិស្សថ្នាក់ទី ..." (Line 1) and "លោកគ្រូបន្ទុកថ្នាក់ទី ..." (Line 3).
+     - Output "មត្តេយ្យ", "១", "២", or "៣".
+  2. PEN-INK SURNAME & GIVEN NAME ON LINE 1 ("surnamePenInk", "givenNamePenInk", "rawHandwrittenName"):
+     - Look at Image 2 (the 3x Super-Zoomed strip of Line 1) right after the printed word "ខ្ញុំបាទសមណសិស្សឈ្មោះ" and before "អាយុ".
+     - Read ONLY the top handwritten line (Line 1), completely ignoring "វត្តខេមវ័ន (បឹងកុក)" below it.
+     - Read the first word / surname ("surnamePenInk", e.g. "មី", "ម៉េង", "លី", "ឡាយ", "ឃិន", "ចាន់", "អ៊ុន", "ណា", "ឆាន") and the second word / given name ("givenNamePenInk", e.g. "ស៊ីនូ", "ទី", "ពីន", "ប៊ុនយ៉ុង", "សារ៉េន", "តិចគាង").
+     - Combine them into "rawHandwrittenName": the literal character-by-character transcription of the pen ink on Line 1 BEFORE looking at the roster.
+  3. PEN-INK MATCHED STUDENT NAME ("topNameCandidates" & "name"):
+     - Look ONLY at the students in the extracted "grade" within the Official Monastic School Student Roster below.
+     - Find which student in that grade has Khmer consonants, subscripts, and vowels that genuinely match "surnamePenInk" + "givenNamePenInk" ("rawHandwrittenName").
+     - List up to 3 closest visual matches in "topNameCandidates", and put the single best match in "name".
+     - STRICT ANTI-GUESSING RULE: NEVER pick "ជួង ចិត្រា" or any other roster name unless the pen ink on Line 1 actually starts with those consonants! For example, if Line 1 pen ink has 2 short words starting with "ម" and "ស" (like "មី ស៊ីនូ"), you MUST match "មី ស៊ីនូ", NOT "ជួង ចិត្រា"!
   4. PEN-INK DURATION ("duration"):
-     - Read the pen ink written after "ចំនួន ......" (e.g. "១ ថ្ងៃ", "២ ថ្ងៃ", "១ ព្រឹក", "១ ល្ងាច").
+     - Read the pen ink written after "សំណើសុំច្បាប់ចំនួន ......" (e.g. "១ ថ្ងៃ", "២ ថ្ងៃ", "១ ព្រឹក", "១ ល្ងាច").
   5. PEN-INK START DATE ("date"):
-     - Read the pen ink written on the start date line "ចាប់ពីថ្ងៃទី... ខែ... ឆ្នាំ..." and format as a single start date "DD/MM/2026" in Khmer numerals (e.g. "១៥/០៩/២០២៦").
+     - Read the pen ink written on "គិតចាប់ពីថ្ងៃទី... ខែ... ឆ្នាំ..." and format as a single start date "DD/MM/២០២៦" in Khmer numerals (e.g. "២១/១០/២០២៦").
      - Academic year is strictly 2026 (២០២៦). NEVER include "ដល់..." or end dates.
   6. PEN-INK REASON ("reason"):
-     - Read the pen ink written after "មូលហេតុ ........................" (e.g. "ក្ដៅខ្លួន ឈឺចុកពោះ", "អាពាធ គ្រុនក្ដៅ", "អាពាធ ឈឺក្បាល", "កិច្ចការផ្ទាល់ខ្លួន").
+     - Read the pen ink written after "មូលហេតុ ៖ ........................" (e.g. "ក្ដៅខ្លួន", "ក្ដៅខ្លួន ឈឺចុកពោះ", "អាពាធ គ្រុនក្ដៅ", "អាពាធ ឈឺក្បាល").
 ${studentListContext}
 Task:
 Output strictly valid JSON with this exact schema:
@@ -386,8 +460,11 @@ Output strictly valid JSON with this exact schema:
   "confidence": 0.0 to 1.0,
   "leaveItems": [
     {
-      "rawHandwrittenName": "តួអក្សរទឹកប៊ិចឆៅដែលអានឃើញផ្ទាល់លើបន្ទាត់ឈ្មោះ",
-      "name": "ឈ្មោះសមណសិស្សដែលផ្គូផ្គងតាមទឹកប៊ិច និងថ្នាក់ទី",
+      "surnamePenInk": "នាមត្រកូលទឹកប៊ិចលើបន្ទាត់ទី១ (ពាក្យទី១)",
+      "givenNamePenInk": "នាមខ្លួនទឹកប៊ិចលើបន្ទាត់ទី១ (ពាក្យទី២)",
+      "rawHandwrittenName": "តួអក្សរទឹកប៊ិចឆៅពេញលេញដែលអានឃើញផ្ទាល់លើបន្ទាត់ទី១ (ហាមលាយបន្ទាត់ទី២ វត្តខេមវ័ន)",
+      "topNameCandidates": ["បេក្ខភាពឈ្មោះទី១", "បេក្ខភាពឈ្មោះទី២"],
+      "name": "ឈ្មោះសមណសិស្សដែលត្រូវនឹងតួអក្សរទឹកប៊ិចពិតប្រាកដក្នុងថ្នាក់នោះ",
       "grade": "ថ្នាក់ទី (មត្តេយ្យ, ១, ២, ឬ ៣)",
       "reason": "មូលហេតុសរសេរទឹកប៊ិច",
       "duration": "ចំនួនថ្ងៃឈប់សរសេរទឹកប៊ិច (ឧ. ១ ថ្ងៃ, ២ ថ្ងៃ, ១ ព្រឹក, ១ ល្ងាច)",
@@ -432,7 +509,17 @@ Instructions:
     }
   ];
 
-  // Attach zoomed Pen-Ink Crop as second image for Leave Slips so AI sees pen-ink handwriting 3x clearer
+  // Attach Image 2: 3x Super-Zoomed Student Name & Grade Line 1 crop
+  if (nameLineCropBase64 && docTypeHint !== 'finance') {
+    messageParts.push({
+      inlineData: {
+        mimeType: 'image/jpeg',
+        data: nameLineCropBase64
+      }
+    });
+  }
+
+  // Attach Image 3: Zoomed Middle Pen-Ink Fill-In Section crop
   if (penInkCropBase64 && docTypeHint !== 'finance') {
     messageParts.push({
       inlineData: {
@@ -645,10 +732,15 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
   // Vertical / Portrait documents (height >= width * 1.05) are almost exclusively A4 leave slips
   const isPortrait = dimensions.height >= dimensions.width * 1.05;
 
-  // Step 2B: For Leave Slips, create a zoomed, contrast-boosted Pen-Ink Zone crop (middle student fill-in lines)
-  const penInkCropBase64 = (docTypeHint !== 'finance')
-    ? await cropLeaveSlipPenInkZone(rawDataUrl)
-    : '';
+  // Step 2B: For Leave Slips (BOTH Portrait and Landscape), generate:
+  //   1) 3x Super-Zoomed Student Name & Grade Line 1 crop (nameLineCropBase64)
+  //   2) Middle 5-Line Pen-Ink Fill-In section crop (penInkCropBase64)
+  const [nameLineCropBase64, penInkCropBase64] = (docTypeHint !== 'finance')
+    ? await Promise.all([
+        cropLeaveSlipNameLineZone(rawDataUrl),
+        cropLeaveSlipPenInkZone(rawDataUrl)
+      ])
+    : ['', ''];
 
   let extractionResult;
   let processingMode = 'gemini_cloud';
@@ -669,7 +761,8 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
         docTypeHint,
         studentMaster,
         isPortrait,
-        penInkCropBase64
+        penInkCropBase64,
+        nameLineCropBase64
       );
       processingMode = 'gemini_cloud';
     } catch (err) {
@@ -694,12 +787,15 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     });
   }
 
-  // Cross-reference extracted pen-ink student names (using Grade-First + Khmer Cursive Skeleton matching) and normalize dates
+  // Cross-reference extracted pen-ink student names (Raw Pen-Ink First + Grade-Scoped Two-Syllable Matching)
   if (extractionResult.leaveItems && extractionResult.leaveItems.length > 0) {
     extractionResult.leaveItems = extractionResult.leaveItems.map((item) => {
-      const rawHandwritten = cleanHandwrittenStudentName(item.rawHandwrittenName || '');
+      const combinedPenParts = cleanHandwrittenStudentName(
+        [item.surnamePenInk, item.givenNamePenInk].filter(Boolean).join(' ')
+      );
+      const rawHandwritten = cleanHandwrittenStudentName(item.rawHandwrittenName || combinedPenParts || '');
       const cleanedPrimaryName = cleanHandwrittenStudentName(item.name || rawHandwritten || '');
-      const initialOcrName = cleanedPrimaryName || rawHandwritten;
+      const initialOcrName = rawHandwritten || cleanedPrimaryName;
       const normGrade = normalizeStudentGrade(item.grade);
 
       let cleanDate = String(item.date || '').trim();
@@ -729,17 +825,55 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
         };
       }
 
-      // 2. Grade-First + Khmer Cursive Skeleton Fuzzy Match on both `name` and `rawHandwrittenName`
-      const matchPrimary = matchStudentName(cleanedPrimaryName, studentMaster, normGrade);
-      const matchRaw = rawHandwritten && rawHandwritten !== cleanedPrimaryName
+      // 2. RAW PEN-INK FIRST MATCHING:
+      //    Never let a guessed roster name in `item.name` win with fake 1.0 confidence if `rawHandwritten` matches a different student!
+      const matchRaw = rawHandwritten
         ? matchStudentName(rawHandwritten, studentMaster, normGrade)
         : null;
+      const matchParts = (combinedPenParts && combinedPenParts !== rawHandwritten)
+        ? matchStudentName(combinedPenParts, studentMaster, normGrade)
+        : null;
+      const bestRawMatch = (matchRaw && matchParts)
+        ? (matchRaw.confidence >= matchParts.confidence ? matchRaw : matchParts)
+        : (matchRaw || matchParts);
 
-      const bestMatch = (matchPrimary && matchRaw)
-        ? (matchPrimary.confidence >= matchRaw.confidence ? matchPrimary : matchRaw)
-        : (matchPrimary || matchRaw);
+      const matchPrimary = cleanedPrimaryName
+        ? matchStudentName(cleanedPrimaryName, studentMaster, normGrade)
+        : null;
 
-      if (bestMatch && bestMatch.confidence >= 0.74) {
+      // Also evaluate topNameCandidates against rawHandwritten if provided
+      let bestCandidateMatch = null;
+      if (Array.isArray(item.topNameCandidates) && rawHandwritten) {
+        let highestCandScore = 0;
+        for (const cand of item.topNameCandidates) {
+          const cleanCand = cleanHandwrittenStudentName(cand);
+          const mCand = matchStudentName(cleanCand, studentMaster, normGrade);
+          if (mCand) {
+            const simToRaw = computeKhmerNameSimilarity(rawHandwritten, mCand.student.name);
+            const totalCandScore = (mCand.confidence * 0.45) + (simToRaw * 0.55);
+            if (totalCandScore > highestCandScore) {
+              highestCandScore = totalCandScore;
+              bestCandidateMatch = mCand;
+            }
+          }
+        }
+      }
+
+      let bestMatch = null;
+      if (bestRawMatch && matchPrimary) {
+        if (bestRawMatch.student.name === matchPrimary.student.name) {
+          bestMatch = matchPrimary.confidence >= bestRawMatch.confidence ? matchPrimary : bestRawMatch;
+        } else {
+          // Different students! Compare which student's name actually resembles the raw handwritten pen ink!
+          const simRawStudent = computeKhmerNameSimilarity(rawHandwritten, bestRawMatch.student.name);
+          const simPrimaryStudent = computeKhmerNameSimilarity(rawHandwritten, matchPrimary.student.name);
+          bestMatch = simRawStudent >= simPrimaryStudent ? bestRawMatch : matchPrimary;
+        }
+      } else {
+        bestMatch = bestRawMatch || bestCandidateMatch || matchPrimary;
+      }
+
+      if (bestMatch && bestMatch.confidence >= 0.72) {
         return {
           ...item,
           name: bestMatch.student.name,
@@ -754,7 +888,7 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
 
       return {
         ...item,
-        name: cleanedPrimaryName || item.name,
+        name: rawHandwritten || cleanedPrimaryName || item.name,
         grade: normGrade || item.grade,
         reason: cleanReason,
         date: cleanDate,

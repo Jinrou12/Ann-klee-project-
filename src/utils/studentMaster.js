@@ -46,24 +46,24 @@ export const DEFAULT_STUDENT_MASTER = [
   { id: 'g2-7', name: 'ណុន តាវ៉ាន់', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-8', name: 'ប៉ុនធឿន ឧត្តម', aliases: ['ប៊ិន ធឿនឧត្តម', 'ប៊ិនធឿន ឧត្តម'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-9', name: 'ថេង សុខលីន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-10', name: 'ពិសិដ្ធ សុបញ្ញា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-10', name: 'ពិសិដ្ធ សុបញ្ញា', aliases: ['ពិសិដ្ឋ សុបញ្ញា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-11', name: 'ភាក់ សុភាព', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-12', name: 'ម៉េង ទិត្យ', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-13', name: 'ម៉េង ទី', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-14', name: 'ម៉េង ស្រ៊ីស៊ីរ៉ា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-14', name: 'ម៉េង ស្រ៊ីស៊ីរ៉ា', aliases: ['ម៉េង ស្រីស៊ីរ៉ា', 'ម៉េង ស្រ៊ីសុីរ៉ា', 'ម៉េង ស្រីសុីរ៉ា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-15', name: 'ម៉ែន សីហា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-16', name: 'មី ស៊ីនូ', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-16', name: 'មី ស៊ីនូ', aliases: ['មី សុីនូ', 'មី សីនូ', 'ម៉ី ស៊ីនូ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-17', name: 'យ៉េន ចាន់រ៉ា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-18', name: 'រ៉េត ណារ៉ុង', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-19', name: 'រ៉េន វ៉ានុន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-20', name: 'លី ពីន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-21', name: 'ស៊ីម សុវណ្ណរាជ', aliases: ['ស៊ឹម សុវណ្ណរាជ', 'ស៊ិម សុវណ្ណរាជ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-22', name: 'សារ៉ាត់ ចិត្ត្រា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-23', name: 'សុន ម៉ែងអ៊័ង', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-22', name: 'សារ៉ាត់ ចិត្ត្រា', aliases: ['សារ៉ាត់ ចិត្រា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-23', name: 'សុន ម៉ែងអ៊័ង', aliases: ['សុន ម៉េងអ៊័ង', 'សុន ម៉េងអង', 'សុន ម៉ែងអង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-24', name: 'សេងលី ទីសា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-25', name: 'ហេន សិលា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-26', name: 'ឡាយ ប៊ុនយ៉ុង', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-27', name: 'ឡាយ វីរះ', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-27', name: 'ឡាយ វីរះ', aliases: ['ឡាយ វីរៈ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-28', name: 'ឡេង ហេងលាន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-29', name: 'អ៊ុន សារ៉េន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-30', name: 'អាន វឌ្ឍនា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
@@ -129,12 +129,20 @@ export function normalizeStudentGrade(gradeStr) {
 }
 
 /**
- * Strip printed form prefixes/titles around a handwritten student name
+ * Strip printed form prefixes/titles and Line-2 monastery/school bleed around a handwritten student name,
+ * and normalize Khmer Unicode vowel+diacritic ordering (e.g. សុី -> ស៊ី).
  */
 export function cleanHandwrittenStudentName(rawName) {
   return String(rawName || '')
-    .replace(/^(ខ្ញុំបាទ|នាងខ្ញុំ|សមណសិស្សឈ្មោះ|សមណសិស្ស|សាមណេរ|ភិក្ខុ|ព្រះនាម|ឈ្មោះ|នាម)[\s៖:.…]*/gi, '')
-    .replace(/[៖:.…_()[\]]+/g, ' ')
+    // Normalize Khmer "ុ" + "ី/ិ/ឹ/ឺ" (common OCR/typing substitute for "៊" + vowel)
+    .replace(/\u17BB([\u17B7\u17B8\u17B9\u17BA])/g, '\u17CA$1')
+    // Normalize vowel before shifter (e.g. ី + ៊ -> ៊ + ី)
+    .replace(/([\u17B7-\u17C5])([\u17C9\u17CA])/g, '$2$1')
+    // Strip printed prefixes on Line 1
+    .replace(/^(ខ្ញុំបាទសមណសិស្សឈ្មោះ|ខ្ញុំបាទ|នាងខ្ញុំ|សមណសិស្សឈ្មោះ|សមណសិស្ស|សាមណេរ|ភិក្ខុ|ព្រះនាម|ឈ្មោះ|នាម)[\s៖:.…]*/gi, '')
+    // Strip printed or handwritten suffixes from Line 1 ("អាយុ...", "ថ្នាក់ទី...") and Line 2 bleed ("ពុទ្ធិកបឋមសិក្សា", "វត្តខេមវ័ន", "បឹងកុក", "ហ៊ុន ណេង")
+    .replace(/\s*(អាយុ|ជាសមណសិស្ស|ថ្នាក់ទី|នៃសាលា|ពុទ្ធិកបឋមសិក្សា|វត្តខេមវ័ន|ខេមវ័ន|បឹងកុក|ហ៊ុន\s*ណេង).*$/gi, '')
+    .replace(/[៖:.…_()[\]«»"']/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -142,10 +150,12 @@ export function cleanHandwrittenStudentName(rawName) {
 /**
  * Normalize Khmer cursive pen-ink skeleton (collapsing visually similar vowels & faint pen diacritics)
  */
-function normalizeKhmerHandwritingSkeleton(str) {
-  return String(str || '')
+export function normalizeKhmerHandwritingSkeleton(str) {
+  return cleanHandwrittenStudentName(str)
     .replace(/[\s\u200B.…]/g, '')
     .replace(/្ដ/g, '្ត')
+    .replace(/ត្ត្រ/g, 'ត្រ')
+    .replace(/ត្ត/g, 'ត')
     .replace(/[ិីឹឺ]/g, 'ិ')
     .replace(/[ុូួ]/g, 'ុ')
     .replace(/[េែៃ]/g, 'េ')
@@ -154,8 +164,70 @@ function normalizeKhmerHandwritingSkeleton(str) {
 }
 
 /**
+ * Normalize visually similar handwritten Khmer pen-ink consonants + vowels
+ * (e.g. cursive loops ម/ប/ព, ជ/ឈ/ញ, ច/ឆ, ក/គ/ឃ, ដ/ឌ/ត/ទ/ធ, ន/ណ)
+ */
+export function normalizeKhmerPenVisualSkeleton(str) {
+  return normalizeKhmerHandwritingSkeleton(str)
+    .replace(/[គឃ]/g, 'ក')
+    .replace(/[ឆ]/g, 'ច')
+    .replace(/[ឈញ]/g, 'ជ')
+    .replace(/[ឌតទធ]/g, 'ដ')
+    .replace(/[ណ]/g, 'ន')
+    .replace(/[ផពភ]/g, 'ប')
+    .replace(/[ឡ]/g, 'ល');
+}
+
+/**
+ * Compute visual & structural similarity (0.0 to 1.0) between two Khmer student names
+ */
+export function computeKhmerNameSimilarity(nameA, nameB) {
+  const cleanA = cleanHandwrittenStudentName(nameA);
+  const cleanB = cleanHandwrittenStudentName(nameB);
+  const compactA = cleanA.replace(/[\s\u200B]/g, '');
+  const compactB = cleanB.replace(/[\s\u200B]/g, '');
+  if (!compactA || !compactB) return 0;
+  if (compactA === compactB) return 1.0;
+
+  const dist = levenshteinDistance(compactA, compactB);
+  const maxLen = Math.max(compactA.length, compactB.length);
+  const rawSim = maxLen > 0 ? 1 - (dist / maxLen) : 0;
+
+  const skelA = normalizeKhmerHandwritingSkeleton(cleanA);
+  const skelB = normalizeKhmerHandwritingSkeleton(cleanB);
+  const skelDist = levenshteinDistance(skelA, skelB);
+  const maxSkelLen = Math.max(skelA.length, skelB.length);
+  const skelSim = maxSkelLen > 0 ? (1 - (skelDist / maxSkelLen)) * 0.97 : 0;
+
+  const penA = normalizeKhmerPenVisualSkeleton(cleanA);
+  const penB = normalizeKhmerPenVisualSkeleton(cleanB);
+  const penDist = levenshteinDistance(penA, penB);
+  const maxPenLen = Math.max(penA.length, penB.length);
+  const penSim = maxPenLen > 0 ? (1 - (penDist / maxPenLen)) * 0.92 : 0;
+
+  // Word-by-word (Surname + Given Name) structural comparison
+  const wordsA = cleanA.split(/\s+/).filter(Boolean);
+  const wordsB = cleanB.split(/\s+/).filter(Boolean);
+  let wordPartSim = 0;
+  if (wordsA.length >= 2 && wordsB.length >= 2) {
+    const surA = normalizeKhmerHandwritingSkeleton(wordsA[0]);
+    const surB = normalizeKhmerHandwritingSkeleton(wordsB[0]);
+    const givA = normalizeKhmerHandwritingSkeleton(wordsA.slice(1).join(''));
+    const givB = normalizeKhmerHandwritingSkeleton(wordsB.slice(1).join(''));
+
+    const surMax = Math.max(surA.length, surB.length);
+    const givMax = Math.max(givA.length, givB.length);
+    const surScore = surMax > 0 ? 1 - (levenshteinDistance(surA, surB) / surMax) : 0;
+    const givScore = givMax > 0 ? 1 - (levenshteinDistance(givA, givB) / givMax) : 0;
+    wordPartSim = (surScore * 0.48 + givScore * 0.52) * 0.96;
+  }
+
+  return Math.max(rawSim, skelSim, penSim, wordPartSim);
+}
+
+/**
  * Fuzzy search to match an OCR extracted student name with master list.
- * Supports Grade-First priority and Khmer Pen-Ink Cursive Skeleton matching.
+ * Supports Grade-First priority, Two-Syllable (Surname + Given Name) matching, and Khmer Pen-Ink Cursive Skeleton matching.
  * @param {string} rawName 
  * @param {Array} studentList 
  * @param {string} extractedGrade
@@ -170,26 +242,38 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER, 
   const normGrade = normalizeStudentGrade(extractedGrade);
   const skelInput = normalizeKhmerHandwritingSkeleton(strippedName);
 
-  // 1. Exact match (ignoring whitespace and checking aliases)
-  const exact = studentList.find(s => {
+  // 1. Exact match (preferring student in the same grade if extractedGrade is provided)
+  const exactMatches = studentList.filter(s => {
     const sClean = s.name.replace(/[\s\u200B]/g, '');
     if (sClean === cleanInput) return true;
     if (s.aliases && s.aliases.some(a => a.replace(/[\s\u200B]/g, '') === cleanInput)) return true;
     return false;
   });
-  if (exact) return { student: exact, confidence: 1.0, isExact: true };
+  if (exactMatches.length > 0) {
+    const sameGradeExact = normGrade ? exactMatches.find(s => s.grade === normGrade) : null;
+    if (sameGradeExact) {
+      return { student: sameGradeExact, confidence: 1.0, isExact: true };
+    }
+    // If exact match is in a different grade than the slip's grade, still return it but with slightly lower confidence if grade conflicts
+    return {
+      student: exactMatches[0],
+      confidence: normGrade ? 0.91 : 1.0,
+      isExact: !normGrade
+    };
+  }
 
-  // 2. Exact Khmer Handwriting Skeleton match (when only faint pen diacritics/vowels differ, e.g. ៉/៊ or ិ/ី)
-  if (skelInput.length >= 4) {
+  // 2. Exact Khmer Handwriting Skeleton match (when only faint pen diacritics/vowels differ, e.g. ៉/៊ or ិ/ី or សុី/ស៊ី)
+  if (skelInput.length >= 3) {
     const skelMatches = studentList.filter(s => {
       const candidates = [s.name, ...(s.aliases || [])];
       return candidates.some(c => normalizeKhmerHandwritingSkeleton(c) === skelInput);
     });
     if (skelMatches.length === 1) {
-      return { student: skelMatches[0], confidence: 0.95, isExact: false };
+      const isRightGrade = !normGrade || skelMatches[0].grade === normGrade;
+      return { student: skelMatches[0], confidence: isRightGrade ? 0.97 : 0.88, isExact: false };
     } else if (skelMatches.length > 1 && normGrade) {
       const gradeFiltered = skelMatches.find(s => s.grade === normGrade);
-      if (gradeFiltered) return { student: gradeFiltered, confidence: 0.96, isExact: false };
+      if (gradeFiltered) return { student: gradeFiltered, confidence: 0.97, isExact: false };
     }
   }
 
@@ -204,41 +288,32 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER, 
     });
   });
   if (subMatches.length === 1) {
-    return { student: subMatches[0], confidence: 0.90, isExact: false };
+    const isRightGrade = !normGrade || subMatches[0].grade === normGrade;
+    return { student: subMatches[0], confidence: isRightGrade ? 0.92 : 0.84, isExact: false };
   } else if (subMatches.length > 1 && normGrade) {
     const gradeSub = subMatches.find(s => s.grade === normGrade) || subMatches[0];
-    return { student: gradeSub, confidence: 0.92, isExact: false };
+    return { student: gradeSub, confidence: 0.93, isExact: false };
   }
 
-  // 4. Grade-Aware + Khmer Cursive Skeleton & Levenshtein Fuzzy Match
+  // 4. Grade-First + Two-Syllable + Khmer Cursive Skeleton Fuzzy Match
   let bestMatch = null;
   let bestScore = 0;
 
   for (const s of studentList) {
     const namesToTest = [s.name, ...(s.aliases || [])];
     for (const nameCandidate of namesToTest) {
-      const sClean = nameCandidate.replace(/[\s\u200B]/g, '');
-      const dist = levenshteinDistance(cleanInput, sClean);
-      const maxLen = Math.max(cleanInput.length, sClean.length);
-      const rawSim = maxLen > 0 ? 1 - (dist / maxLen) : 0;
+      let combinedScore = computeKhmerNameSimilarity(strippedName, nameCandidate);
 
-      const sSkel = normalizeKhmerHandwritingSkeleton(nameCandidate);
-      const skelDist = levenshteinDistance(skelInput, sSkel);
-      const maxSkelLen = Math.max(skelInput.length, sSkel.length);
-      const skelSim = maxSkelLen > 0 ? (1 - (skelDist / maxSkelLen)) * 0.96 : 0;
-
-      let combinedScore = Math.max(rawSim, skelSim);
-
-      // Apply Grade-First Bonus/Penalty if grade was extracted from the slip
+      // Apply strong Grade-First Bonus/Penalty when grade was read from the slip
       if (normGrade) {
         if (s.grade === normGrade) {
-          combinedScore = Math.min(0.99, combinedScore + 0.06);
-        } else if (rawSim < 0.90) {
-          combinedScore = Math.max(0, combinedScore - 0.05);
+          combinedScore = Math.min(0.99, combinedScore + 0.08);
+        } else if (combinedScore < 0.92) {
+          combinedScore = Math.max(0, combinedScore - 0.12);
         }
       }
 
-      if (combinedScore > bestScore && combinedScore >= 0.74) {
+      if (combinedScore > bestScore && combinedScore >= 0.72) {
         bestScore = combinedScore;
         bestMatch = { student: s, confidence: combinedScore, isExact: false };
       }

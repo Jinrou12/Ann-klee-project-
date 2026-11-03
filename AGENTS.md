@@ -1,4 +1,5 @@
-# Universal Project Development Protocol & Rules (AI Engineering Guidelines)
+ 
+ # Universal Project Development Protocol & Rules (AI Engineering Guidelines)
 
 ## 🖥️ Dev Server & Environment Configuration (កំណត់តាម Project ជាក់ស្តែង)
 - **Port ស្ដង់ដារ**: `5173`
@@ -80,5 +81,5 @@
 * **គោលការណ៍ Rolling Snapshot**: ផ្នែកនេះត្រូវតែប្រើប្រព័ន្ធ **In-Place Overwrite** រក្សាត្រឹមតែ ៣-៤ បន្ទាត់សង្ខេបចុងក្រោយ (ហាម append logs នាំឱ្យឯកសាររីកធំ)។
 * **កាលបរិច្ឆេទ**: 2026-11-03
 * **គម្រោង**: Ann Klee Project (ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស និងចំណូលចំណាយ)
-* **ស្ថានភាព**: អនុវត្តប្រព័ន្ធ Smart Pen-Ink Leave OCR (`/mp`)៖ ផ្តោតអានតែអក្សរទឹកប៊ិចលើក្រដាសសុំច្បាប់ (Auto Pen-Ink Zone Zoom Crop), បំបែកបញ្ជីសិស្សតាមថ្នាក់ទី, ផ្គូផ្គងតាមទម្រង់អក្សរដៃខ្មែរ និងលុបចោលការយកថ្ងៃខែចាស់ទៅជាន់ឈ្មោះសិស្សថ្មី រួចរាល់
+* **ស្ថានភាព**: អនុវត្តប្រព័ន្ធកាត់ពង្រីកបន្ទាត់ឈ្មោះសិស្ស 3x (`cropLeaveSlipNameLineZone`) ទាំងរូបបញ្ឈរ និងរូបផ្ដេក, ញែកដាច់បន្ទាត់ទី១ (ឈ្មោះសិស្ស) ពីបន្ទាត់ទី២ (`វត្តខេមវ័ន បឹងកុក`), និងកែប្រព័ន្ធផ្គូផ្គងឱ្យផ្ដល់អាទិភាពលើ `rawHandwrittenName` (`/mp`) រួចរាល់
 * **ការងារបន្ទាប់**: ត្រៀមទទួលការណែនាំបន្ថែមពីអ្នកប្រើប្រាស់
