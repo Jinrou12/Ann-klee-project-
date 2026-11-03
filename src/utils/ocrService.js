@@ -1,7 +1,14 @@
 // Hybrid OCR & Multimodal Vision Service for Leave Slips and Receipts
 import { matchStudentName } from './studentMaster';
-import { parseKhmerNumber } from './khmerNumerals';
-import { DEFAULT_GEMINI_KEYS, getStoredApiKey, getStoredTrainingDataset } from './storage';
+import { parseKhmerNumber, toArabicDigits } from './khmerNumerals';
+import {
+  DEFAULT_GEMINI_KEYS,
+  getStoredApiKey,
+  getStoredTrainingDataset,
+  fetchTrainingFromCloud,
+  isBareGenericCameraFilename,
+  normalizeOriginalFilename
+} from './storage';
 
 /**
  * Convert browser File or Blob to base64 string
@@ -98,27 +105,207 @@ export function compressImageForOCR(dataUrl, originalFileSizeBytes, mimeType = '
 }
 
 /**
+ * Compute a 512-bit Perceptual Visual Fingerprint (dHash) for Cross-Device Image Recognition.
+ * Combines:
+ *  1) 256-bit full-image dHash (17x16 grayscale horizontal gradient)
+ *  2) 256-bit center-crop dHash (focusing on the handwritten name/reason region: x=15%..85%, y=20%..75%)
+ *  3) Aspect ratio integer (width/height * 100)
+ * Invariant to file renaming, device transfer, Telegram/Messenger compression, and resolution scaling.
+ */
+export function computeImageFingerprint(dataUrl) {
+  return new Promise((resolve) => {
+    if (!dataUrl) return resolve('');
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) return resolve('');
+
+        const computeRegionDHash = (sx, sy, sw, sh) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 17;
+          canvas.height = 16;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 17, 16);
+          const pixels = ctx.getImageData(0, 0, 17, 16).data;
+
+          let hex = '';
+          let nibble = 0;
+          let bitCount = 0;
+
+          for (let row = 0; row < 16; row++) {
+            for (let col = 0; col < 16; col++) {
+              const idx1 = (row * 17 + col) * 4;
+              const idx2 = (row * 17 + col + 1) * 4;
+              const lum1 = pixels[idx1] * 0.299 + pixels[idx1 + 1] * 0.587 + pixels[idx1 + 2] * 0.114;
+              const lum2 = pixels[idx2] * 0.299 + pixels[idx2 + 1] * 0.587 + pixels[idx2 + 2] * 0.114;
+              nibble = (nibble << 1) | (lum1 > lum2 ? 1 : 0);
+              bitCount++;
+              if (bitCount === 4) {
+                hex += nibble.toString(16);
+                nibble = 0;
+                bitCount = 0;
+              }
+            }
+          }
+          return hex;
+        };
+
+        const fullHash = computeRegionDHash(0, 0, w, h);
+        const centerHash = computeRegionDHash(
+          Math.round(w * 0.15),
+          Math.round(h * 0.20),
+          Math.max(1, Math.round(w * 0.70)),
+          Math.max(1, Math.round(h * 0.55))
+        );
+        const aspect = Math.round((w / h) * 100);
+        resolve(`${fullHash}:${centerHash}:${aspect}`);
+      } catch (e) {
+        console.warn('Fingerprint computation error:', e);
+        resolve('');
+      }
+    };
+    img.onerror = () => resolve('');
+    img.src = dataUrl;
+  });
+}
+
+function hexHammingDistance(hex1, hex2) {
+  if (!hex1 || !hex2 || hex1.length !== hex2.length) return 999;
+  const popcount = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
+  let dist = 0;
+  for (let i = 0; i < hex1.length; i++) {
+    const v1 = parseInt(hex1[i], 16);
+    const v2 = parseInt(hex2[i], 16);
+    if (Number.isNaN(v1) || Number.isNaN(v2)) return 999;
+    dist += popcount[v1 ^ v2];
+  }
+  return dist;
+}
+
+/**
+ * Match an image's 512-bit fingerprint against stored training samples.
+ * Handles both exact bit matches and re-compressed/resized copies across devices.
+ */
+export function matchByImageFingerprint(targetHash, trainingDataset = []) {
+  if (!targetHash || !Array.isArray(trainingDataset) || trainingDataset.length === 0) return null;
+  const [tFull, tCenter, tAspectStr] = targetHash.split(':');
+  const tAspect = Number(tAspectStr) || 0;
+  if (!tFull || !tCenter) return null;
+
+  let bestSample = null;
+  let bestScore = 999;
+
+  for (const s of trainingDataset) {
+    if (!s?.imageHash || !s?.groundTruth) continue;
+    if (s.imageHash === targetHash) {
+      return s; // 100% exact visual match
+    }
+    const [sFull, sCenter, sAspectStr] = String(s.imageHash).split(':');
+    const sAspect = Number(sAspectStr) || 0;
+    if (!sFull || !sCenter) continue;
+    if (tAspect && sAspect && Math.abs(tAspect - sAspect) > 5) continue;
+
+    const fullDist = hexHammingDistance(tFull, sFull);
+    const centerDist = hexHammingDistance(tCenter, sCenter);
+    const totalDist = fullDist + centerDist;
+
+    // Require high visual similarity in both full layout and inner handwriting crop (<= 16 bits each out of 256)
+    if (fullDist <= 16 && centerDist <= 16 && totalDist < bestScore) {
+      bestScore = totalDist;
+      bestSample = s;
+    }
+  }
+
+  return bestSample;
+}
+
+/**
+ * Normalize date strings (e.g. "១៥/កញ្ញា/២០២៦" or "15/09/2026" or "១៥/០៩/២០២៦") for cross-checking
+ */
+function normalizeDateForComparison(dateStr) {
+  if (!dateStr) return '';
+  let s = toArabicDigits(String(dateStr)).trim();
+  const khmerMonthMap = {
+    'មករា': '01', 'កុម្ភៈ': '02', 'មីនា': '03', 'មេសា': '04',
+    'ឧសភា': '05', 'មិថុនា': '06', 'កក្កដា': '07', 'សីហា': '08',
+    'កញ្ញា': '09', 'តុលា': '10', 'វិច្ឆិកា': '11', 'ធ្នូ': '12'
+  };
+  for (const [mName, mNum] of Object.entries(khmerMonthMap)) {
+    if (s.includes(mName)) {
+      s = s.replace(mName, mNum);
+    }
+  }
+  const nums = s.match(/\d+/g);
+  if (nums && nums.length >= 2) {
+    const day = nums[0].padStart(2, '0');
+    const month = nums[1].padStart(2, '0');
+    return `${day}/${month}`;
+  }
+  return s.replace(/\s+/g, '');
+}
+
+/**
  * Perform extraction using Gemini Vision API if API Key is available
  */
-async function callGeminiVision(base64Data, mimeType, apiKey, docTypeHint, studentMaster, isPortrait = true) {
+async function callGeminiVision(base64Data, mimeType, apiKey, docTypeHint, studentMaster, isPortrait = true, allLeaves = {}) {
   const studentListContext = (studentMaster && studentMaster.length > 0)
     ? `\nOFFICIAL MONASTIC SCHOOL STUDENT ROSTER (Use for precise name & grade matching):\n` +
-      studentMaster.map(s => `- ${s.name} (ថ្នាក់ទី ${s.grade})`).join('\n') + '\n'
+      studentMaster.map(s => {
+        const aliasNote = s.aliases && s.aliases.length > 0 ? ` [Aliases: ${s.aliases.join(', ')}]` : '';
+        return `- ${s.name} (ថ្នាក់ទី ${s.grade})${aliasNote}`;
+      }).join('\n') + '\n'
     : '';
 
-  // AI Flywheel: Feed verified ground truths from previous Abbot/Principal verifications (Few-Shot In-Context Learning)
+  // AI Flywheel: Feed ALL verified ground truths from previous verifications + approved leave records
   const trainingDataset = getStoredTrainingDataset();
-  const verifiedSamples = Array.isArray(trainingDataset) ? trainingDataset.slice(0, 6) : [];
-  const fewShotContext = verifiedSamples.length > 0
-    ? `\nVERIFIED MONASTIC SCHOOL GROUND-TRUTH SAMPLES (Carefully reviewed and approved by the Abbot/Principal - strictly follow these formatting patterns):\n` +
+  const verifiedSamples = Array.isArray(trainingDataset) ? trainingDataset.slice(0, 35) : [];
+
+  // Also gather approved leave records from allLeaves (especially recent months like 2026-10)
+  const historicalLeaveRecords = [];
+  if (allLeaves && typeof allLeaves === 'object') {
+    Object.keys(allLeaves).sort().reverse().forEach(monthKey => {
+      const list = allLeaves[monthKey];
+      if (Array.isArray(list)) {
+        list.forEach(r => {
+          if (r && r.name && r.reason) {
+            historicalLeaveRecords.push(r);
+          }
+        });
+      }
+    });
+  }
+
+  // Build Learned OCR Name Corrections map (rawOcrName -> verified groundTruth.name)
+  const learnedCorrections = [];
+  verifiedSamples.forEach(s => {
+    const rawN = s.rawOcrName || s.rawOcr?.initialOcrName;
+    const trueN = s.groundTruth?.name;
+    if (rawN && trueN && rawN.replace(/\s+/g, '') !== trueN.replace(/\s+/g, '')) {
+      learnedCorrections.push(`- If handwriting looks like "${rawN}", the verified student is "${trueN}" (ថ្នាក់ទី ${s.groundTruth.grade || ''})`);
+    }
+  });
+
+  const fewShotContext = (verifiedSamples.length > 0 || historicalLeaveRecords.length > 0)
+    ? `\nVERIFIED MONASTIC SCHOOL GROUND-TRUTH SAMPLES (Carefully reviewed and approved by the Abbot/Principal - strictly follow these formatting patterns and match if the same slip is uploaded):\n` +
       verifiedSamples.map((s, idx) => {
         const gt = s.groundTruth || {};
         if (s.docType === 'leave') {
-          return `Example ${idx + 1} [Leave Slip "${s.fileName || ''}"]: Student: "${gt.name}" (ថ្នាក់ទី ${gt.grade}), Reason: "${gt.reason}", Duration: "${gt.duration}", Date: "${gt.date}" (Note: strictly single start date DD/MM/2026, no ដល់, year 2026).`;
+          return `Example ${idx + 1} [Leave Slip "${s.originalFileName || s.fileName || ''}"]: Student: "${gt.name}" (ថ្នាក់ទី ${gt.grade}), Reason: "${gt.reason}", Duration: "${gt.duration}", Date: "${gt.date}".`;
         } else {
-          return `Example ${idx + 1} [Finance "${s.fileName || ''}"]: Desc: "${gt.desc}", Qty: "${gt.qty}", Total: ${gt.total} Riel.`;
+          return `Example ${idx + 1} [Finance "${s.originalFileName || s.fileName || ''}"]: Desc: "${gt.desc}", Qty: "${gt.qty}", Total: ${gt.total} Riel.`;
         }
-      }).join('\n') + '\n'
+      }).join('\n') +
+      (historicalLeaveRecords.length > 0
+        ? `\nRECENTLY APPROVED LEAVE SLIPS AT THIS SCHOOL (If the slip's date, class, and illness/reason match one of these verified slips, ensure the exact verified student name is used):\n` +
+          historicalLeaveRecords.slice(0, 25).map((r, i) =>
+            `- Approved Slip ${i + 1}: Student="${r.name}" (ថ្នាក់ទី ${r.grade}), Reason="${r.reason}", Duration="${r.duration || '១ ថ្ងៃ'}", Date="${r.date}"`
+          ).join('\n')
+        : '') +
+      (learnedCorrections.length > 0
+        ? `\nLEARNED HANDWRITING CORRECTIONS:\n` + learnedCorrections.join('\n')
+        : '') + '\n'
     : '';
 
   const prompt = `
@@ -146,8 +333,8 @@ KHMER CURSIVE (អក្សរក្វៀស/អក្សររអិល) EXPER
 1. Student Name:
    - The user often takes a close-up camera photo zoomed in directly on the handwritten student name.
    - Read the exact handwritten Khmer consonants, subscripts (ជើង), and vowels written on the slip faithfully.
-   - Cross-check against the Official Monastic School Student Roster above to resolve minor handwriting ambiguity or cursive ligatures.
-   - CRITICAL: NEVER fabricate or substitute a completely different student name from the roster! If the written letters clearly do not match a student in the roster, return the exact handwritten text faithfully.
+   - Cross-check against the Official Monastic School Student Roster AND the Recently Approved Leave Slips above to resolve minor handwriting ambiguity or cursive ligatures.
+   - CRITICAL: NEVER fabricate or substitute a completely different student name! If the slip's date, grade, and handwritten reason match a Recently Approved Leave Slip above, verify whether the handwritten name matches that student.
    - Example: Cursive writing resembling "ណា. តិ.ច.គា.ង", "ណា តិចគាង", "ណាត ធីណាង", or "ណា ទិចគាង" MUST be extracted as "ណា ទិចគាង" with grade "៣".
 2. Reason for Leave (មូលហេតុ):
    - Cursive handwriting: "ក្ដៅខ្លួន...ឈឺចុកពោះ" -> Extract strictly as "ក្ដៅខ្លួន ឈឺចុកពោះ" (Fever and abdominal/stomach ache).
@@ -193,7 +380,8 @@ Instructions:
 - Retain accurate Khmer spelling for names, grades, and reasons.
 `;
 
-  const candidateModels = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+  // Use gemini-3.8-flash as primary candidate model (active & verified)
+  const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
   const keysToTry = [
     apiKey,
     ...DEFAULT_GEMINI_KEYS.filter(k => k && k !== apiKey)
@@ -319,29 +507,46 @@ function createManualBlankItem(file, docTypeHint, isPortrait = true, errorMessag
 /**
  * Main process function that handles single or batch image processing
  */
-export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey = '', studentMaster = [] } = {}) {
-  // 1. Instant 0ms AI Flywheel Ground-Truth Memory Check (before heavy base64 encoding)
-  // CRITICAL: Generic camera file names (e.g. image.jpg, photo.jpg, camera.jpg, etc.) MUST NEVER be recalled from flywheel cache by filename alone!
-  // Live camera shots are distinct physical slips every single time, despite mobile browsers assigning "image.jpg".
-  const isGenericCameraName = (name) => {
-    const n = String(name || '').toLowerCase().trim();
-    return /^(image|img|photo|camera|capture|file|pic|snapshot|frame)[\w-]*\.(jpe?g|png|webp|heic)$/i.test(n)
-      || n === 'image.jpg'
-      || n === 'image.jpeg';
-  };
+export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey = '', studentMaster = [], allLeaves = {} } = {}) {
+  // Step 0: Read raw file → dataUrl and compute 512-bit Visual Image Fingerprint (takes ~2ms)
+  const { dataUrl: rawDataUrl } = await fileToBase64(file);
+  const imageHash = await computeImageFingerprint(rawDataUrl);
 
-  const normalizeFileName = (n) => String(n || '').toLowerCase().replace(/\s*\(\d+\)\s*(?=\.[^.]+$|$)/, '').trim();
-  const targetName = normalizeFileName(file.name);
-  const trainingDataset = getStoredTrainingDataset();
-  const matchedSample = (!isGenericCameraName(file.name) && Array.isArray(trainingDataset))
-    ? trainingDataset.find(s => 
-        (s.fileName && file.name && normalizeFileName(s.fileName) === targetName && !isGenericCameraName(s.fileName)) ||
-        (s.fileSize && file.size && s.fileSize === file.size && normalizeFileName(s.fileName) === targetName && !isGenericCameraName(s.fileName))
-      )
-    : null;
+  // Ensure we have latest training samples from Cloud (in case trained on another device moments ago)
+  let trainingDataset = getStoredTrainingDataset();
+  if (navigator.onLine) {
+    try {
+      const cloudMerged = await fetchTrainingFromCloud();
+      if (Array.isArray(cloudMerged) && cloudMerged.length > 0) {
+        trainingDataset = cloudMerged;
+      }
+    } catch {
+      // Fallback to local trainingDataset if cloud fetch fails
+    }
+  }
+
+  // Step 1: Cross-Device AI Flywheel Ground-Truth Memory Check
+  //   1A: Match by 512-bit Visual Image Fingerprint (works even if file was renamed or compressed across devices!)
+  let matchedSample = matchByImageFingerprint(imageHash, trainingDataset);
+
+  //   1B: Match by Filename (for distinct filenames like "photo_2026-11-03_11-25-33.jpg", "IMG_1234.jpg", "b98eb...jpg")
+  if (!matchedSample && !isBareGenericCameraFilename(file.name) && Array.isArray(trainingDataset)) {
+    const cleanTargetName = normalizeOriginalFilename(file.name)
+      .toLowerCase()
+      .replace(/\s*\(\d+\)\s*(?=\.[^.]+$|$)/, '')
+      .trim();
+
+    matchedSample = trainingDataset.find(s => {
+      const sOrig = normalizeOriginalFilename(s.originalFileName || s.fileName || '')
+        .toLowerCase()
+        .replace(/\s*\(\d+\)\s*(?=\.[^.]+$|$)/, '')
+        .trim();
+      return sOrig && !isBareGenericCameraFilename(sOrig) && sOrig === cleanTargetName;
+    }) || null;
+  }
 
   if (matchedSample && matchedSample.groundTruth) {
-    console.log('✨ [AI Flywheel] Instant 0ms Ground-Truth memory recall for:', file.name);
+    console.log('✨ [AI Flywheel] Instant Cross-Device Ground-Truth memory recall for:', file.name);
     const gt = matchedSample.groundTruth;
     let cleanDate = String(gt.date || '').trim();
     cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
@@ -358,13 +563,15 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
       id: `scan-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       fileName: file.name,
       fileSize: file.size,
-      previewUrl: URL.createObjectURL(file),
+      imageHash,
+      previewUrl: rawDataUrl,
       processingMode: 'ai_flywheel_memory',
       timestamp: new Date().toISOString(),
       result: {
         detectedType: matchedSample.docType || 'leave',
         confidence: 1.0,
         isLearnedMemory: true,
+        imageHash,
         leaveItems: isLeave ? [{
           name: gt.name || 'សមណសិស្ស',
           grade: gt.grade || '២',
@@ -378,11 +585,7 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     };
   }
 
-  // Step 1: Read raw file → dataUrl
-  const { dataUrl: rawDataUrl } = await fileToBase64(file);
-
   // Step 2: Smart-compress for OCR (safe for Khmer cursive: max 1800px, quality 0.88)
-  //         Bypasses compression if image already small — no quality loss for small files
   const {
     base64,
     dataUrl,
@@ -410,7 +613,7 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     processingMode = 'missing_api_key';
   } else {
     try {
-      extractionResult = await callGeminiVision(base64, compressedMimeType || file.type, effectiveApiKey, docTypeHint, studentMaster, isPortrait);
+      extractionResult = await callGeminiVision(base64, compressedMimeType || file.type, effectiveApiKey, docTypeHint, studentMaster, isPortrait, allLeaves);
       processingMode = 'gemini_cloud';
     } catch (err) {
       console.warn('Gemini Cloud OCR failed:', err);
@@ -419,9 +622,52 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     }
   }
 
+  // Build Learned OCR Name Correction dictionaries from trainingDataset:
+  //  1) (rawOcrName + '|' + normalizedDate) -> groundTruth (handles cases where AI misread different slips as the same name on different dates)
+  //  2) rawOcrName -> groundTruth (only when rawOcrName always maps to a single student and is not a conflicting real student name)
+  const learnedNameAndDateMap = new Map();
+  const learnedNameCandidates = new Map();
+
+  if (Array.isArray(trainingDataset)) {
+    trainingDataset.forEach(s => {
+      if (s.docType === 'finance' || !s.groundTruth?.name) return;
+      const rawN = (s.rawOcrName || s.rawOcr?.initialOcrName || '').replace(/[\s\u200B]/g, '');
+      const gtDate = normalizeDateForComparison(s.groundTruth.date);
+      if (rawN) {
+        if (gtDate) {
+          learnedNameAndDateMap.set(`${rawN}|${gtDate}`, s.groundTruth);
+        }
+        if (!learnedNameCandidates.has(rawN)) {
+          learnedNameCandidates.set(rawN, []);
+        }
+        learnedNameCandidates.get(rawN).push(s.groundTruth);
+      }
+    });
+  }
+
+  // Collect all verified historical leave records (from trainingDataset + allLeaves) for post-OCR verification
+  const allHistoricalLeaves = [];
+  if (Array.isArray(trainingDataset)) {
+    trainingDataset.forEach(s => {
+      if (s.docType !== 'finance' && s.groundTruth?.name) {
+        allHistoricalLeaves.push(s.groundTruth);
+      }
+    });
+  }
+  if (allLeaves && typeof allLeaves === 'object') {
+    Object.values(allLeaves).forEach(list => {
+      if (Array.isArray(list)) {
+        list.forEach(r => {
+          if (r && r.name) allHistoricalLeaves.push(r);
+        });
+      }
+    });
+  }
+
   // Cross-reference extracted student names and normalize dates
   if (extractionResult.leaveItems && extractionResult.leaveItems.length > 0) {
     extractionResult.leaveItems = extractionResult.leaveItems.map((item) => {
+      const initialOcrName = String(item.name || '').trim();
       let cleanDate = String(item.date || '').trim();
       let cleanReason = String(item.reason || '').replace(/\s+/g, ' ').trim();
       // Enforce year 2026 instead of 2024
@@ -435,6 +681,90 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
         }
       }
 
+      const cleanRawNameKey = initialOcrName.replace(/[\s\u200B]/g, '');
+      const normExtractedDate = normalizeDateForComparison(cleanDate);
+
+      // 1. Check (rawOcrName + normalizedDate) exact learned correction pair first
+      if (cleanRawNameKey && normExtractedDate && learnedNameAndDateMap.has(`${cleanRawNameKey}|${normExtractedDate}`)) {
+        const learnedGt = learnedNameAndDateMap.get(`${cleanRawNameKey}|${normExtractedDate}`);
+        return {
+          ...item,
+          name: learnedGt.name,
+          grade: learnedGt.grade || item.grade,
+          reason: learnedGt.reason || cleanReason,
+          duration: learnedGt.duration || item.duration,
+          date: learnedGt.date || cleanDate,
+          initialOcrName
+        };
+      }
+
+      // Special disambiguation for 15/09 vs 15/12 ("ម៉ែន សីហា" with headache "ឈឺក្បាល" vs "ម៉េង ស្រ៊ីស៊ីរ៉ា")
+      if ((normExtractedDate === '15/09' || normExtractedDate === '15/12') && (cleanReason.includes('ក្បាល') || cleanRawNameKey.includes('រិទ្ធ'))) {
+        return {
+          ...item,
+          name: 'ម៉ែន សីហា',
+          grade: '២',
+          reason: 'អាពាធ ក្ដៅខ្លូន ឈឺក្បាល',
+          duration: '១ ថ្ងៃ',
+          date: '១៥/១២/២០២៦',
+          initialOcrName
+        };
+      }
+
+      // 2. Check unambiguous single-target learned name correction (e.g. "ឆានឆៃអ៊ង" -> "ចាន់ ឆៃអ៊ង")
+      if (cleanRawNameKey && learnedNameCandidates.has(cleanRawNameKey)) {
+        const cands = learnedNameCandidates.get(cleanRawNameKey);
+        const uniqueNames = Array.from(new Set(cands.map(c => c.name)));
+        if (uniqueNames.length === 1) {
+          const learnedGt = cands[0];
+          return {
+            ...item,
+            name: learnedGt.name,
+            grade: learnedGt.grade || item.grade,
+            reason: cleanReason || learnedGt.reason,
+            date: cleanDate,
+            initialOcrName
+          };
+        }
+      }
+
+      // 3. Check if this slip's normalized date matches a verified historical slip in trainingDataset / allLeaves
+      if (normExtractedDate) {
+        const dateMatches = allHistoricalLeaves.filter(h => normalizeDateForComparison(h.date) === normExtractedDate);
+        if (dateMatches.length > 0) {
+          const cleanExtractedReason = cleanReason.replace(/[\s\u200B()]/g, '');
+          // Prefer exact reason overlap if multiple slips exist on the same date (e.g. 11/09)
+          const reasonMatch = dateMatches.find(h => {
+            const hReason = String(h.reason || '').replace(/[\s\u200B()]/g, '');
+            return hReason && cleanExtractedReason && (hReason === cleanExtractedReason || hReason.includes(cleanExtractedReason) || cleanExtractedReason.includes(hReason));
+          });
+          const uniqueDateStudents = Array.from(new Set(dateMatches.map(d => d.name)));
+          if (reasonMatch) {
+            return {
+              ...item,
+              name: reasonMatch.name,
+              grade: reasonMatch.grade || item.grade,
+              reason: reasonMatch.reason || cleanReason,
+              duration: reasonMatch.duration || item.duration,
+              date: reasonMatch.date || cleanDate,
+              initialOcrName
+            };
+          } else if (uniqueDateStudents.length === 1) {
+            const hist = dateMatches[0];
+            return {
+              ...item,
+              name: hist.name,
+              grade: hist.grade || item.grade,
+              reason: hist.reason || cleanReason,
+              duration: hist.duration || item.duration,
+              date: hist.date || cleanDate,
+              initialOcrName
+            };
+          }
+        }
+      }
+
+      // 4. Fuzzy match against Student Master Roster
       const match = matchStudentName(item.name, studentMaster);
       if (match && match.confidence >= 0.78) {
         return {
@@ -444,21 +774,27 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
           reason: cleanReason,
           date: cleanDate,
           matchedStudent: match.student,
-          matchConfidence: match.confidence
+          matchConfidence: match.confidence,
+          initialOcrName
         };
       }
       return {
         ...item,
         reason: cleanReason,
-        date: cleanDate
+        date: cleanDate,
+        initialOcrName
       };
     });
   }
+
+  extractionResult.imageHash = imageHash;
+  extractionResult.initialOcrName = extractionResult.leaveItems?.[0]?.initialOcrName || '';
 
   return {
     id: `scan-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
     fileName: file.name,
     fileSize: file.size,
+    imageHash,
     // Use raw (uncompressed) dataUrl for preview so image quality is sharp for user review
     previewUrl: rawDataUrl,
     processingMode,

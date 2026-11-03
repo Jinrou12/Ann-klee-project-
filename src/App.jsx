@@ -26,11 +26,13 @@ import {
   saveOfflineQueue,
   getStoredTrainingDataset,
   saveTrainingSample,
+  saveTrainingBatch,
   exportTrainingDataset,
   fetchCloudAppState,
   syncAppStateToCloud,
   subscribeToCloudAppState,
-  fetchTrainingFromCloud
+  fetchTrainingFromCloud,
+  subscribeToCloudTraining
 } from './utils/storage';
 import { processUploadedImage } from './utils/ocrService';
 import { parseDurationShorthand } from './utils/khmerNumerals';
@@ -152,9 +154,16 @@ export default function App() {
       }
     });
 
+    const unsubscribeTraining = subscribeToCloudTraining((remoteTraining) => {
+      if (isMounted && Array.isArray(remoteTraining)) {
+        setTrainingCount(remoteTraining.length);
+      }
+    });
+
     return () => {
       isMounted = false;
       unsubscribe();
+      unsubscribeTraining();
     };
   }, []);
 
@@ -300,14 +309,18 @@ export default function App() {
           const res = await processUploadedImage(item.file, {
             docTypeHint: item.docTypeHint,
             apiKey,
-            studentMaster: appState.studentMaster
+            studentMaster: appState.studentMaster,
+            allLeaves: appState.leaves
           });
 
           updatedQueue[i] = {
             ...item,
             status: 'processed',
+            imageHash: res.imageHash || res.result?.imageHash || '',
             processedData: {
               ...(res.result || {}),
+              imageHash: res.imageHash || res.result?.imageHash || '',
+              initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
               rawScan: res
             }
           };
@@ -362,14 +375,18 @@ export default function App() {
           const res = await processUploadedImage(item.file, {
             docTypeHint: item.docTypeHint,
             apiKey,
-            studentMaster: appState.studentMaster
+            studentMaster: appState.studentMaster,
+            allLeaves: appState.leaves
           });
 
           updatedQueue[i] = {
             ...item,
             status: 'processed',
+            imageHash: res.imageHash || res.result?.imageHash || '',
             processedData: {
               ...(res.result || {}),
+              imageHash: res.imageHash || res.result?.imageHash || '',
+              initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
               rawScan: res
             }
           };
@@ -389,7 +406,7 @@ export default function App() {
     setIsProcessing(false);
   };
 
-  const handleApproveQueueItem = ({ type, item, queueId, rawOcr, imagePreview, fileName }) => {
+  const handleApproveQueueItem = ({ type, item, queueId, rawOcr, imagePreview, fileName, fileSize, imageHash }) => {
     // 1. Add to active monthly table
     let finalItem = item;
     if (type === 'leave') {
@@ -411,10 +428,16 @@ export default function App() {
       });
     }
 
-    // 2. AI Flywheel: Harvest verified ground-truth training pair
+    // 2. AI Flywheel: Harvest verified ground-truth training pair with Visual Fingerprint & Learned Name Correction
+    const resolvedHash = imageHash || rawOcr?.imageHash || rawOcr?.rawScan?.imageHash || '';
+    const resolvedRawName = rawOcr?.initialOcrName || rawOcr?.leaveItems?.[0]?.initialOcrName || '';
     const sample = {
       id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       fileName: fileName || 'sample',
+      originalFileName: fileName || 'sample',
+      fileSize: fileSize || rawOcr?.rawScan?.fileSize || undefined,
+      imageHash: resolvedHash || undefined,
+      rawOcrName: resolvedRawName || undefined,
       docType: type,
       timestamp: new Date().toISOString(),
       rawOcr: rawOcr || null,
@@ -440,6 +463,7 @@ export default function App() {
 
   const handleApproveSingleItem = (qItem) => {
     const type = qItem.processedData?.detectedType || qItem.docTypeHint || 'leave';
+    const itemHash = qItem.imageHash || qItem.processedData?.imageHash || qItem.processedData?.rawScan?.imageHash || '';
     if (type === 'leave') {
       const l = qItem.processedData?.leaveItems?.[0] || {};
       handleApproveQueueItem({
@@ -456,7 +480,9 @@ export default function App() {
         queueId: qItem.id,
         rawOcr: qItem.processedData,
         imagePreview: qItem.previewUrl,
-        fileName: qItem.fileName
+        fileName: qItem.fileName,
+        fileSize: qItem.fileSize,
+        imageHash: itemHash
       });
     } else {
       const f = qItem.processedData?.financeItems?.[0] || {};
@@ -474,7 +500,9 @@ export default function App() {
         queueId: qItem.id,
         rawOcr: qItem.processedData,
         imagePreview: qItem.previewUrl,
-        fileName: qItem.fileName
+        fileName: qItem.fileName,
+        fileSize: qItem.fileSize,
+        imageHash: itemHash
       });
     }
   };
@@ -489,9 +517,12 @@ export default function App() {
       income: [...(currentFinance.income || [])],
       expense: [...(currentFinance.expense || [])]
     };
+    const batchSamples = [];
 
     readyItems.forEach(qItem => {
       const type = qItem.processedData?.detectedType || qItem.docTypeHint || 'leave';
+      const itemHash = qItem.imageHash || qItem.processedData?.imageHash || qItem.processedData?.rawScan?.imageHash || '';
+      const resolvedRawName = qItem.processedData?.initialOcrName || qItem.processedData?.leaveItems?.[0]?.initialOcrName || '';
       if (type === 'leave') {
         const l = qItem.processedData?.leaveItems?.[0] || {};
         let cleanDate = String(l.date || new Date().toLocaleDateString('en-GB')).trim();
@@ -512,13 +543,16 @@ export default function App() {
           note: l.note || ''
         };
         newLeaves.push(leaveRecord);
-        saveTrainingSample({
+        batchSamples.push({
           id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           fileName: qItem.fileName,
+          originalFileName: qItem.fileName,
+          fileSize: qItem.fileSize,
+          imageHash: itemHash || undefined,
+          rawOcrName: resolvedRawName || undefined,
           docType: 'leave',
           timestamp: new Date().toISOString(),
-          groundTruth: leaveRecord,
-          imagePreview: qItem.previewUrl
+          groundTruth: leaveRecord
         });
       } else {
         const f = qItem.processedData?.financeItems?.[0] || {};
@@ -533,20 +567,23 @@ export default function App() {
           note: f.note || ''
         };
         newFinance[cat].push(finRecord);
-        saveTrainingSample({
+        batchSamples.push({
           id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           fileName: qItem.fileName,
+          originalFileName: qItem.fileName,
+          fileSize: qItem.fileSize,
+          imageHash: itemHash || undefined,
           docType: 'finance',
           timestamp: new Date().toISOString(),
-          groundTruth: finRecord,
-          imagePreview: qItem.previewUrl
+          groundTruth: finRecord
         });
       }
     });
 
+    const updatedDataset = saveTrainingBatch(batchSamples);
     mutateLeaves(newLeaves);
     mutateFinance(newFinance);
-    setTrainingCount(getStoredTrainingDataset().length);
+    setTrainingCount(updatedDataset.length);
     setQueue(prev => prev.filter(q => q.status !== 'processed'));
     setActiveTab('leave');
   };

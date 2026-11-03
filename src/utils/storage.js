@@ -323,43 +323,227 @@ export const INITIAL_TRAINING_SAMPLES = [
     id: 'sample-na-tichkeang-001',
     docType: 'leave',
     fileName: 'លិខិតសុំច្បាប់_ណា_ទិចគាង.jpg',
+    originalFileName: 'លិខិតសុំច្បាប់_ណា_ទិចគាង.jpg',
+    rawOcrName: 'ណា តិចគាង',
     groundTruth: {
-      name: 'ណា ទិចគាង',
+      name: 'ណា តិចគាង',
       grade: '៣',
       reason: 'ក្ដៅខ្លួន ឈឺចុកពោះ',
       duration: '១ ថ្ងៃ',
-      date: '១៧/០៩/២០២៦',
-      school: 'ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង',
-      director: 'ព្រះបណ្ណាធម្មោ វ៉ាន់ សុគត'
-    },
-    notes: 'អក្សរក្វៀសខ្មែរ: ណា. តិ.ច.គា.ង (ណា ទិចគាង) ថ្នាក់ទី៣, ក្ដៅខ្លួន...ឈឺចុកពោះ (ក្ដៅខ្លួន ឈឺចុកពោះ), កាលបរិច្ឆេទ ១៧/០៩/២០២៦',
-    verifiedAt: new Date().toISOString()
+      date: '១៧/០៩/២០២៦'
+    }
+  },
+  {
+    id: 'train-1793647998273-zk99t',
+    docType: 'leave',
+    fileName: 'b98eb33712521d28c7553405fc3ad5e8f36e855f.jpg',
+    originalFileName: 'b98eb33712521d28c7553405fc3ad5e8f36e855f.jpg',
+    rawOcrName: 'ឆាន រ៉ាយុទ្ធ',
+    groundTruth: {
+      name: 'ឆាន រ៉ាយុទ្ធ',
+      grade: 'មត្តេយ្យ',
+      reason: 'អាពាធឈឺសន្លាក់ឆ្អឹងខ្នង',
+      duration: '១ ថ្ងៃ',
+      date: '១២/០១/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793647998330-mjgh1',
+    docType: 'leave',
+    fileName: 'verified_meng_sreysira.jpg',
+    originalFileName: 'verified_meng_sreysira.jpg',
+    rawOcrName: 'ណា តិចគាង',
+    groundTruth: {
+      name: 'ម៉េង ស្រ៊ីស៊ីរ៉ា',
+      grade: '២',
+      reason: 'ក្ដៅខ្លួន ឈឺចុកពោះ',
+      duration: '២ ថ្ងៃ',
+      date: '១៥/០៩/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793647998357-0puup',
+    docType: 'leave',
+    fileName: 'verified_un_saren.jpg',
+    originalFileName: 'verified_un_saren.jpg',
+    rawOcrName: 'ស៊ីម សុវណ្ណរាជ',
+    groundTruth: {
+      name: 'អ៊ុន សារ៉េន',
+      grade: '២',
+      reason: 'អាពាធ (ក្ដៅខ្លួន ឈឺក)',
+      duration: '១ ល្ងាច',
+      date: '១៨/០៩/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793647998374-5o54u',
+    docType: 'leave',
+    fileName: 'verified_men_seyha.jpg',
+    originalFileName: 'verified_men_seyha.jpg',
+    rawOcrName: 'រិទ្ធ ធារ័ត្ម',
+    groundTruth: {
+      name: 'ម៉ែន សីហា',
+      grade: '២',
+      reason: 'អាពាធ ក្ដៅខ្លូន ឈឺក្បាល',
+      duration: '១ ថ្ងៃ',
+      date: '១៥/១២/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793647998388-096gv',
+    docType: 'leave',
+    fileName: 'verified_khun_leanghai.jpg',
+    originalFileName: 'verified_khun_leanghai.jpg',
+    rawOcrName: 'ឃិន ស៊ិវម៉ិញ',
+    groundTruth: {
+      name: 'ឃុន លាងហៃ',
+      grade: '៣',
+      reason: 'ក្ដៅខ្លួន ឈឺចុកពោះ',
+      duration: '១ ថ្ងៃ',
+      date: '១៤/០៩/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793647998395-zmh3k',
+    docType: 'leave',
+    fileName: 'verified_chan_chaiorng_1.jpg',
+    originalFileName: 'verified_chan_chaiorng_1.jpg',
+    rawOcrName: 'ឆាន ឆៃអ៊ង',
+    groundTruth: {
+      name: 'ចាន់ ឆៃអ៊ង',
+      grade: '២',
+      reason: 'ក្ដៅខ្លួន ឈឺចុកពោះ',
+      duration: '១ ព្រឹក',
+      date: '១១/០៩/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793647998400-gzjyc',
+    docType: 'leave',
+    fileName: 'photo_2026-11-03_11-25-33.jpg',
+    originalFileName: 'photo_2026-11-03_11-25-33.jpg',
+    rawOcrName: 'ណា តិចគាង',
+    groundTruth: {
+      name: 'ឡាយ ប៊ុនយ៉ុង',
+      grade: '២',
+      reason: 'ក្ដៅខ្លួន ឈឺចុកពោះ',
+      duration: '១ ថ្ងៃ',
+      date: '២១/០៩/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793647998402-8pdnu',
+    docType: 'leave',
+    fileName: 'verified_chan_chaiorng_2.jpg',
+    originalFileName: 'verified_chan_chaiorng_2.jpg',
+    rawOcrName: 'ឆាន ឆៃអ៊ង',
+    groundTruth: {
+      name: 'ចាន់ ឆៃអ៊ង',
+      grade: '២',
+      reason: 'ក្ដៅខ្លួន ឈឺចុកពោះ',
+      duration: '១ ថ្ងៃ',
+      date: '១១/០៨/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793647998403-7h293',
+    docType: 'leave',
+    fileName: 'verified_chan_chaiorng_3.jpg',
+    originalFileName: 'verified_chan_chaiorng_3.jpg',
+    rawOcrName: 'ឆាន ឆៃអ៊ង',
+    groundTruth: {
+      name: 'ចាន់ ឆៃអ៊ង',
+      grade: '២',
+      reason: 'អាពាធ ឈឺពោះ',
+      duration: '១ ថ្ងៃ',
+      date: '១១/០៩/២០២៦'
+    }
+  },
+  {
+    id: 'train-verified-leave-1793679227852',
+    docType: 'leave',
+    fileName: 'verified_mi_sinou.jpg',
+    originalFileName: 'verified_mi_sinou.jpg',
+    rawOcrName: 'ឆេងអាន ឈាងហេង',
+    groundTruth: {
+      name: 'មី ស៊ីនូ',
+      grade: '២',
+      reason: 'ក្ដៅខ្លួន',
+      duration: '១ ថ្ងៃ',
+      date: '២១/១០/២០២៦'
+    }
   }
 ];
+
+/**
+ * Helper: Check ONLY bare generic live-camera filenames that lack any timestamp/ID numbers
+ * (e.g., "image.jpg", "photo.jpg", "camera.jpg").
+ * NEVER treat Telegram/phone filenames with numbers (e.g. "photo_2026-11-03_11-25-33.jpg", "IMG_1234.jpg") as generic!
+ */
+export function isBareGenericCameraFilename(fn) {
+  const clean = String(fn || '').toLowerCase().trim();
+  return /^(image|img|photo|camera|capture|file|pic|snapshot)\.(jpe?g|png|webp|heic)$/i.test(clean);
+}
+
+/**
+ * Strip legacy "camera_<timestamp>_" prefix if it was prepended to a real filename like "photo_2026-..."
+ */
+export function normalizeOriginalFilename(fn) {
+  const clean = String(fn || '').trim();
+  const stripped = clean.replace(/^camera_\d+_/i, '');
+  return stripped || clean;
+}
+
+function sanitizeTrainingSample(s) {
+  if (!s || typeof s !== 'object') return s;
+  const copy = { ...s };
+  if (copy.fileName) {
+    const orig = normalizeOriginalFilename(copy.originalFileName || copy.fileName);
+    copy.originalFileName = orig;
+    if (!isBareGenericCameraFilename(orig)) {
+      copy.fileName = orig;
+    }
+  }
+  // Extract initial OCR name/reason before stripping heavy base64 rawScan payloads
+  const rawLeave = copy.rawOcr?.rawScan?.result?.leaveItems?.[0] || copy.rawOcr?.leaveItems?.[0];
+  if (!copy.rawOcrName && rawLeave?.name) {
+    copy.rawOcrName = String(rawLeave.name).trim();
+  }
+  if (copy.rawOcr) {
+    // Strip heavy base64 previewUrl inside rawOcr to keep localStorage and Supabase fast & clean
+    copy.rawOcr = {
+      detectedType: copy.rawOcr.detectedType || 'leave',
+      initialOcrName: copy.rawOcr.initialOcrName || copy.rawOcrName || '',
+    };
+  }
+  // Never store dead blob: URLs or multi-MB base64 strings in imagePreview
+  if (copy.imagePreview && (String(copy.imagePreview).startsWith('blob:') || String(copy.imagePreview).length > 2048)) {
+    delete copy.imagePreview;
+  }
+  if (copy.groundTruth?.date) {
+    let cleanDate = String(copy.groundTruth.date).trim();
+    cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
+    if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
+      const parts = cleanDate.split(/ដល់|-|\/to\//i);
+      if (parts[0] && parts[0].trim().length >= 6) {
+        cleanDate = parts[0].trim();
+      }
+    }
+    copy.groundTruth = { ...copy.groundTruth, date: cleanDate };
+  }
+  return copy;
+}
 
 export function getStoredTrainingDataset() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.TRAINING_DATASET);
     const parsed = raw ? JSON.parse(raw) : INITIAL_TRAINING_SAMPLES;
-    const isGenericCamera = (fn) => /^(image|img|photo|camera|capture|file|pic|snapshot)[\w-]*\.(jpe?g|png|webp|heic)$/i.test(String(fn || '').trim());
+    const list = Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_TRAINING_SAMPLES;
+    const existingIds = new Set(list.map(s => s?.id));
+    const missingInitial = INITIAL_TRAINING_SAMPLES.filter(init => !existingIds.has(init.id));
 
-    // Auto-clean any dates in stored ground truth and purge generic camera filenames
-    return (Array.isArray(parsed) ? parsed : INITIAL_TRAINING_SAMPLES)
-      .filter(s => !isGenericCamera(s.fileName))
-      .map(s => {
-        if (s.groundTruth?.date) {
-          let cleanDate = String(s.groundTruth.date).trim();
-          cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
-          if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
-            const parts = cleanDate.split(/ដល់|-|\/to\//i);
-            if (parts[0] && parts[0].trim().length >= 6) {
-              cleanDate = parts[0].trim();
-            }
-          }
-          s.groundTruth.date = cleanDate;
-        }
-        return s;
-      });
+    // Never purge user-trained samples! Always include baseline verified samples and sanitize dates.
+    return [...list, ...missingInitial].map(sanitizeTrainingSample);
   } catch (e) {
     console.error('Failed to parse training dataset:', e);
     return INITIAL_TRAINING_SAMPLES;
@@ -367,40 +551,61 @@ export function getStoredTrainingDataset() {
 }
 
 export function saveTrainingSample(sample) {
+  return saveTrainingBatch([sample]);
+}
+
+export function saveTrainingBatch(samples = []) {
   try {
-    // Sanitize groundTruth date before saving
-    let sampleToSave = { ...sample };
-    if (sampleToSave.groundTruth?.date) {
-      let cleanDate = String(sampleToSave.groundTruth.date).trim();
-      cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
-      if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
-        const parts = cleanDate.split(/ដល់|-|\/to\//i);
-        if (parts[0] && parts[0].trim().length >= 6) {
-          cleanDate = parts[0].trim();
-        }
+    if (!Array.isArray(samples) || samples.length === 0) {
+      return getStoredTrainingDataset();
+    }
+
+    let current = getStoredTrainingDataset();
+
+    for (const rawSample of samples) {
+      let sampleToSave = sanitizeTrainingSample({ ...rawSample });
+      const origName = normalizeOriginalFilename(sampleToSave.originalFileName || sampleToSave.fileName || '');
+      sampleToSave.originalFileName = origName;
+
+      // Only assign timestamped unique fileName if it is a bare "image.jpg" without any numbers
+      if (isBareGenericCameraFilename(origName)) {
+        sampleToSave.fileName = `camera_${Date.now()}_${Math.random().toString(36).slice(2, 5)}_${origName}`;
+      } else {
+        sampleToSave.fileName = origName;
       }
-      sampleToSave.groundTruth.date = cleanDate;
+
+      const normTarget = origName.toLowerCase().replace(/\s*\(\d+\)\s*(?=\.[^.]+$|$)/, '').trim();
+
+      // Deduplicate by id, or by imageHash, or by non-generic filename
+      current = [
+        sampleToSave,
+        ...current.filter(existing => {
+          if (existing.id === sampleToSave.id) return false;
+          if (sampleToSave.imageHash && existing.imageHash && existing.imageHash === sampleToSave.imageHash) {
+            return false;
+          }
+          if (!isBareGenericCameraFilename(origName) && normTarget) {
+            const existOrig = normalizeOriginalFilename(existing.originalFileName || existing.fileName || '')
+              .toLowerCase()
+              .replace(/\s*\(\d+\)\s*(?=\.[^.]+$|$)/, '')
+              .trim();
+            if (existOrig === normTarget) return false;
+          }
+          return true;
+        })
+      ];
     }
 
-    // Assign timestamped unique name to generic camera uploads to prevent collisions
-    const rawName = String(sampleToSave.fileName || '').toLowerCase().trim();
-    if (/^(image|photo|camera|capture|file|pic|snapshot)[\w-]*\.(jpe?g|png|webp|heic)$/i.test(rawName)) {
-      sampleToSave.fileName = `camera_${Date.now()}_${rawName}`;
-    }
-
-    const current = getStoredTrainingDataset();
-    // Overwrite if same id or same fileName exists to maintain updated ground truth
-    const updated = [sampleToSave, ...current.filter(s => s.id !== sampleToSave.id && s.fileName !== sampleToSave.fileName)];
-    localStorage.setItem(STORAGE_KEYS.TRAINING_DATASET, JSON.stringify(updated));
+    localStorage.setItem(STORAGE_KEYS.TRAINING_DATASET, JSON.stringify(current));
 
     // Auto-sync to Supabase cloud (fire-and-forget — non-blocking)
-    syncTrainingToCloud(updated).catch(err =>
+    syncTrainingToCloud(current).catch(err =>
       console.warn('[Training Sync] Cloud sync failed silently:', err)
     );
 
-    return updated;
+    return current;
   } catch (e) {
-    console.error('Failed to save training sample:', e);
+    console.error('Failed to save training batch:', e);
     return [];
   }
 }
@@ -412,11 +617,12 @@ export function saveTrainingSample(sample) {
 export async function syncTrainingToCloud(dataset) {
   if (!supabase) return false;
   try {
+    const cleaned = (Array.isArray(dataset) ? dataset : []).map(sanitizeTrainingSample);
     const { error } = await supabase
       .from('training_samples')
       .upsert({
         id: 'current',
-        data: dataset,
+        data: cleaned,
         updated_at: new Date().toISOString()
       }, { onConflict: 'id' });
 
@@ -424,7 +630,7 @@ export async function syncTrainingToCloud(dataset) {
       console.warn('[Training Sync] Supabase error:', error.message);
       return false;
     }
-    console.log(`☁️ [Training Sync] ${dataset.length} samples synced to cloud.`);
+    console.log(`☁️ [Training Sync] ${cleaned.length} samples synced to cloud.`);
     return true;
   } catch (err) {
     console.warn('[Training Sync] Failed:', err);
@@ -433,7 +639,7 @@ export async function syncTrainingToCloud(dataset) {
 }
 
 /**
- * AI Training Dataset — Auto-Load from Supabase on App Start
+ * AI Training Dataset — Auto-Load from Supabase on App Start & Before Scan
  * Merges cloud data with local, cloud wins if newer.
  */
 export async function fetchTrainingFromCloud() {
@@ -450,21 +656,69 @@ export async function fetchTrainingFromCloud() {
       return null;
     }
     if (data?.data && Array.isArray(data.data)) {
-      // Merge: cloud samples take priority, then fill in any local-only samples
+      const cloudSamples = data.data.map(sanitizeTrainingSample);
       const local = getStoredTrainingDataset();
-      const cloudIds = new Set(data.data.map(s => s.id));
-      const localOnly = local.filter(s => !cloudIds.has(s.id));
-      const merged = [...data.data, ...localOnly];
+      const cloudIds = new Set(cloudSamples.map(s => s.id));
+      const cloudHashes = new Set(cloudSamples.map(s => s.imageHash).filter(Boolean));
+      const cloudNames = new Set(
+        cloudSamples
+          .map(s => normalizeOriginalFilename(s.originalFileName || s.fileName || '').toLowerCase())
+          .filter(n => n && !isBareGenericCameraFilename(n))
+      );
 
-      // Persist merged result back to localStorage
+      const localOnly = local.filter(s => {
+        if (cloudIds.has(s.id)) return false;
+        if (s.imageHash && cloudHashes.has(s.imageHash)) return false;
+        const n = normalizeOriginalFilename(s.originalFileName || s.fileName || '').toLowerCase();
+        if (n && !isBareGenericCameraFilename(n) && cloudNames.has(n)) return false;
+        return true;
+      });
+
+      const merged = [...cloudSamples, ...localOnly];
       localStorage.setItem(STORAGE_KEYS.TRAINING_DATASET, JSON.stringify(merged));
-      console.log(`☁️ [Training Sync] Loaded ${data.data.length} samples from cloud, merged ${localOnly.length} local-only.`);
+
+      // If local had additional samples or sanitized filenames, push merged back to cloud
+      if (localOnly.length > 0 || JSON.stringify(data.data) !== JSON.stringify(merged)) {
+        syncTrainingToCloud(merged).catch(() => {});
+      }
+
+      console.log(`☁️ [Training Sync] Loaded ${cloudSamples.length} samples from cloud, merged ${localOnly.length} local-only.`);
       return merged;
     }
     return null;
   } catch (err) {
     console.warn('[Training Sync] Fetch failed:', err);
     return null;
+  }
+}
+
+/**
+ * Subscribe to realtime updates on `training_samples` table so all devices stay in sync
+ */
+export function subscribeToCloudTraining(onRemoteTrainingUpdate) {
+  if (!supabase) return () => {};
+  try {
+    const channel = supabase
+      .channel('public:training_samples')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'training_samples', filter: 'id=eq.current' },
+        (payload) => {
+          if (payload.new && Array.isArray(payload.new.data)) {
+            const cleaned = payload.new.data.map(sanitizeTrainingSample);
+            localStorage.setItem(STORAGE_KEYS.TRAINING_DATASET, JSON.stringify(cleaned));
+            if (onRemoteTrainingUpdate) onRemoteTrainingUpdate(cleaned);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  } catch (err) {
+    console.warn('Failed to subscribe to Supabase training_samples realtime:', err);
+    return () => {};
   }
 }
 
