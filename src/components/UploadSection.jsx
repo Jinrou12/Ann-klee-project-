@@ -118,6 +118,7 @@ export default function UploadSection({
   };
 
   const processedItems = queue.filter(q => q.status === 'processed');
+  const hasActiveScanning = queue.some(q => q.status === 'pending' || q.status === 'processing');
 
   return (
     <div className="no-print">
@@ -274,16 +275,22 @@ export default function UploadSection({
                     📋 ឯកសារស្កេនបាន ({queue.length})
                   </h3>
                   <span style={{
-                    background: '#ecfdf5',
-                    color: '#065f46',
-                    border: '1px solid #a7f3d0',
+                    background: hasActiveScanning ? '#eff6ff' : '#ecfdf5',
+                    color: hasActiveScanning ? '#1d4ed8' : '#065f46',
+                    border: `1px solid ${hasActiveScanning ? '#bfdbfe' : '#a7f3d0'}`,
                     padding: '2px 8px',
                     borderRadius: 20,
                     fontSize: 11,
                     fontWeight: 700,
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
                   }}>
-                    {processedItems.length}/{queue.length} រួចរាល់
+                    {hasActiveScanning && (
+                      <RefreshCw size={10} className="spin" />
+                    )}
+                    <span>{processedItems.length}/{queue.length} រួចរាល់</span>
                   </span>
                 </div>
 
@@ -348,15 +355,21 @@ export default function UploadSection({
                   📋 បញ្ជីឯកសារស្កេនបាន ({queue.length})
                 </h3>
                 <span style={{
-                  background: '#ecfdf5',
-                  color: '#065f46',
-                  border: '1px solid #a7f3d0',
+                  background: hasActiveScanning ? '#eff6ff' : '#ecfdf5',
+                  color: hasActiveScanning ? '#1d4ed8' : '#065f46',
+                  border: `1px solid ${hasActiveScanning ? '#bfdbfe' : '#a7f3d0'}`,
                   padding: '3px 10px',
                   borderRadius: 20,
                   fontSize: 12,
-                  fontWeight: 600
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5
                 }}>
-                  {processedItems.length} / {queue.length} ស្រង់រួចរាល់
+                  {hasActiveScanning && (
+                    <RefreshCw size={11} className="spin" />
+                  )}
+                  <span>{processedItems.length} / {queue.length} ស្រង់រួចរាល់</span>
                 </span>
                 <span style={{ fontSize: 12, color: '#64748b' }}>
                   (បងអាចពិនិត្យរូបថត និងកែសម្រួលអក្សរផ្ទាល់ដៃនៅទីនេះបានភ្លាមៗ)
@@ -413,7 +426,7 @@ export default function UploadSection({
               const rawDetectedType = item.processedData?.detectedType || resultData.detectedType || item.docTypeHint || 'leave';
               const detectedType = rawDetectedType === 'auto' ? 'leave' : rawDetectedType;
               const isLeave = detectedType === 'leave';
-              const isPending = item.status === 'pending';
+              const isPending = item.status === 'pending' || item.status === 'processing';
               const processingMode = item.processedData?.rawScan?.processingMode || item.processedData?.processingMode || (resultData.isLearnedMemory ? 'ai_flywheel_memory' : 'gemini_cloud');
               const isLearnedMemory = processingMode === 'ai_flywheel_memory' || Boolean(resultData.isLearnedMemory);
               const isCloudScan = !isPending && (processingMode === 'gemini_cloud' || isLearnedMemory || item.status === 'processed');
@@ -712,26 +725,64 @@ export default function UploadSection({
                                 <AlertTriangle size={11} color="#dc2626" />
                                 <span>Offline</span>
                               </span>
-                            ) : (
+                            ) : item.status === 'error' ? (
                               <span style={{
                                 fontSize: 10,
                                 padding: '2px 6px',
                                 borderRadius: 6,
-                                background: isPending ? '#eff6ff' : (isCloudScan ? '#ecfdf5' : '#fffbeb'),
-                                color: isPending ? '#1d4ed8' : (isCloudScan ? '#065f46' : '#b45309'),
-                                border: `1px solid ${isPending ? '#bfdbfe' : (isCloudScan ? '#a7f3d0' : '#fde68a')}`,
+                                background: '#fee2e2',
+                                color: '#b91c1c',
+                                border: '1px solid #fecaca',
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 3,
                                 fontWeight: 600
                               }}>
-                                <Sparkles size={11} color={isPending ? '#2563eb' : (isCloudScan ? '#059669' : '#d97706')} />
+                                <AlertTriangle size={11} color="#dc2626" />
+                                <span>ស្កេនបរាជ័យ</span>
+                              </span>
+                            ) : (
+                              <span style={{
+                                fontSize: 10,
+                                padding: '2px 6px',
+                                borderRadius: 6,
+                                background: item.status === 'processing'
+                                  ? '#eff6ff'
+                                  : item.status === 'pending'
+                                    ? '#f8fafc'
+                                    : (isCloudScan ? '#ecfdf5' : '#fffbeb'),
+                                color: item.status === 'processing'
+                                  ? '#1d4ed8'
+                                  : item.status === 'pending'
+                                    ? '#64748b'
+                                    : (isCloudScan ? '#065f46' : '#b45309'),
+                                border: `1px solid ${
+                                  item.status === 'processing'
+                                    ? '#bfdbfe'
+                                    : item.status === 'pending'
+                                      ? '#cbd5e1'
+                                      : (isCloudScan ? '#a7f3d0' : '#fde68a')
+                                }`,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontWeight: 600
+                              }}>
+                                <Sparkles size={11} color={
+                                  item.status === 'processing'
+                                    ? '#2563eb'
+                                    : item.status === 'pending'
+                                      ? '#94a3b8'
+                                      : (isCloudScan ? '#059669' : '#d97706')
+                                } />
                                 <span>
-                                  {isPending
+                                  {item.status === 'processing'
                                     ? 'កំពុងស្កេន...'
-                                    : isLearnedMemory
-                                      ? 'AI (ចងចាំ ១០០%)'
-                                      : 'AI Vision'}
+                                    : item.status === 'pending'
+                                      ? 'រង់ចាំស្កេន...'
+                                      : isLearnedMemory
+                                        ? 'AI (ចងចាំ ១០០%)'
+                                        : 'AI Vision'}
                                 </span>
                               </span>
                             )}
@@ -1473,26 +1524,64 @@ export default function UploadSection({
                           <AlertTriangle size={13} color="#dc2626" />
                           <span>{resultData.scanError || 'មិនទាន់បានស្កេន (Offline)'}</span>
                         </div>
-                      ) : (
+                      ) : item.status === 'error' ? (
                         <div style={{
                           fontSize: 11,
                           padding: '4px 10px',
                           borderRadius: 20,
-                          background: isPending ? '#eff6ff' : (isCloudScan ? '#ecfdf5' : '#fffbeb'),
-                          color: isPending ? '#1d4ed8' : (isCloudScan ? '#065f46' : '#b45309'),
-                          border: `1px solid ${isPending ? '#bfdbfe' : (isCloudScan ? '#a7f3d0' : '#fde68a')}`,
+                          background: '#fee2e2',
+                          color: '#b91c1c',
+                          border: '1px solid #fecaca',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: 5,
                           fontWeight: 600
                         }}>
-                          <Sparkles size={13} color={isPending ? '#2563eb' : (isCloudScan ? '#059669' : '#d97706')} />
+                          <AlertTriangle size={13} color="#dc2626" />
+                          <span>ស្កេនបរាជ័យ (ចុចបង្វិលសាកល្បងម្ដងទៀត)</span>
+                        </div>
+                      ) : (
+                        <div style={{
+                          fontSize: 11,
+                          padding: '4px 10px',
+                          borderRadius: 20,
+                          background: item.status === 'processing'
+                            ? '#eff6ff'
+                            : item.status === 'pending'
+                              ? '#f8fafc'
+                              : (isCloudScan ? '#ecfdf5' : '#fffbeb'),
+                          color: item.status === 'processing'
+                            ? '#1d4ed8'
+                            : item.status === 'pending'
+                              ? '#64748b'
+                              : (isCloudScan ? '#065f46' : '#b45309'),
+                          border: `1px solid ${
+                            item.status === 'processing'
+                              ? '#bfdbfe'
+                              : item.status === 'pending'
+                                ? '#cbd5e1'
+                                : (isCloudScan ? '#a7f3d0' : '#fde68a')
+                          }`,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          fontWeight: 600
+                        }}>
+                          <Sparkles size={13} color={
+                            item.status === 'processing'
+                              ? '#2563eb'
+                              : item.status === 'pending'
+                                ? '#94a3b8'
+                                : (isCloudScan ? '#059669' : '#d97706')
+                          } />
                           <span>
-                            {isPending
+                            {item.status === 'processing'
                               ? '⏳ កំពុងវិភាគដោយ AI Vision...'
-                              : isLearnedMemory
-                                ? '✨ ស្កេនដោយ AI Vision (ចងចាំទិន្នន័យពិត ១០០%)'
-                                : '✨ ស្កេនដោយ Gemini Cloud AI'}
+                              : item.status === 'pending'
+                                ? '⏳ រង់ចាំស្កេន...'
+                                : isLearnedMemory
+                                  ? '✨ ស្កេនដោយ AI Vision (ចងចាំទិន្នន័យពិត ១០០%)'
+                                  : '✨ ស្កេនដោយ Gemini Cloud AI'}
                             {' • '}
                             <strong>{isLeave ? 'ក្រដាសច្បាប់ (A4 បញ្ឈរ)' : 'ប៉ុងចំណាយ/ចំណូល'}</strong>
                           </span>

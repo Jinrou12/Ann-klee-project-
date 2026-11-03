@@ -286,85 +286,134 @@ export default function App() {
     }));
   }, []);
 
-  // 3. Queue & Upload Actions (Instant Auto-Scan & Immediate Review Flow)
-  const handleAddToQueue = async (files, docTypeHint) => {
-    setActiveTab('upload');
+  // 3. Queue & Upload Actions (Concurrent-Safe Auto-Scan & Sequential Review Pipeline)
+  const queueRef = useRef(queue);
+  const isWorkerRunningRef = useRef(false);
+
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
+
+  const updateQueueSafe = useCallback((updater) => {
+    setQueue(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      queueRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const processQueueWorker = useCallback(async () => {
+    if (isWorkerRunningRef.current) return;
+    isWorkerRunningRef.current = true;
     setIsProcessing(true);
 
-    // Pre-orient camera/sideways photos to Upright Landscape (Image 3 format) immediately
-    const newItems = await Promise.all(
-      files.map(async (file) => {
-        let orientedPreview = URL.createObjectURL(file);
+    try {
+      while (true) {
+        // Pick next item that needs processing (status is 'pending')
+        const currentList = queueRef.current || [];
+        const nextItem = currentList.find(q => q.status === 'pending');
+        if (!nextItem) break;
+
+        const itemId = nextItem.id;
+        const targetFile = nextItem.file;
+        const targetDocType = nextItem.docTypeHint || 'auto';
+
+        // 1. Mark this item as 'processing' so it is never picked twice
+        updateQueueSafe(prev => prev.map(q => q.id === itemId ? { ...q, status: 'processing' } : q));
+
+        // 2. Pre-orientation check (AI 4-Candidate Auto-Orientation: 0/90/180/270 deg)
+        let orientedDataUrl = nextItem.previewUrl;
         try {
-          const { dataUrl } = await fileToBase64(file);
-          const oriented = await autoOrientDocumentImage(dataUrl, docTypeHint, apiKey);
-          if (oriented?.dataUrl) {
-            orientedPreview = oriented.dataUrl;
+          if (targetFile) {
+            const { dataUrl } = await fileToBase64(targetFile);
+            const oriented = await autoOrientDocumentImage(dataUrl, targetDocType, apiKey);
+            if (oriented?.dataUrl) {
+              orientedDataUrl = oriented.dataUrl;
+              updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+                ...q,
+                previewUrl: orientedDataUrl
+              } : q));
+            }
           }
         } catch (e) {
-          console.warn('Pre-orientation fallback to raw URL:', e);
+          console.warn('Pre-orientation fallback for item', itemId, e);
         }
-        return {
-          id: `q-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-          file,
-          fileName: file.name,
-          fileSize: file.size,
-          docTypeHint,
-          previewUrl: orientedPreview,
-          status: 'pending',
-          processedData: null
-        };
-      })
-    );
 
-    const combined = [...newItems, ...queue];
-    setQueue(combined);
-
-    // Auto-process the newly added items immediately into inline table!
-    const updatedQueue = [...combined];
-
-    for (let i = 0; i < updatedQueue.length; i++) {
-      const item = updatedQueue[i];
-      if (item.status === 'pending') {
+        // 3. AI OCR Recognition
         try {
-          const res = await processUploadedImage(item.file, {
-            docTypeHint: item.docTypeHint,
+          const res = await processUploadedImage(targetFile, {
+            docTypeHint: targetDocType,
             apiKey,
             studentMaster: appState.studentMaster,
             allLeaves: appState.leaves,
-            preOrientedDataUrl: item.previewUrl?.startsWith('data:') ? item.previewUrl : ''
+            preOrientedDataUrl: (orientedDataUrl && orientedDataUrl.startsWith('data:')) ? orientedDataUrl : ''
           });
 
-          updatedQueue[i] = {
-            ...item,
-            previewUrl: res.previewUrl || item.previewUrl,
-            status: 'processed',
-            imageHash: res.imageHash || res.result?.imageHash || '',
-            processedData: {
-              ...(res.result || {}),
+          updateQueueSafe(prev => prev.map(q => {
+            if (q.id !== itemId) return q;
+            return {
+              ...q,
+              previewUrl: res.previewUrl || orientedDataUrl || q.previewUrl,
+              status: 'processed',
               imageHash: res.imageHash || res.result?.imageHash || '',
-              initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
-              rawScan: res
-            }
-          };
-          setQueue([...updatedQueue]);
+              processedData: {
+                ...(res.result || {}),
+                imageHash: res.imageHash || res.result?.imageHash || '',
+                initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
+                rawScan: res
+              }
+            };
+          }));
         } catch (err) {
-          console.error('Error processing item', err);
-          updatedQueue[i] = {
-            ...item,
+          console.error('Error processing queue item', itemId, err);
+          updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+            ...q,
             status: 'error',
-            error: err.message
-          };
-          setQueue([...updatedQueue]);
+            error: err.message || 'ការស្កេនបរាជ័យ'
+          } : q));
         }
       }
+    } finally {
+      isWorkerRunningRef.current = false;
+      // If new pending items arrived while finishing, loop again
+      const hasMorePending = (queueRef.current || []).some(q => q.status === 'pending');
+      if (hasMorePending) {
+        setTimeout(() => {
+          processQueueWorker();
+        }, 50);
+      } else {
+        setIsProcessing(false);
+      }
     }
+  }, [apiKey, appState.studentMaster, appState.leaves, updateQueueSafe]);
 
-    setIsProcessing(false);
-  };
+  const handleAddToQueue = useCallback((files, docTypeHint) => {
+    setActiveTab('upload');
+
+    // Instantly enroll all files into queue with object URLs and pending status
+    const newItems = files.map((file, idx) => ({
+      id: `q-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 6)}`,
+      file,
+      fileName: file.name,
+      fileSize: file.size,
+      docTypeHint,
+      previewUrl: URL.createObjectURL(file),
+      status: 'pending',
+      processedData: null
+    }));
+
+    // Atomically prepend new items so user sees them appear immediately on top
+    updateQueueSafe(prev => [...newItems, ...prev]);
+
+    // Kick off worker safely
+    setTimeout(() => {
+      processQueueWorker();
+    }, 10);
+  }, [updateQueueSafe, processQueueWorker]);
 
   const handleRotateQueueItem = async (id, degreesClockwise = 90) => {
-    const target = queue.find(q => q.id === id);
+    const currentList = queueRef.current || queue;
+    const target = currentList.find(q => q.id === id);
     if (!target || !target.previewUrl) return;
 
     try {
@@ -372,10 +421,10 @@ export default function App() {
       if (!rotated?.dataUrl) return;
 
       // Immediately update previewUrl so user sees the rotated image right away
-      setQueue(prev => prev.map(item => item.id === id ? {
+      updateQueueSafe(prev => prev.map(item => item.id === id ? {
         ...item,
         previewUrl: rotated.dataUrl,
-        status: 'pending'
+        status: 'processing'
       } : item));
 
       // Re-run OCR on the newly rotated upright image
@@ -387,7 +436,7 @@ export default function App() {
         preOrientedDataUrl: rotated.dataUrl
       });
 
-      setQueue(prev => prev.map(item => item.id === id ? {
+      updateQueueSafe(prev => prev.map(item => item.id === id ? {
         ...item,
         previewUrl: rotated.dataUrl,
         status: 'processed',
@@ -401,19 +450,24 @@ export default function App() {
       } : item));
     } catch (err) {
       console.error('Error rotating queue item:', err);
+      updateQueueSafe(prev => prev.map(item => item.id === id ? {
+        ...item,
+        status: 'error',
+        error: err.message
+      } : item));
     }
   };
 
   const handleRemoveFromQueue = (id) => {
-    setQueue(prev => prev.filter(item => item.id !== id));
+    updateQueueSafe(prev => prev.filter(item => item.id !== id));
   };
 
   const handleClearQueue = () => {
-    setQueue([]);
+    updateQueueSafe([]);
   };
 
   const handleUpdateQueueItem = (id, updates) => {
-    setQueue(prev => prev.map(item => {
+    updateQueueSafe(prev => prev.map(item => {
       if (item.id === id) {
         return {
           ...item,
@@ -424,53 +478,9 @@ export default function App() {
     }));
   };
 
-  const handleProcessQueue = async () => {
-    const pendingItems = queue.filter(item => item.status === 'pending');
-    if (pendingItems.length === 0) return;
-
-    setIsProcessing(true);
-
-    const updatedQueue = [...queue];
-
-    for (let i = 0; i < updatedQueue.length; i++) {
-      const item = updatedQueue[i];
-      if (item.status === 'pending') {
-        try {
-          const res = await processUploadedImage(item.file, {
-            docTypeHint: item.docTypeHint,
-            apiKey,
-            studentMaster: appState.studentMaster,
-            allLeaves: appState.leaves,
-            preOrientedDataUrl: item.previewUrl?.startsWith('data:') ? item.previewUrl : ''
-          });
-
-          updatedQueue[i] = {
-            ...item,
-            previewUrl: res.previewUrl || item.previewUrl,
-            status: 'processed',
-            imageHash: res.imageHash || res.result?.imageHash || '',
-            processedData: {
-              ...(res.result || {}),
-              imageHash: res.imageHash || res.result?.imageHash || '',
-              initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
-              rawScan: res
-            }
-          };
-          setQueue([...updatedQueue]);
-        } catch (err) {
-          console.error('Error processing item', err);
-          updatedQueue[i] = {
-            ...item,
-            status: 'error',
-            error: err.message
-          };
-          setQueue([...updatedQueue]);
-        }
-      }
-    }
-
-    setIsProcessing(false);
-  };
+  const handleProcessQueue = useCallback(() => {
+    processQueueWorker();
+  }, [processQueueWorker]);
 
   const handleApproveQueueItem = ({ type, item, queueId, rawOcr, imagePreview, fileName, fileSize, imageHash }) => {
     // 1. Add to active monthly table
@@ -513,18 +523,19 @@ export default function App() {
     const updatedDataset = saveTrainingSample(sample);
     setTrainingCount(updatedDataset.length);
 
-    // 3. Remove approved item from queue
-    const remainingQueue = queue.filter(q => q.id !== queueId);
-    setQueue(remainingQueue);
-
-    // 4. If all items in queue are approved, navigate to table tab
-    if (remainingQueue.length === 0) {
-      if (type === 'leave') {
-        setActiveTab('leave');
-      } else {
-        setActiveTab('finance');
+    // 3. Remove approved item from queue safely
+    updateQueueSafe(prev => {
+      const remainingQueue = prev.filter(q => q.id !== queueId);
+      // 4. If all items in queue are approved, navigate to table tab
+      if (remainingQueue.length === 0) {
+        if (type === 'leave') {
+          setActiveTab('leave');
+        } else {
+          setActiveTab('finance');
+        }
       }
-    }
+      return remainingQueue;
+    });
   };
 
   const handleApproveSingleItem = (qItem) => {
@@ -650,7 +661,7 @@ export default function App() {
     mutateLeaves(newLeaves);
     mutateFinance(newFinance);
     setTrainingCount(updatedDataset.length);
-    setQueue(prev => prev.filter(q => q.status !== 'processed'));
+    updateQueueSafe(prev => prev.filter(q => q.status !== 'processed'));
     setActiveTab('leave');
   };
 
