@@ -14,6 +14,7 @@ export default function UploadSection({
   onClearQueue,
   onProcessQueue,
   onUpdateQueueItem,
+  onRotateQueueItem,
   onApproveItem,
   onApproveAll,
   isProcessing = false,
@@ -409,7 +410,8 @@ export default function UploadSection({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {queue.map((item, index) => {
               const resultData = item.processedData?.result || item.processedData || {};
-              const detectedType = item.processedData?.detectedType || resultData.detectedType || item.docTypeHint || 'leave';
+              const rawDetectedType = item.processedData?.detectedType || resultData.detectedType || item.docTypeHint || 'leave';
+              const detectedType = rawDetectedType === 'auto' ? 'leave' : rawDetectedType;
               const isLeave = detectedType === 'leave';
               const isPending = item.status === 'pending';
               const processingMode = item.processedData?.rawScan?.processingMode || item.processedData?.processingMode || (resultData.isLearnedMemory ? 'ai_flywheel_memory' : 'gemini_cloud');
@@ -565,13 +567,13 @@ export default function UploadSection({
                       gap: 10,
                       alignItems: 'start'
                     }}>
-                      {/* Left Column: Portrait A4 Thumbnail + Zoom Button */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {/* Left Column: Image 3 Style Dark Frame Thumbnail (#1, Rotate, Zoom) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: 115 }}>
                         <div
                           onClick={() => setSelectedReviewIndex(index)}
                           style={{
                             width: 115,
-                            height: 144,
+                            height: 148,
                             background: '#0f172a',
                             borderRadius: 8,
                             overflow: 'hidden',
@@ -592,30 +594,77 @@ export default function UploadSection({
                           ) : (
                             <span style={{ color: '#94a3b8', fontSize: 11 }}>គ្មានរូបភាព</span>
                           )}
+
+                          <span style={{
+                            position: 'absolute',
+                            top: 5,
+                            left: 5,
+                            background: 'rgba(0,0,0,0.75)',
+                            color: '#ffffff',
+                            fontSize: 10,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            fontWeight: 700
+                          }}>
+                            #{index + 1}
+                          </span>
+
+                          {onRotateQueueItem && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRotateQueueItem(item.id, 90);
+                              }}
+                              title="បង្វិលរូប 90°"
+                              style={{
+                                position: 'absolute',
+                                top: 5,
+                                right: 5,
+                                background: 'rgba(15, 23, 42, 0.78)',
+                                color: '#ffffff',
+                                border: '1px solid rgba(255,255,255,0.25)',
+                                borderRadius: 4,
+                                padding: '3px 5px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <RotateCw size={11} />
+                            </button>
+                          )}
+
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 5,
+                            right: 5,
+                            background: 'rgba(0,0,0,0.72)',
+                            color: '#ffffff',
+                            padding: '3px 6px',
+                            borderRadius: 4,
+                            fontSize: 10,
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3
+                          }}>
+                            <ZoomIn size={11} />
+                            <span>ពង្រីក</span>
+                          </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => setSelectedReviewIndex(index)}
-                          style={{
-                            width: '100%',
-                            background: '#f8fafc',
-                            color: '#0f766e',
-                            border: '1px solid #cbd5e1',
-                            padding: '6px 4px',
-                            borderRadius: 6,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 4,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <ZoomIn size={13} color="#0f766e" />
-                          <span>ពង្រីកមើល</span>
-                        </button>
+                        <div style={{
+                          fontSize: 10,
+                          color: '#64748b',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          padding: '0 2px'
+                        }}>
+                          {item.fileName}
+                        </div>
                       </div>
 
                       {/* Right Column: Header (#1, AI Status, Delete) + Core Fields */}
@@ -1317,6 +1366,33 @@ export default function UploadSection({
                       }}>
                         #{index + 1}
                       </span>
+
+                      {onRotateQueueItem && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRotateQueueItem(item.id, 90);
+                          }}
+                          title="បង្វិលរូប 90°"
+                          style={{
+                            position: 'absolute',
+                            top: 6,
+                            right: 6,
+                            background: 'rgba(15, 23, 42, 0.78)',
+                            color: '#ffffff',
+                            border: '1px solid rgba(255,255,255,0.25)',
+                            borderRadius: 4,
+                            padding: '4px 6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <RotateCw size={12} />
+                        </button>
+                      )}
 
                       <div style={{
                         position: 'absolute',

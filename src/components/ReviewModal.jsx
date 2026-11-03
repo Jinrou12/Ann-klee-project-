@@ -30,7 +30,8 @@ export default function ReviewModal({
   const trainingDataset = useMemo(() => getStoredTrainingDataset(), [queueItem.id]);
 
   const initialExtracted = queueItem.processedData?.result || queueItem.processedData || {};
-  const [docType, setDocType] = useState(queueItem.processedData?.detectedType || initialExtracted.detectedType || queueItem.docTypeHint || 'leave');
+  const resolveDocType = (rawType) => (!rawType || rawType === 'auto') ? 'leave' : rawType;
+  const [docType, setDocType] = useState(resolveDocType(queueItem.processedData?.detectedType || initialExtracted.detectedType || queueItem.docTypeHint));
 
   // Helper to sanitize leave date to single start date in 2026
   const sanitizeLeaveDate = (rawDate) => {
@@ -74,7 +75,7 @@ export default function ReviewModal({
   useEffect(() => {
     if (!queueItem) return;
     const extracted = queueItem.processedData?.result || queueItem.processedData || {};
-    setDocType(queueItem.processedData?.detectedType || extracted.detectedType || queueItem.docTypeHint || 'leave');
+    setDocType(resolveDocType(queueItem.processedData?.detectedType || extracted.detectedType || queueItem.docTypeHint));
     const rawLeave = queueItem.processedData?.leaveItems?.[0] || extracted.leaveItems?.[0] || {};
     setLeaveItem({
       name: rawLeave.name || '',

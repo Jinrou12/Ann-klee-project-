@@ -34,7 +34,12 @@ import {
   fetchTrainingFromCloud,
   subscribeToCloudTraining
 } from './utils/storage';
-import { processUploadedImage } from './utils/ocrService';
+import {
+  processUploadedImage,
+  fileToBase64,
+  autoOrientDocumentImage,
+  rotateImageDataUrl
+} from './utils/ocrService';
 import { parseDurationShorthand } from './utils/khmerNumerals';
 
 export default function App() {
@@ -283,21 +288,37 @@ export default function App() {
 
   // 3. Queue & Upload Actions (Instant Auto-Scan & Immediate Review Flow)
   const handleAddToQueue = async (files, docTypeHint) => {
-    const newItems = files.map(file => ({
-      id: `q-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      file,
-      fileName: file.name,
-      fileSize: file.size,
-      docTypeHint,
-      previewUrl: URL.createObjectURL(file),
-      status: 'pending',
-      processedData: null
-    }));
+    setActiveTab('upload');
+    setIsProcessing(true);
+
+    // Pre-orient camera/sideways photos to Upright Landscape (Image 3 format) immediately
+    const newItems = await Promise.all(
+      files.map(async (file) => {
+        let orientedPreview = URL.createObjectURL(file);
+        try {
+          const { dataUrl } = await fileToBase64(file);
+          const oriented = await autoOrientDocumentImage(dataUrl, docTypeHint);
+          if (oriented?.dataUrl) {
+            orientedPreview = oriented.dataUrl;
+          }
+        } catch (e) {
+          console.warn('Pre-orientation fallback to raw URL:', e);
+        }
+        return {
+          id: `q-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          file,
+          fileName: file.name,
+          fileSize: file.size,
+          docTypeHint,
+          previewUrl: orientedPreview,
+          status: 'pending',
+          processedData: null
+        };
+      })
+    );
 
     const combined = [...newItems, ...queue];
     setQueue(combined);
-    setActiveTab('upload');
-    setIsProcessing(true);
 
     // Auto-process the newly added items immediately into inline table!
     const updatedQueue = [...combined];
@@ -310,11 +331,13 @@ export default function App() {
             docTypeHint: item.docTypeHint,
             apiKey,
             studentMaster: appState.studentMaster,
-            allLeaves: appState.leaves
+            allLeaves: appState.leaves,
+            preOrientedDataUrl: item.previewUrl?.startsWith('data:') ? item.previewUrl : ''
           });
 
           updatedQueue[i] = {
             ...item,
+            previewUrl: res.previewUrl || item.previewUrl,
             status: 'processed',
             imageHash: res.imageHash || res.result?.imageHash || '',
             processedData: {
@@ -338,6 +361,47 @@ export default function App() {
     }
 
     setIsProcessing(false);
+  };
+
+  const handleRotateQueueItem = async (id, degreesClockwise = 90) => {
+    const target = queue.find(q => q.id === id);
+    if (!target || !target.previewUrl) return;
+
+    try {
+      const rotated = await rotateImageDataUrl(target.previewUrl, degreesClockwise);
+      if (!rotated?.dataUrl) return;
+
+      // Immediately update previewUrl so user sees the rotated image right away
+      setQueue(prev => prev.map(item => item.id === id ? {
+        ...item,
+        previewUrl: rotated.dataUrl,
+        status: 'pending'
+      } : item));
+
+      // Re-run OCR on the newly rotated upright image
+      const res = await processUploadedImage(target.file, {
+        docTypeHint: target.docTypeHint,
+        apiKey,
+        studentMaster: appState.studentMaster,
+        allLeaves: appState.leaves,
+        preOrientedDataUrl: rotated.dataUrl
+      });
+
+      setQueue(prev => prev.map(item => item.id === id ? {
+        ...item,
+        previewUrl: rotated.dataUrl,
+        status: 'processed',
+        imageHash: res.imageHash || res.result?.imageHash || '',
+        processedData: {
+          ...(res.result || {}),
+          imageHash: res.imageHash || res.result?.imageHash || '',
+          initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
+          rawScan: res
+        }
+      } : item));
+    } catch (err) {
+      console.error('Error rotating queue item:', err);
+    }
   };
 
   const handleRemoveFromQueue = (id) => {
@@ -376,11 +440,13 @@ export default function App() {
             docTypeHint: item.docTypeHint,
             apiKey,
             studentMaster: appState.studentMaster,
-            allLeaves: appState.leaves
+            allLeaves: appState.leaves,
+            preOrientedDataUrl: item.previewUrl?.startsWith('data:') ? item.previewUrl : ''
           });
 
           updatedQueue[i] = {
             ...item,
+            previewUrl: res.previewUrl || item.previewUrl,
             status: 'processed',
             imageHash: res.imageHash || res.result?.imageHash || '',
             processedData: {
@@ -747,6 +813,7 @@ export default function App() {
             onClearQueue={handleClearQueue}
             onProcessQueue={handleProcessQueue}
             onUpdateQueueItem={handleUpdateQueueItem}
+            onRotateQueueItem={handleRotateQueueItem}
             onApproveItem={handleApproveSingleItem}
             onApproveAll={handleApproveAllQueue}
             isProcessing={isProcessing}

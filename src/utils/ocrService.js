@@ -31,6 +31,173 @@ export function fileToBase64(file) {
 }
 
 /**
+ * Rotate a dataUrl image by 90, 180, or 270 degrees clockwise on an HTML5 Canvas.
+ * Returns { dataUrl, base64, width, height, rotatedDegrees }.
+ */
+export function rotateImageDataUrl(dataUrl, degreesClockwise = 0) {
+  const normDeg = ((degreesClockwise % 360) + 360) % 360;
+  if (!dataUrl || normDeg === 0) {
+    const base64 = dataUrl ? dataUrl.split(',')[1] || '' : '';
+    return Promise.resolve({ dataUrl, base64, rotatedDegrees: 0 });
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) {
+          return resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
+        }
+
+        const swapDims = normDeg === 90 || normDeg === 270;
+        const canvas = document.createElement('canvas');
+        canvas.width = swapDims ? h : w;
+        canvas.height = swapDims ? w : h;
+
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((normDeg * Math.PI) / 180);
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+
+        const rotatedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const rotatedBase64 = rotatedDataUrl.split(',')[1] || '';
+        resolve({
+          dataUrl: rotatedDataUrl,
+          base64: rotatedBase64,
+          width: canvas.width,
+          height: canvas.height,
+          rotatedDegrees: normDeg
+        });
+      } catch (e) {
+        console.warn('Image rotation failed:', e);
+        resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
+      }
+    };
+    img.onerror = () => resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
+    img.src = dataUrl;
+  });
+}
+
+/**
+ * Automatically detect when a photographed Leave Slip is rotated 90° sideways (e.g. phone camera portrait capture
+ * where the horizontal slip's text lines run vertically) and rotate it upright (Landscape, top header at top)
+ * to match the clean horizontal preview format.
+ */
+export function autoOrientDocumentImage(dataUrl, docTypeHint = 'auto') {
+  return new Promise((resolve) => {
+    if (!dataUrl || docTypeHint === 'finance') {
+      return resolve({ dataUrl, base64: dataUrl ? dataUrl.split(',')[1] || '' : '', rotatedDegrees: 0 });
+    }
+
+    const img = new Image();
+    img.onload = async () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) {
+          return resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
+        }
+
+        const S = 240;
+        const canvas = document.createElement('canvas');
+        canvas.width = S;
+        canvas.height = S;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, S, S);
+        const pixels = ctx.getImageData(0, 0, S, S).data;
+
+        const lum = new Float32Array(S * S);
+        for (let i = 0; i < S * S; i++) {
+          const p = i * 4;
+          lum[i] = pixels[p] * 0.299 + pixels[p + 1] * 0.587 + pixels[p + 2] * 0.114;
+        }
+
+        // 1. Measure Row-to-Row vs Column-to-Column Line Modulation in center document area (12%..88%)
+        const start = Math.round(S * 0.12);
+        const end = Math.round(S * 0.88);
+        const span = end - start;
+
+        const rowAvg = new Float32Array(S);
+        const colAvg = new Float32Array(S);
+        for (let y = start; y < end; y++) {
+          let rSum = 0;
+          for (let x = start; x < end; x++) {
+            rSum += lum[y * S + x];
+          }
+          rowAvg[y] = rSum / span;
+        }
+        for (let x = start; x < end; x++) {
+          let cSum = 0;
+          for (let y = start; y < end; y++) {
+            cSum += lum[y * S + x];
+          }
+          colAvg[x] = cSum / span;
+        }
+
+        let horizLineMod = 0;
+        let vertLineMod = 0;
+        for (let i = start + 1; i < end; i++) {
+          horizLineMod += Math.abs(rowAvg[i] - rowAvg[i - 1]);
+          vertLineMod += Math.abs(colAvg[i] - colAvg[i - 1]);
+        }
+
+        // 2. Measure Quadrant Text Edge Energy to know whether the top header is on the Right side or Left side
+        const quadEnergy = (x0, x1, y0, y1) => {
+          let energy = 0;
+          for (let y = y0 + 1; y < y1; y++) {
+            for (let x = x0 + 1; x < x1; x++) {
+              const idx = y * S + x;
+              const dx = Math.abs(lum[idx] - lum[idx - 1]);
+              const dy = Math.abs(lum[idx] - lum[idx - S]);
+              if (dx + dy > 22) {
+                energy += dx + dy;
+              }
+            }
+          }
+          return energy;
+        };
+
+        const topLeftE = quadEnergy(20, 110, 20, 110);
+        const topRightE = quadEnergy(130, 220, 20, 110);
+        const bottomLeftE = quadEnergy(20, 110, 130, 220);
+        const bottomRightE = quadEnergy(130, 220, 130, 220);
+
+        const isPortraitFrame = h > w * 1.05;
+        // A leave slip is sideways if captured in a portrait frame with vertical text lines, or if vertical line modulation strongly dominates
+        const isSideways =
+          (isPortraitFrame && vertLineMod >= horizLineMod * 0.72) ||
+          vertLineMod > horizLineMod * 1.22;
+
+        if (!isSideways) {
+          return resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
+        }
+
+        // Determine whether top of slip ("ព្រះរាជាណាចក្រកម្ពុជា" & "មន្ទីរធម្មការ") is on the RIGHT edge (needs 270° CCW) or LEFT edge (needs 90° CW).
+        // When top of slip is on the RIGHT edge (standard phone camera tilt), Top-Right has the dense Ministry header while Top-Left is the blank bottom-left corner of the slip.
+        const scoreTopOnRight = (topRightE * 1.15 + bottomRightE * 0.75) - (topLeftE * 0.85);
+        const scoreTopOnLeft = (bottomLeftE * 1.15 + topLeftE * 0.75) - (bottomRightE * 0.85);
+
+        const degreesToRotate = scoreTopOnRight >= scoreTopOnLeft * 0.90 ? 270 : 90;
+        console.log(`🔄 [Auto-Orient] Sideways Leave Slip detected (w=${w}, h=${h}, vMod=${Math.round(vertLineMod)}, hMod=${Math.round(horizLineMod)}) → rotating ${degreesToRotate}° clockwise to upright landscape`);
+
+        const rotated = await rotateImageDataUrl(dataUrl, degreesToRotate);
+        resolve(rotated);
+      } catch (e) {
+        console.warn('Auto-orient analysis failed:', e);
+        resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
+      }
+    };
+    img.onerror = () => resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
+    img.src = dataUrl;
+  });
+}
+
+/**
  * Smart Image Compressor — Safe for Khmer Cursive Handwriting
  *
  * Strategy:
@@ -606,7 +773,7 @@ export function getImageDimensions(dataUrl) {
  * Honest Blank Item Generator when Offline or without API key (No fake/dummy data!)
  */
 function createManualBlankItem(file, docTypeHint, isPortrait = true, errorMessage = '') {
-  const isLeave = docTypeHint === 'leave' || (docTypeHint === 'auto' && isPortrait);
+  const isLeave = docTypeHint !== 'finance';
   return {
     detectedType: isLeave ? 'leave' : 'finance',
     confidence: 0,
@@ -638,9 +805,14 @@ function createManualBlankItem(file, docTypeHint, isPortrait = true, errorMessag
 /**
  * Main process function that handles single or batch image processing
  */
-export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey = '', studentMaster = [], allLeaves = {} } = {}) {
-  // Step 0: Read raw file → dataUrl and compute 512-bit Visual Image Fingerprint (takes ~2ms)
-  const { dataUrl: rawDataUrl } = await fileToBase64(file);
+export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey = '', studentMaster = [], allLeaves = {}, preOrientedDataUrl = '' } = {}) {
+  // Step 0: Read raw file → auto-orient sideways camera photos upright (like Image 3) → compute 512-bit Visual Image Fingerprint
+  let rawDataUrl = preOrientedDataUrl;
+  if (!rawDataUrl) {
+    const { dataUrl: initialDataUrl } = await fileToBase64(file);
+    const oriented = await autoOrientDocumentImage(initialDataUrl, docTypeHint);
+    rawDataUrl = oriented.dataUrl || initialDataUrl;
+  }
   const imageHash = await computeImageFingerprint(rawDataUrl);
 
   // Ensure we have latest training samples from Cloud (in case trained on another device moments ago)
