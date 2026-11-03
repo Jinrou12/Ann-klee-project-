@@ -177,12 +177,14 @@ export function autoOrientDocumentImage(dataUrl, docTypeHint = 'auto') {
           return resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
         }
 
-        // Determine whether top of slip ("ព្រះរាជាណាចក្រកម្ពុជា" & "មន្ទីរធម្មការ") is on the RIGHT edge (needs 270° CCW) or LEFT edge (needs 90° CW).
-        // When top of slip is on the RIGHT edge (standard phone camera tilt), Top-Right has the dense Ministry header while Top-Left is the blank bottom-left corner of the slip.
+        // Determine whether the top of the slip ("ព្រះរាជាណាចក្រកម្ពុជា" header) is on the RIGHT edge (needs 270° CW = 90° CCW)
+        // or LEFT edge (needs 90° CW). Phone portrait captures put the header on the RIGHT edge in the vast majority of cases,
+        // so default to 270° unless the left side is overwhelmingly denser. Gemini then verifies orientation (0/90/180/270)
+        // and triggers a corrective re-scan if the guess was wrong (see processUploadedImage).
         const scoreTopOnRight = (topRightE * 1.15 + bottomRightE * 0.75) - (topLeftE * 0.85);
         const scoreTopOnLeft = (bottomLeftE * 1.15 + topLeftE * 0.75) - (bottomRightE * 0.85);
 
-        const degreesToRotate = scoreTopOnRight >= scoreTopOnLeft * 0.90 ? 270 : 90;
+        const degreesToRotate = scoreTopOnLeft > scoreTopOnRight * 1.6 && scoreTopOnLeft > 0 ? 90 : 270;
         console.log(`🔄 [Auto-Orient] Sideways Leave Slip detected (w=${w}, h=${h}, vMod=${Math.round(vertLineMod)}, hMod=${Math.round(horizLineMod)}) → rotating ${degreesToRotate}° clockwise to upright landscape`);
 
         const rotated = await rotateImageDataUrl(dataUrl, degreesToRotate);
@@ -577,6 +579,11 @@ You are an expert OCR and administrative assistant in Cambodia specializing in K
 Examine the provided image(s) carefully. The document is either a Student Leave Slip (ក្រដាសសុំច្បាប់សមណសិស្ស) OR an Expense/Income Receipt (ប៉ុងលុយ/វិក្កយបត្រចំណាយ-ចំណូល).
 ${nameLineCropBase64 ? 'Note: Image 1 is the full document. Image 2 is a 3x SUPER-ZOOMED close-up of Line 1 (where the Student Name and Grade are written in pen ink). Image 3 is a zoomed close-up of the middle fill-in section.' : ''}
 
+STEP 0 — IMAGE ORIENTATION CHECK (ពិនិត្យទិសរូបភាពជាមុន):
+- Look at the full document (Image 1). The printed header "ព្រះរាជាណាចក្រកម្ពុជា / ជាតិ សាសនា ព្រះមហាក្សត្រ" should appear at the TOP and the Khmer text lines should run horizontally left-to-right with letters upright.
+- Return "rotateClockwiseDegrees" = the number of degrees (0, 90, 180, or 270) the image must be rotated CLOCKWISE so the printed text becomes upright. Return 0 if it is already upright.
+- Orientation hints: header at the RIGHT edge → 270; header at the LEFT edge → 90; header at the BOTTOM (text upside-down) → 180.
+
 STEP 1 — DOCUMENT CLASSIFICATION RULES:
 1. LEAVE SLIP ("detectedType": "leave"):
    - Contains Cambodian national motto, "មន្ទីរធម្មការ និងសាសនា", "សាលាពុទ្ធិកបឋមសិក្សា", "លិខិតសុំច្បាប់", "សមណសិស្ស", "ខ្ញុំបាទ/នាងខ្ញុំ", "ថ្នាក់ទី", "កម្មវត្ថុ", "សុំឈប់សម្រាក", "មូលហេតុ", or close-up handwritten student name/class/illness reason.
@@ -624,6 +631,7 @@ Output strictly valid JSON with this exact schema:
 
 {
   "detectedType": "leave" | "finance",
+  "rotateClockwiseDegrees": 0 | 90 | 180 | 270,
   "confidence": 0.0 to 1.0,
   "leaveItems": [
     {
@@ -805,7 +813,7 @@ function createManualBlankItem(file, docTypeHint, isPortrait = true, errorMessag
 /**
  * Main process function that handles single or batch image processing
  */
-export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey = '', studentMaster = [], allLeaves = {}, preOrientedDataUrl = '' } = {}) {
+export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey = '', studentMaster = [], allLeaves = {}, preOrientedDataUrl = '', skipOrientRetry = false } = {}) {
   // Step 0: Read raw file → auto-orient sideways camera photos upright (like Image 3) → compute 512-bit Visual Image Fingerprint
   let rawDataUrl = preOrientedDataUrl;
   if (!rawDataUrl) {
@@ -944,6 +952,28 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     }
   }
 
+  // Step 2C: AI Orientation Guard — if Gemini reports the page is still sideways / upside-down,
+  // rotate the image by the reported angle and re-run the scan ONCE on the upright image (0° / Image 3 format).
+  const aiRotateDegrees = Number(extractionResult?.rotateClockwiseDegrees) || 0;
+  if (
+    !skipOrientRetry &&
+    docTypeHint !== 'finance' &&
+    processingMode === 'gemini_cloud' &&
+    [90, 180, 270].includes(aiRotateDegrees)
+  ) {
+    console.log(`🔄 [AI Orientation Guard] Gemini says rotate ${aiRotateDegrees}° clockwise → re-scanning upright image`);
+    const fixed = await rotateImageDataUrl(rawDataUrl, aiRotateDegrees);
+    if (fixed?.dataUrl && fixed.rotatedDegrees) {
+      return processUploadedImage(file, {
+        docTypeHint,
+        apiKey,
+        studentMaster,
+        allLeaves,
+        preOrientedDataUrl: fixed.dataUrl,
+        skipOrientRetry: true
+      });
+    }
+  }
   // Build safe non-conflicting alias map from user corrections (only when rawOcrName is NOT another real student's official name)
   const officialStudentNames = new Set(
     (studentMaster || []).map(s => String(s.name || '').replace(/[\s\u200B]/g, ''))
