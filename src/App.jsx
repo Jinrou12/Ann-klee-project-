@@ -297,7 +297,7 @@ export default function App() {
         let orientedPreview = URL.createObjectURL(file);
         try {
           const { dataUrl } = await fileToBase64(file);
-          const oriented = await autoOrientDocumentImage(dataUrl, docTypeHint);
+          const oriented = await autoOrientDocumentImage(dataUrl, docTypeHint, apiKey);
           if (oriented?.dataUrl) {
             orientedPreview = oriented.dataUrl;
           }

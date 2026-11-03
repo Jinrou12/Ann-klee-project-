@@ -84,11 +84,157 @@ export function rotateImageDataUrl(dataUrl, degreesClockwise = 0) {
 }
 
 /**
- * Automatically detect when a photographed Leave Slip is rotated 90° sideways (e.g. phone camera portrait capture
- * where the horizontal slip's text lines run vertically) and rotate it upright (Landscape, top header at top)
- * to match the clean horizontal preview format.
+ * Build a small JPEG thumbnail of the image rotated by `degreesClockwise` (0/90/180/270) and return its base64.
  */
-export function autoOrientDocumentImage(dataUrl, docTypeHint = 'auto') {
+function makeRotatedThumbBase64(img, degreesClockwise, maxEdge = 480) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const scale = Math.min(1, maxEdge / Math.max(w, h));
+  const tw = Math.max(1, Math.round(w * scale));
+  const th = Math.max(1, Math.round(h * scale));
+  const swap = degreesClockwise === 90 || degreesClockwise === 270;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = swap ? th : tw;
+  canvas.height = swap ? tw : th;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((degreesClockwise * Math.PI) / 180);
+  ctx.drawImage(img, -tw / 2, -th / 2, tw, th);
+  return canvas.toDataURL('image/jpeg', 0.72).split(',')[1] || '';
+}
+
+/**
+ * PRIMARY AUTO-ORIENTATION: ask Gemini which of 4 rotated thumbnails (A=0°, B=90°, C=180°, D=270° clockwise)
+ * shows the page upright (Cambodian header at TOP, Khmer text horizontal). Picking the upright picture is far more
+ * reliable for an LLM than asking it to compute an angle.
+ * Returns { degrees, confidence } or null when the check could not be completed.
+ */
+export async function detectUprightRotationWithAI(dataUrl, apiKey) {
+  if (!dataUrl) return null;
+
+  const img = await new Promise((resolve) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => resolve(null);
+    i.src = dataUrl;
+  });
+  if (!img) return null;
+
+  const angles = [0, 90, 180, 270];
+  const labels = ['A', 'B', 'C', 'D'];
+  let thumbs;
+  try {
+    thumbs = angles.map(a => makeRotatedThumbBase64(img, a));
+  } catch (e) {
+    console.warn('Orientation thumbnails failed:', e);
+    return null;
+  }
+  if (thumbs.some(t => !t)) return null;
+
+  const instruction = `
+The next 4 images (A, B, C, D) are the SAME photo of a Khmer school document (a student leave slip or a receipt), shown rotated by 4 different angles.
+Exactly ONE of them shows the page UPRIGHT: the printed Khmer text lines run horizontally from left to right and the letters are NOT sideways or upside-down. On a leave slip, the Cambodian national header ("ព្រះរាជាណាចក្រកម្ពុជា / ជាតិ សាសនា ព្រះមហាក្សត្រ" with the emblem) is at the TOP-CENTER and the signatures are at the BOTTOM.
+Pick the image where a human could read the Khmer text normally.
+Return ONLY JSON: {"uprightImage": "A" | "B" | "C" | "D", "confidence": 0.0 to 1.0}
+`;
+
+  const parts = [{ text: instruction }];
+  labels.forEach((label, i) => {
+    parts.push({ text: `Image ${label}:` });
+    parts.push({ inlineData: { mimeType: 'image/jpeg', data: thumbs[i] } });
+  });
+
+  const keysToTry = [apiKey, ...DEFAULT_GEMINI_KEYS.filter(k => k && k !== apiKey)].filter(Boolean);
+  const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+  const badKeys = new Set();
+
+  for (const model of candidateModels) {
+    for (const key of keysToTry) {
+      if (badKeys.has(key)) continue;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              contents: [{ parts }],
+              generationConfig: { temperature: 0, responseMimeType: 'application/json' }
+            })
+          }
+        );
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          if (response.status === 429) continue;
+          if (response.status === 400 || response.status === 401 || response.status === 403) {
+            badKeys.add(key);
+            continue;
+          }
+          if (response.status === 404 || response.status === 503) break;
+          continue;
+        }
+
+        const result = await response.json();
+        const text = result?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const parsed = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
+        const idx = labels.indexOf(String(parsed.uprightImage || '').trim().toUpperCase());
+        const confidence = Number(parsed.confidence);
+        if (idx >= 0 && (Number.isNaN(confidence) || confidence >= 0.5)) {
+          return { degrees: angles[idx], confidence: Number.isNaN(confidence) ? 0.8 : confidence };
+        }
+        return null;
+      } catch (err) {
+        console.warn(`Orientation check with ${model} failed:`, err.message || err);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * AUTO-ORIENT (one step, no user action): decide which side is TOP and rotate the photo upright
+ * (0° / 90° / 180° / 270°) BEFORE scanning, so both the preview and the OCR use the upright image.
+ * Uses Gemini (4-candidate upright pick) first; falls back to the pixel heuristic when offline / no key.
+ * Returns { dataUrl, base64, rotatedDegrees, method: 'ai' | 'heuristic' | 'none' }.
+ */
+export async function autoOrientDocumentImage(dataUrl, docTypeHint = 'auto', apiKey = '') {
+  const noChange = (method) => ({
+    dataUrl,
+    base64: dataUrl ? dataUrl.split(',')[1] || '' : '',
+    rotatedDegrees: 0,
+    method
+  });
+  if (!dataUrl || docTypeHint === 'finance') return noChange('none');
+
+  const key = apiKey || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0];
+  const online = typeof navigator === 'undefined' ? true : navigator.onLine;
+
+  if (online && key) {
+    const ai = await detectUprightRotationWithAI(dataUrl, key);
+    if (ai) {
+      console.log(`🧭 [Auto-Orient AI] upright = rotate ${ai.degrees}° clockwise (confidence ${ai.confidence})`);
+      if (ai.degrees === 0) return noChange('ai');
+      const rotated = await rotateImageDataUrl(dataUrl, ai.degrees);
+      return { ...rotated, method: 'ai' };
+    }
+  }
+
+  const guess = await autoOrientDocumentImageHeuristic(dataUrl, docTypeHint);
+  return { ...guess, method: 'heuristic' };
+}
+
+/**
+ * FALLBACK ONLY (offline / no API key): pixel-based guess to detect a sideways Leave Slip.
+ * Primary orientation detection is `detectUprightRotationWithAI` (see below).
+ */
+function autoOrientDocumentImageHeuristic(dataUrl, docTypeHint = 'auto') {
   return new Promise((resolve) => {
     if (!dataUrl || docTypeHint === 'finance') {
       return resolve({ dataUrl, base64: dataUrl ? dataUrl.split(',')[1] || '' : '', rotatedDegrees: 0 });
@@ -818,7 +964,7 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
   let rawDataUrl = preOrientedDataUrl;
   if (!rawDataUrl) {
     const { dataUrl: initialDataUrl } = await fileToBase64(file);
-    const oriented = await autoOrientDocumentImage(initialDataUrl, docTypeHint);
+    const oriented = await autoOrientDocumentImage(initialDataUrl, docTypeHint, apiKey);
     rawDataUrl = oriented.dataUrl || initialDataUrl;
   }
   const imageHash = await computeImageFingerprint(rawDataUrl);
