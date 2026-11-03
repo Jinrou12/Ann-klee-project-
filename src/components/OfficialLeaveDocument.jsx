@@ -32,23 +32,23 @@ export default function OfficialLeaveDocument({
       }}>
         {/* Left: Ministry & School (No logo in PDF 2) */}
         <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
             {metadata.ministry}
           </div>
-          <div className="font-moul" style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
             {String(metadata.school || '').startsWith('សាលា') ? metadata.school : `សាលា${metadata.school || ''}`}
           </div>
-          <div className="font-moul" style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
             {metadata.location}
           </div>
         </div>
 
         {/* Right: National Kingdom & Motto */}
         <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 15.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 15.5, whiteSpace: 'nowrap' }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
-          <div className="font-moul" style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 14.5, whiteSpace: 'nowrap' }}>
             ជាតិ សាសនា ព្រះមហាក្សត្រ
           </div>
           <KhmerRoyalDivider />
@@ -57,10 +57,10 @@ export default function OfficialLeaveDocument({
 
       {/* Report Title */}
       <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 20 }}>
-        <div className="font-moul" style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: 18, marginBottom: 4, whiteSpace: 'nowrap' }}>
           របាយការណ៍ ស្ដីពី
         </div>
-        <div className="font-moul" style={{ fontSize: 16.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: 16.5, whiteSpace: 'nowrap' }}>
           ចំនួនសមណសិស្សសុំច្បាប់ ក្នុងខែ{monthName} ឆ្នាំ{yearDisplay}
         </div>
       </div>
