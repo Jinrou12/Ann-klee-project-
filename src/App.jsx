@@ -33,6 +33,7 @@ import {
   fetchTrainingFromCloud
 } from './utils/storage';
 import { processUploadedImage } from './utils/ocrService';
+import { parseDurationShorthand } from './utils/khmerNumerals';
 
 export default function App() {
   // Device mode detection (Rule: Clean PC vs Mobile Separation)
@@ -448,7 +449,7 @@ export default function App() {
           name: l.name?.trim() || 'សមណសិស្ស',
           grade: l.grade || '៣',
           reason: l.reason || 'ការងារផ្ទាល់ខ្លួន',
-          duration: l.duration || '១ថ្ងៃ',
+          duration: parseDurationShorthand(l.duration) || '១ថ្ងៃ',
           date: l.date || new Date().toLocaleDateString('en-GB'),
           note: l.note || ''
         },
@@ -506,7 +507,7 @@ export default function App() {
           name: l.name?.trim() || 'សមណសិស្ស',
           grade: l.grade || '៣',
           reason: l.reason || 'ការងារផ្ទាល់ខ្លួន',
-          duration: l.duration || '១ថ្ងៃ',
+          duration: parseDurationShorthand(l.duration) || '១ថ្ងៃ',
           date: cleanDate,
           note: l.note || ''
         };
@@ -703,6 +704,7 @@ export default function App() {
           <UploadSection
             queue={queue}
             studentMaster={appState.studentMaster}
+            allLeaves={appState.leaves}
             onAddToQueue={handleAddToQueue}
             onRemoveFromQueue={handleRemoveFromQueue}
             onClearQueue={handleClearQueue}
@@ -711,6 +713,7 @@ export default function App() {
             onApproveItem={handleApproveSingleItem}
             onApproveAll={handleApproveAllQueue}
             isProcessing={isProcessing}
+            isMobile={isMobile}
           />
         )}
       </main>

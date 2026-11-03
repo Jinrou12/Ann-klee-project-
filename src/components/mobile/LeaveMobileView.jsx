@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, Eye, 
   Calendar, Clock, AlertCircle, UserCheck, Search, Download, Loader2, Printer 
 } from 'lucide-react';
-import { toKhmerDigits } from '../../utils/khmerNumerals';
+import { toKhmerDigits, parseDurationShorthand } from '../../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../../utils/excelExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
 import OfficialLeaveDocument from '../OfficialLeaveDocument';
@@ -59,7 +59,8 @@ export default function LeaveMobileView({
       alert('សូមបញ្ចូលព្រះនាម ឬឈ្មោះសមណសិស្ស');
       return;
     }
-    const updated = records.map(r => r.id === editingId ? { ...editForm } : r);
+    const formattedDuration = parseDurationShorthand(editForm.duration) || '១ថ្ងៃ';
+    const updated = records.map(r => r.id === editingId ? { ...editForm, duration: formattedDuration } : r);
     onUpdateRecords(updated);
     setEditingId(null);
     setEditForm({});
@@ -79,7 +80,8 @@ export default function LeaveMobileView({
     }
     const newRecord = {
       id: `leave-${Date.now()}`,
-      ...newLeave
+      ...newLeave,
+      duration: parseDurationShorthand(newLeave.duration) || '១ថ្ងៃ'
     };
     onUpdateRecords([...records, newRecord]);
     setShowAddModal(false);
@@ -442,11 +444,13 @@ export default function LeaveMobileView({
                         </select>
                       </div>
                       <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>ចំនួនថ្ងៃឈប់</label>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>ចំនួនថ្ងៃឈប់ (ឧ. 1, 1.5, 1a, 1p)</label>
                         <input
                           type="text"
-                          value={editForm.duration || '១ថ្ងៃ'}
+                          value={editForm.duration ?? ''}
                           onChange={(e) => setEditForm({ ...editForm, duration: e.target.value })}
+                          onBlur={(e) => setEditForm({ ...editForm, duration: parseDurationShorthand(e.target.value) || '១ថ្ងៃ' })}
+                          placeholder="ឧ. 1, 1.5, 1a, 1p"
                           style={{
                             width: '100%',
                             padding: '6px 8px',
@@ -749,12 +753,13 @@ export default function LeaveMobileView({
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>ចំនួនថ្ងៃឈប់</label>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>ចំនួនថ្ងៃឈប់ (ឧ. 1, 1.5, 1a, 1p)</label>
                   <input
                     type="text"
-                    placeholder="ឧ. ១ថ្ងៃ, ២ថ្ងៃ, ១ល្ងាច"
-                    value={newLeave.duration}
+                    placeholder="ឧ. 1, 1.5, 1a, 1p"
+                    value={newLeave.duration ?? ''}
                     onChange={(e) => setNewLeave({ ...newLeave, duration: e.target.value })}
+                    onBlur={(e) => setNewLeave({ ...newLeave, duration: parseDurationShorthand(e.target.value) || '១ថ្ងៃ' })}
                     style={{
                       width: '100%',
                       padding: '9px 12px',

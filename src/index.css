@@ -323,10 +323,24 @@ input:focus, select:focus, textarea:focus {
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* Responsive adjustments */
+/* Responsive adjustments (Mobile Scope Isolation) */
 @media (max-width: 768px) {
+  html,
+  body {
+    overflow-x: hidden;
+    width: 100%;
+    position: relative;
+  }
+
   .monastic-app .app-container {
     padding: 10px 12px 84px;
+  }
+
+  /* Prevent iOS Safari / WebKit automatic zoom-in animation when focusing inputs (< 16px triggers zoom) */
+  .monastic-app input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .monastic-app select,
+  .monastic-app textarea {
+    font-size: 16px !important;
   }
 
   .hide-on-mobile {

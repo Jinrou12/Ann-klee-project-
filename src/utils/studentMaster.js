@@ -172,6 +172,297 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER) 
 }
 
 /**
+ * Khmer Consonant Phonetic / Homophone Groups (ក្រុមព្យញ្ជនៈមានសម្លេងស្រដៀងគ្នា)
+ */
+export const KHMER_PHONETIC_MAP = {
+  'ក': ['ខ', 'គ', 'ឃ', 'ង'],
+  'ខ': ['ក', 'ឃ', 'គ'],
+  'គ': ['ក', 'ឃ', 'ខ', 'ង'],
+  'ឃ': ['គ', 'ខ', 'ក'],
+  'ង': ['ក', 'គ', 'ញ'],
+
+  'ច': ['ឆ', 'ជ', 'ឈ', 'ញ'],
+  'ឆ': ['ច', 'ឈ', 'ជ'],
+  'ជ': ['ច', 'ឈ', 'ឆ', 'ញ'],
+  'ឈ': ['ជ', 'ឆ', 'ច'],
+  'ញ': ['ច', 'ជ', 'ន', 'ណ'],
+
+  'ដ': ['ឌ', 'ត', 'ទ', 'ឋ', 'ឍ'],
+  'ឋ': ['ថ', 'ដ', 'ត'],
+  'ឌ': ['ដ', 'ទ', 'ត', 'ធ'],
+  'ឍ': ['ធ', 'ឌ', 'ថ'],
+  'ណ': ['ន', 'ញ'],
+
+  'ត': ['ថ', 'ទ', 'ធ', 'ដ', 'ឌ'],
+  'ថ': ['ត', 'ធ', 'ទ', 'ឋ'],
+  'ទ': ['ត', 'ធ', 'ថ', 'ឌ', 'ដ'],
+  'ធ': ['ទ', 'ថ', 'ត', 'ឍ', 'ឌ'],
+  'ន': ['ណ', 'ញ'],
+
+  'ប': ['ផ', 'ព', 'ភ', 'ម'],
+  'ផ': ['ប', 'ភ', 'ព'],
+  'ព': ['ប', 'ភ', 'ផ', 'វ'],
+  'ភ': ['ព', 'ផ', 'ប'],
+  'ម': ['ប', 'ព', 'វ'],
+
+  'យ': ['រ', 'ល', 'វ'],
+  'រ': ['ល', 'ឡ', 'យ', 'វ'],
+  'ល': ['ឡ', 'រ', 'យ'],
+  'វ': ['ព', 'ប', 'រ', 'យ'],
+  'ឡ': ['ល', 'រ'],
+
+  'ស': ['ហ', 'អ', 'ឆ'],
+  'ហ': ['ស', 'អ'],
+  'អ': ['ហ', 'ស']
+};
+
+/**
+ * Normalize Khmer vowels/diacritics that are commonly confused when typing quickly
+ * (e.g. ឈី vs ឈឺ vs ឈឹ, ់ vs ័)
+ */
+function normalizeKhmerPhoneticString(str) {
+  return String(str || '')
+    .replace(/[\s\u200B]/g, '')
+    .replace(/[ីឹឺ]/g, 'ី')
+    .replace(/[ុូួ]/g, 'ុ')
+    .replace(/[េែៃ]/g, 'េ')
+    .replace(/[ោៅ]/g, 'ោ')
+    .replace(/[់័៏៌]/g, '');
+}
+
+/**
+ * Suggest student names based on:
+ *  1. Direct prefix / word-start match (e.g., typing "ច" suggests names starting with "ច")
+ *  2. Phonetic consonant group match (e.g., typing "ច" suggests names starting with "ឆ, ជ, ឈ")
+ *
+ * @param {string} rawQuery
+ * @param {Array} studentList
+ * @returns {{ exactMatches: Array, phoneticMatches: Array, similarConsonants: Array }}
+ */
+export function getPhoneticStudentSuggestions(rawQuery, studentList = DEFAULT_STUDENT_MASTER) {
+  if (!studentList || studentList.length === 0) {
+    return { exactMatches: [], phoneticMatches: [], similarConsonants: [] };
+  }
+
+  const trimmed = String(rawQuery || '').replace(/\u200B/g, '').trim();
+  if (!trimmed) {
+    return { exactMatches: [], phoneticMatches: [], similarConsonants: [] };
+  }
+
+  const cleanQuery = trimmed.replace(/\s+/g, '');
+  const normQuery = normalizeKhmerPhoneticString(cleanQuery);
+  const firstChar = cleanQuery.charAt(0);
+  const similarConsonants = KHMER_PHONETIC_MAP[firstChar] || [];
+
+  const exactSurnameMatches = [];
+  const exactGivenMatches = [];
+  const exactContainsMatches = [];
+  const usedIds = new Set();
+
+  // Pass 1: Direct Prefix & Substring Matches
+  for (const s of studentList) {
+    const fullClean = s.name.replace(/[\s\u200B]/g, '');
+    const parts = s.name.trim().split(/\s+/);
+    const surname = parts[0] || '';
+    const givenName = parts.slice(1).join('') || '';
+    const aliases = s.aliases || [];
+
+    if (
+      surname.startsWith(cleanQuery) ||
+      fullClean.startsWith(cleanQuery) ||
+      aliases.some(a => a.replace(/[\s\u200B]/g, '').startsWith(cleanQuery))
+    ) {
+      exactSurnameMatches.push(s);
+      usedIds.add(s.id || s.name);
+    } else if (
+      givenName.startsWith(cleanQuery) ||
+      parts.some(p => p.startsWith(cleanQuery))
+    ) {
+      exactGivenMatches.push(s);
+      usedIds.add(s.id || s.name);
+    } else if (
+      fullClean.includes(cleanQuery) ||
+      normalizeKhmerPhoneticString(fullClean).startsWith(normQuery) ||
+      aliases.some(a => a.replace(/[\s\u200B]/g, '').includes(cleanQuery))
+    ) {
+      exactContainsMatches.push(s);
+      usedIds.add(s.id || s.name);
+    }
+  }
+
+  const exactMatches = [
+    ...exactSurnameMatches,
+    ...exactGivenMatches,
+    ...exactContainsMatches
+  ];
+
+  // Pass 2: Phonetic / Homophone Consonant Group Matches (e.g. ច -> ឆ, ជ, ឈ)
+  const phoneticSurnameMatches = [];
+  const phoneticGivenMatches = [];
+
+  if (similarConsonants.length > 0) {
+    const restOfQuery = cleanQuery.slice(1);
+    const normRest = normalizeKhmerPhoneticString(restOfQuery);
+
+    // Order by similarConsonants priority
+    for (const simChar of similarConsonants) {
+      const altQuery = simChar + restOfQuery;
+      const normAltQuery = simChar + normRest;
+
+      for (const s of studentList) {
+        const key = s.id || s.name;
+        if (usedIds.has(key)) continue;
+
+        const fullClean = s.name.replace(/[\s\u200B]/g, '');
+        const parts = s.name.trim().split(/\s+/);
+        const surname = parts[0] || '';
+        const givenName = parts.slice(1).join('') || '';
+        const normFull = normalizeKhmerPhoneticString(fullClean);
+        const normGiven = normalizeKhmerPhoneticString(givenName);
+
+        if (
+          surname.startsWith(altQuery) ||
+          fullClean.startsWith(altQuery) ||
+          normFull.startsWith(normAltQuery) ||
+          (cleanQuery.length <= 2 && surname.startsWith(simChar))
+        ) {
+          phoneticSurnameMatches.push(s);
+          usedIds.add(key);
+        } else if (
+          givenName.startsWith(altQuery) ||
+          normGiven.startsWith(normAltQuery) ||
+          (cleanQuery.length === 1 && givenName.startsWith(simChar))
+        ) {
+          phoneticGivenMatches.push(s);
+          usedIds.add(key);
+        }
+      }
+    }
+  }
+
+  const phoneticMatches = [
+    ...phoneticSurnameMatches,
+    ...phoneticGivenMatches
+  ];
+
+  return {
+    exactMatches: exactMatches.slice(0, 8),
+    phoneticMatches: phoneticMatches.slice(0, 8),
+    similarConsonants: similarConsonants.slice(0, 4)
+  };
+}
+
+/**
+ * Extract 100% real historical leave reasons from actual app records (Zero fabricated reasons)
+ * and filter/rank them based on user input (including phonetic/vowel tolerance).
+ *
+ * @param {string} rawQuery
+ * @param {object} sources - { allLeaves, trainingDataset, queue }
+ * @returns {Array<string>}
+ */
+export function getRealReasonSuggestions(rawQuery, { allLeaves = {}, trainingDataset = [], queue = [] } = {}) {
+  const reasonCounts = new Map();
+
+  const recordReason = (r, weight = 1) => {
+    const clean = String(r || '').replace(/\s+/g, ' ').trim();
+    if (!clean || clean.length < 2) return;
+    reasonCounts.set(clean, (reasonCounts.get(clean) || 0) + weight);
+  };
+
+  // 1. From all saved monthly leave records in appState.leaves (real historical data)
+  if (allLeaves && typeof allLeaves === 'object') {
+    Object.values(allLeaves).forEach(monthList => {
+      if (Array.isArray(monthList)) {
+        monthList.forEach(item => {
+          if (item && item.reason) recordReason(item.reason, 2);
+        });
+      }
+    });
+  }
+
+  // 2. From verified training dataset (real approved leave slips)
+  if (Array.isArray(trainingDataset)) {
+    trainingDataset.forEach(sample => {
+      if (sample?.docType === 'leave' && sample?.groundTruth?.reason) {
+        recordReason(sample.groundTruth.reason, 2);
+      }
+    });
+  }
+
+  // 3. From current scanned queue items (if processed)
+  if (Array.isArray(queue)) {
+    queue.forEach(q => {
+      const r = q?.processedData?.leaveItems?.[0]?.reason || q?.processedData?.result?.leaveItems?.[0]?.reason;
+      if (r && q?.status === 'processed') {
+        recordReason(r, 1);
+      }
+    });
+  }
+
+  // Sort all real reasons by frequency descending
+  const allRealReasons = Array.from(reasonCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason]) => reason);
+
+  const trimmed = String(rawQuery || '').replace(/\u200B/g, '').trim();
+  if (!trimmed) {
+    return allRealReasons;
+  }
+
+  const cleanQuery = trimmed.replace(/\s+/g, '');
+  const normQuery = normalizeKhmerPhoneticString(cleanQuery);
+  const firstChar = cleanQuery.charAt(0);
+  const similarConsonants = KHMER_PHONETIC_MAP[firstChar] || [];
+
+  const startsWithMatches = [];
+  const containsMatches = [];
+  const phoneticMatches = [];
+
+  for (const reason of allRealReasons) {
+    const cleanReason = reason.replace(/\s+/g, '');
+    const normReason = normalizeKhmerPhoneticString(cleanReason);
+
+    if (
+      reason.startsWith(trimmed) ||
+      cleanReason.startsWith(cleanQuery) ||
+      normReason.startsWith(normQuery)
+    ) {
+      startsWithMatches.push(reason);
+    } else if (
+      reason.includes(trimmed) ||
+      cleanReason.includes(cleanQuery) ||
+      normReason.includes(normQuery)
+    ) {
+      containsMatches.push(reason);
+    } else {
+      // Check if individual words in query (e.g. "អាពាធ ឈី") match words in reason with phonetic/vowel tolerance
+      const queryWords = trimmed.split(/\s+/).filter(Boolean);
+      const allWordsMatch = queryWords.length > 0 && queryWords.every(qw => {
+        const normQw = normalizeKhmerPhoneticString(qw);
+        if (normReason.includes(normQw)) return true;
+        const qwFirst = qw.charAt(0);
+        const qwSim = KHMER_PHONETIC_MAP[qwFirst] || [];
+        return qwSim.some(sc => normReason.includes(sc + normQw.slice(1)));
+      });
+
+      if (allWordsMatch) {
+        phoneticMatches.push(reason);
+      } else if (
+        similarConsonants.some(sc =>
+          cleanReason.startsWith(sc + cleanQuery.slice(1)) ||
+          normReason.includes(sc + normQuery.slice(1))
+        )
+      ) {
+        phoneticMatches.push(reason);
+      }
+    }
+  }
+
+  const combined = [...startsWithMatches, ...containsMatches, ...phoneticMatches];
+  return combined.length > 0 ? combined : allRealReasons;
+}
+
+/**
  * Parse uploaded Excel or CSV file containing student names
  * @param {File} file 
  * @returns {Promise<Array>} List of students

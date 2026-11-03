@@ -1,6 +1,6 @@
 import React from 'react';
 import { Trash2 } from 'lucide-react';
-import { toKhmerDigits } from '../utils/khmerNumerals';
+import { toKhmerDigits, parseDurationShorthand } from '../utils/khmerNumerals';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 
 /**
@@ -168,8 +168,17 @@ export default function OfficialLeaveDocument({
                     {isEditing ? (
                       <input
                         type="text"
-                        value={r.duration}
+                        value={r.duration ?? ''}
                         onChange={e => handleCellChange(r.id, 'duration', e.target.value)}
+                        onBlur={e => handleCellChange(r.id, 'duration', parseDurationShorthand(e.target.value) || '១ថ្ងៃ')}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleCellChange(r.id, 'duration', parseDurationShorthand(e.target.value) || '១ថ្ងៃ');
+                            setEditingRowId(null);
+                          }
+                        }}
+                        placeholder="1, 1.5, 1a, 1p"
                         style={{ width: '100%', textAlign: 'center', border: '1px solid #b45309', padding: '2px 4px', fontSize: 13 }}
                       />
                     ) : (
