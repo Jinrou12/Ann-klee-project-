@@ -105,6 +105,14 @@ input:focus, select:focus, textarea:focus {
   letter-spacing: 0 !important;
 }
 
+/* Prevent mobile browsers (Chrome font boosting) from inflating text in the A4 document,
+   so mobile PDF renders at the exact same font sizes as PC PDF */
+.printable-document {
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 /* Authentic A4 Paper Sheet Simulation (Screen Display) */
 .paper-sheet-wrapper {
   background: #e2e8f0;
