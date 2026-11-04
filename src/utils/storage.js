@@ -1,5 +1,5 @@
 // Central State Storage and Mutator Guard (Rule 7)
-import { DEFAULT_STUDENT_MASTER } from './studentMaster';
+import { DEFAULT_STUDENT_MASTER, matchStudentName } from './studentMaster';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 // Default Gemini API Key Pool safely loaded from environment variables
@@ -117,7 +117,7 @@ export function loadAppState() {
       'កែវ វិសាល', 'ឡុង វិបុល', 'ស៊ូ សំណាង', 'ម៉ៅ ដារ៉ា',
       'ខៀវ វិចិត្រ', 'ព្រំ សុខា', 'ជា ពិសិដ្ឋ', 'ចាន់ វណ្ណា', 'ហេង សុវណ្ណ'
     ]);
-    const legacyMockIds = new Set(['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20']);
+    const legacyMockIds = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20']);
 
     let rawStudents = Array.isArray(parsed.studentMaster) ? parsed.studentMaster : DEFAULT_STUDENT_MASTER;
     // Filter out old mock records
@@ -242,7 +242,7 @@ export function getOfflineQueue() {
     const queue = JSON.parse(raw);
     return queue.map(item => {
       // Auto-sanitize any existing leave items in queue
-      const sanitizeDates = (items) => {
+      const sanitizeLeaveItems = (items) => {
         if (!Array.isArray(items)) return items;
         return items.map(l => {
           let cleanDate = String(l.date || '').trim();
@@ -253,15 +253,22 @@ export function getOfflineQueue() {
               cleanDate = parts[0].trim();
             }
           }
-          return { ...l, date: cleanDate };
+          let cleanName = String(l.name || '').trim();
+          if (cleanName.replace(/[\s\u200B]/g, '') === 'ឡេងអាន') {
+            cleanName = 'ឆេងអាន ឈាងហេង';
+          } else if (cleanName) {
+            const m = matchStudentName(cleanName, DEFAULT_STUDENT_MASTER, l.grade);
+            cleanName = (m && m.confidence >= 0.72) ? m.student.name : '';
+          }
+          return { ...l, name: cleanName, date: cleanDate };
         });
       };
 
       if (item.processedData?.leaveItems) {
-        item.processedData.leaveItems = sanitizeDates(item.processedData.leaveItems);
+        item.processedData.leaveItems = sanitizeLeaveItems(item.processedData.leaveItems);
       }
       if (item.processedData?.result?.leaveItems) {
-        item.processedData.result.leaveItems = sanitizeDates(item.processedData.result.leaveItems);
+        item.processedData.result.leaveItems = sanitizeLeaveItems(item.processedData.result.leaveItems);
       }
       return item;
     });
@@ -271,10 +278,35 @@ export function getOfflineQueue() {
 }
 
 export function saveOfflineQueue(queue) {
+  if (!Array.isArray(queue)) return;
   try {
-    localStorage.setItem(STORAGE_KEYS.OFFLINE_QUEUE, JSON.stringify(queue));
-  } catch (e) {
-    console.error('Failed to save offline queue', e);
+    const slimQueue = queue.map(({ file: _file, ...item }) => {
+      if (item.processedData?.rawScan?.previewUrl) {
+        return {
+          ...item,
+          processedData: {
+            ...item.processedData,
+            rawScan: {
+              ...item.processedData.rawScan,
+              previewUrl: undefined
+            }
+          }
+        };
+      }
+      return item;
+    });
+    localStorage.setItem(STORAGE_KEYS.OFFLINE_QUEUE, JSON.stringify(slimQueue));
+  } catch {
+    // If localStorage 5MB quota is exceeded with many photos, save metadata without heavy dataURL strings
+    try {
+      const metadataOnlyQueue = queue.map(({ file: _file, previewUrl, ...item }) => ({
+        ...item,
+        previewUrl: previewUrl && !previewUrl.startsWith('data:') ? previewUrl : ''
+      }));
+      localStorage.setItem(STORAGE_KEYS.OFFLINE_QUEUE, JSON.stringify(metadataOnlyQueue));
+    } catch (e2) {
+      console.warn('Offline queue persistence skipped (quota full):', e2);
+    }
   }
 }
 
@@ -494,6 +526,10 @@ export function normalizeOriginalFilename(fn) {
   return stripped || clean;
 }
 
+const OFFICIAL_ROSTER_COMPACT_MAP = new Map(
+  DEFAULT_STUDENT_MASTER.map(s => [s.name.replace(/[\s\u200B]/g, ''), s.name])
+);
+
 function sanitizeTrainingSample(s) {
   if (!s || typeof s !== 'object') return s;
   const copy = { ...s };
@@ -520,16 +556,38 @@ function sanitizeTrainingSample(s) {
   if (copy.imagePreview && (String(copy.imagePreview).startsWith('blob:') || String(copy.imagePreview).length > 2048)) {
     delete copy.imagePreview;
   }
-  if (copy.groundTruth?.date) {
-    let cleanDate = String(copy.groundTruth.date).trim();
-    cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
-    if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
-      const parts = cleanDate.split(/ដល់|-|\/to\//i);
-      if (parts[0] && parts[0].trim().length >= 6) {
-        cleanDate = parts[0].trim();
+  if (copy.groundTruth) {
+    let fixedGt = { ...copy.groundTruth };
+    if (fixedGt.date) {
+      let cleanDate = String(fixedGt.date).trim();
+      cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
+      if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
+        const parts = cleanDate.split(/ដល់|-|\/to\//i);
+        if (parts[0] && parts[0].trim().length >= 6) {
+          cleanDate = parts[0].trim();
+        }
+      }
+      fixedGt.date = cleanDate;
+    }
+    // Heal corrupted/truncated groundTruth student names (e.g. "ឡេង អាន" on slip of "ឆេងអាន ឈាងហេង")
+    if (copy.docType !== 'finance' && fixedGt.name) {
+      const compactGtName = String(fixedGt.name).replace(/[\s\u200B]/g, '');
+      if (copy.id === 'train-1793701698386-rx94ts' || compactGtName === 'ឡេងអាន') {
+        fixedGt.name = 'ឆេងអាន ឈាងហេង';
+        fixedGt.grade = '២';
+      } else if (OFFICIAL_ROSTER_COMPACT_MAP.has(compactGtName)) {
+        fixedGt.name = OFFICIAL_ROSTER_COMPACT_MAP.get(compactGtName);
+      } else {
+        const matched = matchStudentName(fixedGt.name, DEFAULT_STUDENT_MASTER, fixedGt.grade);
+        if (matched && matched.confidence >= 0.72) {
+          fixedGt.name = matched.student.name;
+        } else {
+          // Never keep a non-roster name in training groundTruth
+          fixedGt.name = '';
+        }
       }
     }
-    copy.groundTruth = { ...copy.groundTruth, date: cleanDate };
+    copy.groundTruth = fixedGt;
   }
   return copy;
 }
@@ -679,7 +737,7 @@ export async function fetchTrainingFromCloud() {
 
       // If local had additional samples or sanitized filenames, push merged back to cloud
       if (localOnly.length > 0 || JSON.stringify(data.data) !== JSON.stringify(merged)) {
-        syncTrainingToCloud(merged).catch(() => {});
+        syncTrainingToCloud(merged).catch(() => { });
       }
 
       console.log(`☁️ [Training Sync] Loaded ${cloudSamples.length} samples from cloud, merged ${localOnly.length} local-only.`);
@@ -696,7 +754,7 @@ export async function fetchTrainingFromCloud() {
  * Subscribe to realtime updates on `training_samples` table so all devices stay in sync
  */
 export function subscribeToCloudTraining(onRemoteTrainingUpdate) {
-  if (!supabase) return () => {};
+  if (!supabase) return () => { };
   try {
     const channel = supabase
       .channel('public:training_samples')
@@ -718,7 +776,7 @@ export function subscribeToCloudTraining(onRemoteTrainingUpdate) {
     };
   } catch (err) {
     console.warn('Failed to subscribe to Supabase training_samples realtime:', err);
-    return () => {};
+    return () => { };
   }
 }
 
@@ -735,6 +793,22 @@ export function exportTrainingDataset() {
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   downloadAnchor.remove();
+}
+
+function enrichStudentMasterAliases(rawStudents) {
+  if (!Array.isArray(rawStudents) || rawStudents.length === 0) return DEFAULT_STUDENT_MASTER;
+  return rawStudents.map(s => {
+    const def = DEFAULT_STUDENT_MASTER.find(d => d.name === s.name);
+    if (def) {
+      return {
+        ...s,
+        id: def.id,
+        grade: def.grade || s.grade,
+        aliases: Array.from(new Set([...(def.aliases || []), ...(s.aliases || [])]))
+      };
+    }
+    return s;
+  });
 }
 
 /**
@@ -754,7 +828,10 @@ export async function fetchCloudAppState() {
       return null;
     }
     if (data && data.data) {
-      return data.data;
+      return {
+        ...data.data,
+        studentMaster: enrichStudentMasterAliases(data.data.studentMaster)
+      };
     }
     return null;
   } catch (err) {
@@ -786,7 +863,7 @@ export async function syncAppStateToCloud(state) {
 }
 
 export function subscribeToCloudAppState(onRemoteUpdate) {
-  if (!supabase) return () => {};
+  if (!supabase) return () => { };
   try {
     const channel = supabase
       .channel('public:app_state')
@@ -795,7 +872,10 @@ export function subscribeToCloudAppState(onRemoteUpdate) {
         { event: '*', schema: 'public', table: 'app_state', filter: 'id=eq.current' },
         (payload) => {
           if (payload.new && payload.new.data) {
-            onRemoteUpdate(payload.new.data);
+            onRemoteUpdate({
+              ...payload.new.data,
+              studentMaster: enrichStudentMasterAliases(payload.new.data.studentMaster)
+            });
           }
         }
       )
@@ -806,7 +886,7 @@ export function subscribeToCloudAppState(onRemoteUpdate) {
     };
   } catch (err) {
     console.warn('Failed to subscribe to Supabase realtime:', err);
-    return () => {};
+    return () => { };
   }
 }
 

@@ -5,7 +5,7 @@ import {
   cleanHandwrittenStudentName,
   computeKhmerNameSimilarity
 } from './studentMaster';
-import { parseKhmerNumber, toArabicDigits } from './khmerNumerals';
+import { parseKhmerNumber, toArabicDigits, toKhmerDigits } from './khmerNumerals';
 import {
   DEFAULT_GEMINI_KEYS,
   getStoredApiKey,
@@ -14,6 +14,21 @@ import {
   isBareGenericCameraFilename,
   normalizeOriginalFilename
 } from './storage';
+
+// Session-level memory of invalid (400/401/403) and temporarily rate-limited (429) keys
+// so subsequent image scans immediately skip exhausted keys without wasting time
+const sessionBadKeys = new Set();
+const sessionRateLimitedKeys = new Map(); // key -> timestampMs
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+
+function isKeyUsable(key) {
+  if (!key || sessionBadKeys.has(key)) return false;
+  const limitedAt = sessionRateLimitedKeys.get(key);
+  if (limitedAt && (Date.now() - limitedAt) < RATE_LIMIT_COOLDOWN_MS) {
+    return false;
+  }
+  return true;
+}
 
 /**
  * Convert browser File or Blob to base64 string
@@ -34,7 +49,7 @@ export function fileToBase64(file) {
  * Rotate a dataUrl image by 90, 180, or 270 degrees clockwise on an HTML5 Canvas.
  * Returns { dataUrl, base64, width, height, rotatedDegrees }.
  */
-export function rotateImageDataUrl(dataUrl, degreesClockwise = 0) {
+export function rotateImageDataUrl(dataUrl, degreesClockwise = 0, maxEdge = 1800) {
   const normDeg = ((degreesClockwise % 360) + 360) % 360;
   if (!dataUrl || normDeg === 0) {
     const base64 = dataUrl ? dataUrl.split(',')[1] || '' : '';
@@ -45,11 +60,17 @@ export function rotateImageDataUrl(dataUrl, degreesClockwise = 0) {
     const img = new Image();
     img.onload = () => {
       try {
-        const w = img.naturalWidth || img.width;
-        const h = img.naturalHeight || img.height;
-        if (!w || !h) {
+        const rawW = img.naturalWidth || img.width;
+        const rawH = img.naturalHeight || img.height;
+        if (!rawW || !rawH) {
           return resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
         }
+
+        // Cap long edge to maxEdge (1800px) during rotation to prevent iOS Safari 16.7MP canvas memory exhaustion on multi-shot
+        const longEdge = Math.max(rawW, rawH);
+        const scale = (maxEdge && longEdge > maxEdge) ? (maxEdge / longEdge) : 1;
+        const w = Math.max(1, Math.round(rawW * scale));
+        const h = Math.max(1, Math.round(rawH * scale));
 
         const swapDims = normDeg === 90 || normDeg === 270;
         const canvas = document.createElement('canvas');
@@ -64,13 +85,21 @@ export function rotateImageDataUrl(dataUrl, degreesClockwise = 0) {
         ctx.rotate((normDeg * Math.PI) / 180);
         ctx.drawImage(img, -w / 2, -h / 2, w, h);
 
-        const rotatedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const outW = canvas.width;
+        const outH = canvas.height;
+        const rotatedDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+        // Immediately release WebKit canvas backing memory
+        canvas.width = 0;
+        canvas.height = 0;
         const rotatedBase64 = rotatedDataUrl.split(',')[1] || '';
+        if (!rotatedBase64 || rotatedBase64.length < 100) {
+          return resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
+        }
         resolve({
           dataUrl: rotatedDataUrl,
           base64: rotatedBase64,
-          width: canvas.width,
-          height: canvas.height,
+          width: outW,
+          height: outH,
           rotatedDegrees: normDeg
         });
       } catch (e) {
@@ -103,7 +132,10 @@ function makeRotatedThumbBase64(img, degreesClockwise, maxEdge = 480) {
   ctx.translate(canvas.width / 2, canvas.height / 2);
   ctx.rotate((degreesClockwise * Math.PI) / 180);
   ctx.drawImage(img, -tw / 2, -th / 2, tw, th);
-  return canvas.toDataURL('image/jpeg', 0.72).split(',')[1] || '';
+  const out = canvas.toDataURL('image/jpeg', 0.72).split(',')[1] || '';
+  canvas.width = 0;
+  canvas.height = 0;
+  return out;
 }
 
 /**
@@ -148,15 +180,19 @@ Return ONLY JSON: {"uprightImage": "A" | "B" | "C" | "D", "confidence": 0.0 to 1
   });
 
   const keysToTry = [apiKey, ...DEFAULT_GEMINI_KEYS.filter(k => k && k !== apiKey)].filter(Boolean);
-  const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.5-flash'];
-  const badKeys = new Set();
+  const candidateModels = ['gemini-3-flash-preview', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.8-flash'];
 
   for (const model of candidateModels) {
+    const supportsThinkingBudget = !model.includes('lite');
+    const generationConfig = supportsThinkingBudget
+      ? { temperature: 0, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } }
+      : { temperature: 0, responseMimeType: 'application/json' };
+
     for (const key of keysToTry) {
-      if (badKeys.has(key)) continue;
+      if (!isKeyUsable(key)) continue;
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
           {
@@ -165,16 +201,19 @@ Return ONLY JSON: {"uprightImage": "A" | "B" | "C" | "D", "confidence": 0.0 to 1
             signal: controller.signal,
             body: JSON.stringify({
               contents: [{ parts }],
-              generationConfig: { temperature: 0, responseMimeType: 'application/json' }
+              generationConfig
             })
           }
         );
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          if (response.status === 429) continue;
+          if (response.status === 429) {
+            sessionRateLimitedKeys.set(key, Date.now());
+            continue;
+          }
           if (response.status === 400 || response.status === 401 || response.status === 403) {
-            badKeys.add(key);
+            sessionBadKeys.add(key);
             continue;
           }
           if (response.status === 404 || response.status === 503) break;
@@ -192,6 +231,9 @@ Return ONLY JSON: {"uprightImage": "A" | "B" | "C" | "D", "confidence": 0.0 to 1
         return null;
       } catch (err) {
         console.warn(`Orientation check with ${model} failed:`, err.message || err);
+        if (err?.name === 'AbortError' || String(err?.message || '').includes('aborted')) {
+          break; // Switch to next candidate model immediately on timeout
+        }
       }
     }
   }
@@ -231,6 +273,192 @@ export async function autoOrientDocumentImage(dataUrl, docTypeHint = 'auto', api
 }
 
 /**
+ * Shared pixel analysis of a loaded image (downsampled to 240x240):
+ *  - Row-to-Row vs Column-to-Column line modulation (text line direction)
+ *  - Quadrant text edge energy (which side holds the dense header)
+ *  - Mean brightness + strong-edge fraction of the center area (is it a bright paper page with text?)
+ * Used by the offline heuristic (PC/standard flow) and by the Mobile 2-format capture classifier.
+ */
+function computeDocumentLayoutMetrics(img) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (!w || !h) return null;
+
+  const S = 240;
+  const canvas = document.createElement('canvas');
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, S, S);
+  const pixels = ctx.getImageData(0, 0, S, S).data;
+
+  const lum = new Float32Array(S * S);
+  for (let i = 0; i < S * S; i++) {
+    const p = i * 4;
+    lum[i] = pixels[p] * 0.299 + pixels[p + 1] * 0.587 + pixels[p + 2] * 0.114;
+  }
+  // Immediately release temporary 240x240 canvas memory
+  canvas.width = 0;
+  canvas.height = 0;
+
+  // 1. Measure Row-to-Row vs Column-to-Column Line Modulation in center document area (12%..88%)
+  const start = Math.round(S * 0.12);
+  const end = Math.round(S * 0.88);
+  const span = end - start;
+
+  const rowAvg = new Float32Array(S);
+  const colAvg = new Float32Array(S);
+  let lumSum = 0;
+  for (let y = start; y < end; y++) {
+    let rSum = 0;
+    for (let x = start; x < end; x++) {
+      rSum += lum[y * S + x];
+    }
+    rowAvg[y] = rSum / span;
+    lumSum += rSum;
+  }
+  for (let x = start; x < end; x++) {
+    let cSum = 0;
+    for (let y = start; y < end; y++) {
+      cSum += lum[y * S + x];
+    }
+    colAvg[x] = cSum / span;
+  }
+
+  let horizLineMod = 0;
+  let vertLineMod = 0;
+  for (let i = start + 1; i < end; i++) {
+    horizLineMod += Math.abs(rowAvg[i] - rowAvg[i - 1]);
+    vertLineMod += Math.abs(colAvg[i] - colAvg[i - 1]);
+  }
+
+  // 2. Measure Quadrant Text Edge Energy to know whether the top header is on the Right side or Left side
+  const quadEnergy = (x0, x1, y0, y1) => {
+    let energy = 0;
+    for (let y = y0 + 1; y < y1; y++) {
+      for (let x = x0 + 1; x < x1; x++) {
+        const idx = y * S + x;
+        const dx = Math.abs(lum[idx] - lum[idx - 1]);
+        const dy = Math.abs(lum[idx] - lum[idx - S]);
+        if (dx + dy > 22) {
+          energy += dx + dy;
+        }
+      }
+    }
+    return energy;
+  };
+
+  // 3. Center-area strong-edge fraction (text density) — blank / blurred / non-document frames score ~0
+  let strongEdges = 0;
+  let edgeSamples = 0;
+  for (let y = start + 1; y < end; y++) {
+    for (let x = start + 1; x < end; x++) {
+      const idx = y * S + x;
+      const dx = Math.abs(lum[idx] - lum[idx - 1]);
+      const dy = Math.abs(lum[idx] - lum[idx - S]);
+      if (dx + dy > 22) strongEdges++;
+      edgeSamples++;
+    }
+  }
+
+  return {
+    w,
+    h,
+    horizLineMod,
+    vertLineMod,
+    topLeftE: quadEnergy(20, 110, 20, 110),
+    topRightE: quadEnergy(130, 220, 20, 110),
+    bottomLeftE: quadEnergy(20, 110, 130, 220),
+    bottomRightE: quadEnergy(130, 220, 130, 220),
+    meanLum: lumSum / (span * span),
+    edgeFraction: edgeSamples ? strongEdges / edgeSamples : 0
+  };
+}
+
+/** A leave slip is sideways if captured in a portrait frame with vertical text lines, or if vertical line modulation strongly dominates */
+function isSidewaysLayout(m) {
+  const isPortraitFrame = m.h > m.w * 1.05;
+  return (
+    (isPortraitFrame && m.vertLineMod >= m.horizLineMod * 0.72) ||
+    m.vertLineMod > m.horizLineMod * 1.22
+  );
+}
+
+/**
+ * MOBILE 2-FORMAT CAPTURE CLASSIFIER (on-device, no AI call, ~0.2s).
+ * The mobile camera accepts exactly 2 capture formats for leave slips:
+ *   Format 1 — phone held upright, full A4 page  → text lines horizontal → keep 0°
+ *   Format 2 — top half of the slip, shot sideways → text lines vertical  → always rotate 270° clockwise
+ * Frames that are clearly not a bright paper page with text (dark, blank, blurred) are returned as 'unknown'
+ * so the UI can ask the user to retake instead of spending a Gemini call.
+ * Returns { dataUrl, base64, rotatedDegrees, format: 'upright' | 'sideways_half' | 'finance_skip' | 'unknown', metrics }.
+ */
+export const MOBILE_CAPTURE_MIN_BRIGHTNESS = 100; // calibrated: paper pages ~155-180, desk/keyboard/dark frames ~8-90
+export const MOBILE_CAPTURE_MIN_EDGE_FRACTION = 0.03; // calibrated: text pages ~0.19, blank/blurred frames < 0.05
+
+export async function classifyMobileCapture(dataUrl, docTypeHint = 'auto') {
+  const unchanged = (format, metrics = null) => ({
+    dataUrl,
+    base64: dataUrl ? dataUrl.split(',')[1] || '' : '',
+    rotatedDegrees: 0,
+    format,
+    metrics
+  });
+  if (!dataUrl) return unchanged('unknown');
+  if (docTypeHint === 'finance') return unchanged('finance_skip');
+
+  const img = await new Promise((resolve) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => resolve(null);
+    i.src = dataUrl;
+  });
+  if (!img) return unchanged('unknown');
+
+  let m;
+  try {
+    m = computeDocumentLayoutMetrics(img);
+  } catch (e) {
+    console.warn('Mobile capture analysis failed:', e);
+    return unchanged('unknown');
+  }
+  if (!m) return unchanged('unknown');
+
+  const roundedMetrics = {
+    w: m.w,
+    h: m.h,
+    hMod: Math.round(m.horizLineMod),
+    vMod: Math.round(m.vertLineMod),
+    brightness: Math.round(m.meanLum),
+    edge: Number(m.edgeFraction.toFixed(3))
+  };
+
+  if (m.meanLum < MOBILE_CAPTURE_MIN_BRIGHTNESS || m.edgeFraction < MOBILE_CAPTURE_MIN_EDGE_FRACTION) {
+    console.log('📵 [Mobile 2-Format] Not a recognizable document page', roundedMetrics);
+    return unchanged('unknown', roundedMetrics);
+  }
+
+  if (!isSidewaysLayout(m)) {
+    console.log('📄 [Mobile 2-Format] Upright capture (Format 1) → keep 0°', roundedMetrics);
+    if (Math.max(m.w, m.h) > 1800) {
+      const compressed = await compressImageForOCR(dataUrl, 3 * 1024 * 1024, 'image/jpeg');
+      return {
+        dataUrl: compressed.dataUrl || dataUrl,
+        base64: compressed.base64 || (dataUrl.split(',')[1] || ''),
+        rotatedDegrees: 0,
+        format: 'upright',
+        metrics: roundedMetrics
+      };
+    }
+    return unchanged('upright', roundedMetrics);
+  }
+
+  console.log('📐 [Mobile 2-Format] Sideways half-slip (Format 2) → rotate 270°', roundedMetrics);
+  const rotated = await rotateImageDataUrl(dataUrl, 270, 1800);
+  return { ...rotated, format: 'sideways_half', metrics: roundedMetrics };
+}
+
+/**
  * FALLBACK ONLY (offline / no API key): pixel-based guess to detect a sideways Leave Slip.
  * Primary orientation detection is `detectUprightRotationWithAI` (see below).
  */
@@ -243,81 +471,14 @@ function autoOrientDocumentImageHeuristic(dataUrl, docTypeHint = 'auto') {
     const img = new Image();
     img.onload = async () => {
       try {
-        const w = img.naturalWidth || img.width;
-        const h = img.naturalHeight || img.height;
-        if (!w || !h) {
+        const m = computeDocumentLayoutMetrics(img);
+        if (!m) {
           return resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
         }
+        const { w, h, horizLineMod, vertLineMod, topLeftE, topRightE, bottomLeftE, bottomRightE } = m;
 
-        const S = 240;
-        const canvas = document.createElement('canvas');
-        canvas.width = S;
-        canvas.height = S;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, S, S);
-        const pixels = ctx.getImageData(0, 0, S, S).data;
-
-        const lum = new Float32Array(S * S);
-        for (let i = 0; i < S * S; i++) {
-          const p = i * 4;
-          lum[i] = pixels[p] * 0.299 + pixels[p + 1] * 0.587 + pixels[p + 2] * 0.114;
-        }
-
-        // 1. Measure Row-to-Row vs Column-to-Column Line Modulation in center document area (12%..88%)
-        const start = Math.round(S * 0.12);
-        const end = Math.round(S * 0.88);
-        const span = end - start;
-
-        const rowAvg = new Float32Array(S);
-        const colAvg = new Float32Array(S);
-        for (let y = start; y < end; y++) {
-          let rSum = 0;
-          for (let x = start; x < end; x++) {
-            rSum += lum[y * S + x];
-          }
-          rowAvg[y] = rSum / span;
-        }
-        for (let x = start; x < end; x++) {
-          let cSum = 0;
-          for (let y = start; y < end; y++) {
-            cSum += lum[y * S + x];
-          }
-          colAvg[x] = cSum / span;
-        }
-
-        let horizLineMod = 0;
-        let vertLineMod = 0;
-        for (let i = start + 1; i < end; i++) {
-          horizLineMod += Math.abs(rowAvg[i] - rowAvg[i - 1]);
-          vertLineMod += Math.abs(colAvg[i] - colAvg[i - 1]);
-        }
-
-        // 2. Measure Quadrant Text Edge Energy to know whether the top header is on the Right side or Left side
-        const quadEnergy = (x0, x1, y0, y1) => {
-          let energy = 0;
-          for (let y = y0 + 1; y < y1; y++) {
-            for (let x = x0 + 1; x < x1; x++) {
-              const idx = y * S + x;
-              const dx = Math.abs(lum[idx] - lum[idx - 1]);
-              const dy = Math.abs(lum[idx] - lum[idx - S]);
-              if (dx + dy > 22) {
-                energy += dx + dy;
-              }
-            }
-          }
-          return energy;
-        };
-
-        const topLeftE = quadEnergy(20, 110, 20, 110);
-        const topRightE = quadEnergy(130, 220, 20, 110);
-        const bottomLeftE = quadEnergy(20, 110, 130, 220);
-        const bottomRightE = quadEnergy(130, 220, 130, 220);
-
-        const isPortraitFrame = h > w * 1.05;
         // A leave slip is sideways if captured in a portrait frame with vertical text lines, or if vertical line modulation strongly dominates
-        const isSideways =
-          (isPortraitFrame && vertLineMod >= horizLineMod * 0.72) ||
-          vertLineMod > horizLineMod * 1.22;
+        const isSideways = isSidewaysLayout(m);
 
         if (!isSideways) {
           return resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', rotatedDegrees: 0 });
@@ -398,6 +559,8 @@ export function compressImageForOCR(dataUrl, originalFileSizeBytes, mimeType = '
 
       // Always output JPEG for consistent compression (PNG too large for base64)
       const compressedDataUrl = canvas.toDataURL('image/jpeg', QUALITY);
+      canvas.width = 0;
+      canvas.height = 0;
       const compressedBase64 = compressedDataUrl.split(',')[1];
       const compressedSize = Math.round((compressedBase64.length * 3) / 4);
 
@@ -582,28 +745,23 @@ export function cropLeaveSlipNameLineZone(dataUrl) {
         const h = img.naturalHeight || img.height;
         if (!w || !h) return resolve('');
 
-        // Crop the upper-middle student identity band (Line 1 below "លិខិតសុំច្បាប់") on BOTH Portrait and Landscape photos
-        const sx = Math.round(w * 0.04);
-        const sy = Math.round(h * 0.15);
-        const sw = Math.max(1, Math.round(w * 0.92));
-        const sh = Math.max(1, Math.round(h * 0.25));
-
-        // Upscale width to at least 1600px (up to 2000px) so small cursive Khmer subscripts & vowels are magnified 2.5x-3x
-        const targetW = Math.min(2000, Math.max(1600, Math.round(sw * 2.2)));
-        const scale = targetW / sw;
-        const targetH = Math.max(1, Math.round(sh * scale));
+        // Crop the student identity band (Line 1 below "លិខិតសុំច្បាប់") on BOTH Portrait and Landscape photos
+        const sx = Math.round(w * 0.12);
+        const sy = Math.round(h * 0.28);
+        const sw = Math.max(1, Math.round(w * 0.78));
+        const sh = Math.max(1, Math.round(h * 0.18));
 
         const canvas = document.createElement('canvas');
-        canvas.width = targetW;
-        canvas.height = targetH;
+        canvas.width = sw;
+        canvas.height = sh;
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        // Boost ballpoint pen ink contrast & saturation against paper background
-        ctx.filter = 'contrast(1.22) saturate(1.20)';
-        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
 
         const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        canvas.width = 0;
+        canvas.height = 0;
         resolve(croppedDataUrl.split(',')[1] || '');
       } catch (e) {
         console.warn('Name-line super-zoom crop failed:', e);
@@ -616,9 +774,9 @@ export function cropLeaveSlipNameLineZone(dataUrl) {
 }
 
 /**
- * Auto-Crop & Contrast-Boost the Student Pen-Ink Zone on a Leave Slip (y: 15%..68%, x: 3%..97%).
+ * Auto-Crop & Contrast-Boost the Student Pen-Ink Zone on a Leave Slip (y: 15%..71%, x: 3%..97%).
  * Works on BOTH Portrait and Landscape photos!
- * Cuts out the top printed national/ministry header and bottom teacher/director signatures,
+ * Cuts out the top printed national/ministry header and bottom teacher/student signatures,
  * zooming into all 5 handwritten ballpoint pen ink lines (Name, Grade, Duration, Date, Reason).
  */
 export function cropLeaveSlipPenInkZone(dataUrl) {
@@ -635,7 +793,7 @@ export function cropLeaveSlipPenInkZone(dataUrl) {
         const sx = Math.round(w * 0.03);
         const sy = Math.round(h * 0.15);
         const sw = Math.max(1, Math.round(w * 0.94));
-        const sh = Math.max(1, Math.round(h * 0.54));
+        const sh = Math.max(1, Math.round(h * 0.56));
 
         const targetW = Math.min(1800, Math.max(1400, Math.round(sw * 1.5)));
         const scale = targetW / sw;
@@ -652,6 +810,8 @@ export function cropLeaveSlipPenInkZone(dataUrl) {
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
         const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+        canvas.width = 0;
+        canvas.height = 0;
         resolve(croppedDataUrl.split(',')[1] || '');
       } catch (e) {
         console.warn('Pen-ink zone crop failed:', e);
@@ -664,7 +824,7 @@ export function cropLeaveSlipPenInkZone(dataUrl) {
 }
 
 /**
- * Group student roster by grade ('មត្តេយ្យ', '១', '២', '៣') for Grade-First AI matching
+ * Group student roster by grade ('មត្តេយ្យ', '១', '២', '៣') for Grade-First AI matching (Zero Prompt Bias)
  */
 function buildGradeGroupedRosterPrompt(studentMaster = []) {
   if (!Array.isArray(studentMaster) || studentMaster.length === 0) return '';
@@ -677,32 +837,30 @@ function buildGradeGroupedRosterPrompt(studentMaster = []) {
   };
   studentMaster.forEach(s => {
     const g = normalizeStudentGrade(s.grade);
-    const aliasText = s.aliases && s.aliases.length > 0 ? ` (អាចសរសេរ: ${s.aliases.join(', ')})` : '';
-    const entry = `${s.name}${aliasText}`;
     if (groups[g]) {
-      groups[g].push(entry);
+      groups[g].push(s.name);
     } else {
-      groups['ផ្សេងៗ'].push(`${entry} [ថ្នាក់ ${s.grade}]`);
+      groups['ផ្សេងៗ'].push(`${s.name} [ថ្នាក់ ${s.grade}]`);
     }
   });
 
-  let out = `\nOFFICIAL MONASTIC SCHOOL STUDENT ROSTER GROUPED BY GRADE (បញ្ជីឈ្មោះសមណសិស្សតាមថ្នាក់ទី):\n`;
+  const lines = ['OFFICIAL 80-STUDENT ROSTER BY GRADE:'];
   if (groups['មត្តេយ្យ'].length > 0) {
-    out += `- ថ្នាក់មត្តេយ្យ (${groups['មត្តេយ្យ'].length} អង្គ): ${groups['មត្តេយ្យ'].join(' | ')}\n`;
+    lines.push(`- ថ្នាក់មត្តេយ្យ (${groups['មត្តេយ្យ'].length}): ${groups['មត្តេយ្យ'].join(' | ')}`);
   }
   if (groups['១'].length > 0) {
-    out += `- ថ្នាក់ទី ១ (${groups['១'].length} អង្គ): ${groups['១'].join(' | ')}\n`;
+    lines.push(`- ថ្នាក់ទី ១ (${groups['១'].length}): ${groups['១'].join(' | ')}`);
   }
   if (groups['២'].length > 0) {
-    out += `- ថ្នាក់ទី ២ (${groups['២'].length} អង្គ): ${groups['២'].join(' | ')}\n`;
+    lines.push(`- ថ្នាក់ទី ២ (${groups['២'].length}): ${groups['២'].join(' | ')}`);
   }
   if (groups['៣'].length > 0) {
-    out += `- ថ្នាក់ទី ៣ (${groups['៣'].length} អង្គ): ${groups['៣'].join(' | ')}\n`;
+    lines.push(`- ថ្នាក់ទី ៣ (${groups['៣'].length}): ${groups['៣'].join(' | ')}`);
   }
   if (groups['ផ្សេងៗ'].length > 0) {
-    out += `- ថ្នាក់ផ្សេងៗ: ${groups['ផ្សេងៗ'].join(' | ')}\n`;
+    lines.push(`- ថ្នាក់ផ្សេងៗ: ${groups['ផ្សេងៗ'].join(' | ')}`);
   }
-  return out;
+  return lines.join('\n');
 }
 
 /**
@@ -714,114 +872,44 @@ async function callGeminiVision(
   apiKey,
   docTypeHint,
   studentMaster,
-  isPortrait = true,
-  penInkCropBase64 = '',
-  nameLineCropBase64 = ''
+  crops = {}
 ) {
   const studentListContext = buildGradeGroupedRosterPrompt(studentMaster);
 
-  const prompt = `
-You are an expert OCR and administrative assistant in Cambodia specializing in Khmer documents for monastic Buddhist primary schools (សាលាពុទ្ធិកបឋមសិក្សា).
-Examine the provided image(s) carefully. The document is either a Student Leave Slip (ក្រដាសសុំច្បាប់សមណសិស្ស) OR an Expense/Income Receipt (ប៉ុងលុយ/វិក្កយបត្រចំណាយ-ចំណូល).
-${nameLineCropBase64 ? 'Note: Image 1 is the full document. Image 2 is a 3x SUPER-ZOOMED close-up of Line 1 (where the Student Name and Grade are written in pen ink). Image 3 is a zoomed close-up of the middle fill-in section.' : ''}
+  const returnSchema = docTypeHint === 'finance'
+    ? 'Return JSON: {"detectedType":"finance","rotateClockwiseDegrees":0,"confidence":0.98,"leaveItems":[],"financeItems":[{"category":"expense","desc":"","qty":"","unitPrice":0,"total":0,"note":""}]}'
+    : 'Return JSON: {"detectedType":"leave","rotateClockwiseDegrees":0,"confidence":0.98,"leaveItems":[{"grade":"","rawHandwrittenName":"","name":"","topNameCandidates":[],"duration":"","date":"","reason":"","note":""}],"financeItems":[]}';
 
-STEP 0 — IMAGE ORIENTATION CHECK (ពិនិត្យទិសរូបភាពជាមុន):
-- Look at the full document (Image 1). The printed header "ព្រះរាជាណាចក្រកម្ពុជា / ជាតិ សាសនា ព្រះមហាក្សត្រ" should appear at the TOP and the Khmer text lines should run horizontally left-to-right with letters upright.
-- Return "rotateClockwiseDegrees" = the number of degrees (0, 90, 180, or 270) the image must be rotated CLOCKWISE so the printed text becomes upright. Return 0 if it is already upright.
-- Orientation hints: header at the RIGHT edge → 270; header at the LEFT edge → 90; header at the BOTTOM (text upside-down) → 180.
+  const prompt = [
+    'You are an expert Khmer OCR assistant for a Buddhist monastic school.',
+    'Read ONLY the handwritten blue ballpoint pen ink on this Student Leave Slip (លិខិតសុំច្បាប់) or Finance Receipt:',
+    '1. ORIENTATION ("rotateClockwiseDegrees"): 0 if upright, or 90/180/270 clockwise degrees needed to make text upright.',
+    '2. CLASSIFICATION ("detectedType"): "leave" or "finance".',
+    '3. IF LEAVE SLIP ("leaveItems"):',
+    '   - GRADE ("grade"): Read the grade written after "ជាសិស្សរៀននៅថ្នាក់ទី" (Line 1) and "លោកគ្រូ/អ្នកគ្រូបន្ទុកថ្នាក់ទី" (Line 3) -> "មត្តេយ្យ", "១", "២", or "៣".',
+    '   - STUDENT NAME ON LINE 1 ONLY ("rawHandwrittenName" & "name"):',
+    '     * Read the student name written on Line 1 immediately after "ខ្ញុំបាទ/នាងខ្ញុំឈ្មោះ" (or "ខ្ញុំបាទសមណសិស្សឈ្មោះ") and BEFORE "ភេទ" (or "អាយុ").',
+    '     * STRICT RULE: NEVER read the bottom signature, and NEVER read Line 2 below it ("ពុទ្ធិកបឋមសិក្សា កម្រង ហ៊ុន ណេង" — tall strokes from Line 2 may touch the bottom of Line 1).',
+    '     * Match the handwritten name to the official student in that grade from the roster below:',
+    studentListContext,
+    '   - DURATION ("duration"): Read pen ink after "សំណើសុំច្បាប់ចំនួន" (if "ល្ងាច" or "ព្រឹក" is written in pen ink before printed "ថ្ងៃ", output "១ល្ងាច" or "១ព្រឹក").',
+    '   - START DATE ("date"): Read start date after "គិតចាប់ពីថ្ងៃទី... ខែ... ឆ្នាំ..." -> format "DD/MM/២០២៦" ("តុលា" = ១០).',
+    '   - REASON ("reason"): Read ONLY the handwritten pen ink after "មូលហេតុ :".',
+    returnSchema
+  ].join('\n');
 
-STEP 1 — DOCUMENT CLASSIFICATION RULES:
-1. LEAVE SLIP ("detectedType": "leave"):
-   - Contains Cambodian national motto, "មន្ទីរធម្មការ និងសាសនា", "សាលាពុទ្ធិកបឋមសិក្សា", "លិខិតសុំច្បាប់", "សមណសិស្ស", "ខ្ញុំបាទ/នាងខ្ញុំ", "ថ្នាក់ទី", "កម្មវត្ថុ", "សុំឈប់សម្រាក", "មូលហេតុ", or close-up handwritten student name/class/illness reason.
-2. FINANCE RECEIPT ("detectedType": "finance"):
-   - Contains itemized store purchase lines, gasoline/fuel, hardware, store name, or totals in Riel (៛) or USD ($).
-
-STEP 2 — IF THE DOCUMENT IS A LEAVE SLIP ("detectedType": "leave"):
-CRITICAL PEN-INK ONLY FOCUS & LINE-BY-LINE ANATOMY RULE (ច្បាប់មើលតែអក្សរទឹកប៊ិចតាមបន្ទាត់នីមួយៗ):
-- On a Leave Slip, 90% of the page is black printed template text (អក្សរពុម្ពខ្មៅ). IGNORE all printed template words and IGNORE the bottom signature ("ហត្ថលេខា/ស្នាមមេដៃសាមីខ្លួន").
-- Understand the EXACT Line-by-Line Anatomy below the heading "លិខិតសុំច្បាប់":
-  * LINE 1 (បន្ទាត់ទី ១ — កន្លែងសរសេរឈ្មោះសិស្ស និងថ្នាក់ទី):
-    Printed template: "ខ្ញុំបាទសមណសិស្សឈ្មោះ ........................ អាយុ ....... ឆ្នាំ ជាសមណសិស្សថ្នាក់ទី ....... នៃសាលា"
-    -> THE STUDENT'S NAME IS WRITTEN IN PEN INK STRICTLY ON LINE 1, in the blank space immediately after "ខ្ញុំបាទសមណសិស្សឈ្មោះ" and before "អាយុ"!
-  * LINE 2 (បន្ទាត់ទី ២ — គ្រោះថ្នាក់! ជាឈ្មោះវត្ត/សាលា ហាមអានយកមកធ្វើជាឈ្មោះសិស្សដាច់ខាត!):
-    Printed template: "ពុទ្ធិកបឋមសិក្សា ........................................................ ។"
-    -> WARNING: On Line 2 (directly underneath the student's name!), the student writes the school/monastery name in pen ink, such as "វត្តខេមវ័ន (បឹងកុក)" or "ហ៊ុន ណេង".
-    -> NEVER read or blend the pen-ink letters of "វត្តខេមវ័ន (បឹងកុក)" on Line 2 into the student's name! (For example, NEVER misread "វត្ត" on Line 2 as "ចិត្រា" or "ជួង ចិត្រា"!).
-  * LINE 3 (បន្ទាត់ទី ៣):
-    Printed template: "តាមរយៈ ៖ លោកគ្រូបន្ទុកថ្នាក់ទី ......." -> The grade is written a second time here in pen ink.
-
-- Extract the Pen-Ink handwritten values in this exact step-by-step order:
-  1. PEN-INK GRADE ("grade"):
-     - Read the grade written in pen ink after "ជាសមណសិស្សថ្នាក់ទី ..." (Line 1) and "លោកគ្រូបន្ទុកថ្នាក់ទី ..." (Line 3).
-     - Output "មត្តេយ្យ", "១", "២", or "៣".
-  2. PEN-INK SURNAME & GIVEN NAME ON LINE 1 ("surnamePenInk", "givenNamePenInk", "rawHandwrittenName"):
-     - Look at Image 2 (the 3x Super-Zoomed strip of Line 1) right after the printed word "ខ្ញុំបាទសមណសិស្សឈ្មោះ" and before "អាយុ".
-     - Read ONLY the top handwritten line (Line 1), completely ignoring "វត្តខេមវ័ន (បឹងកុក)" below it.
-     - Read the first word / surname ("surnamePenInk", e.g. "មី", "ម៉េង", "លី", "ឡាយ", "ឃិន", "ចាន់", "អ៊ុន", "ណា", "ឆាន") and the second word / given name ("givenNamePenInk", e.g. "ស៊ីនូ", "ទី", "ពីន", "ប៊ុនយ៉ុង", "សារ៉េន", "តិចគាង").
-     - Combine them into "rawHandwrittenName": the literal character-by-character transcription of the pen ink on Line 1 BEFORE looking at the roster.
-  3. PEN-INK MATCHED STUDENT NAME ("topNameCandidates" & "name"):
-     - Look ONLY at the students in the extracted "grade" within the Official Monastic School Student Roster below.
-     - Find which student in that grade has Khmer consonants, subscripts, and vowels that genuinely match "surnamePenInk" + "givenNamePenInk" ("rawHandwrittenName").
-     - List up to 3 closest visual matches in "topNameCandidates", and put the single best match in "name".
-     - STRICT ANTI-GUESSING RULE: NEVER pick "ជួង ចិត្រា" or any other roster name unless the pen ink on Line 1 actually starts with those consonants! For example, if Line 1 pen ink has 2 short words starting with "ម" and "ស" (like "មី ស៊ីនូ"), you MUST match "មី ស៊ីនូ", NOT "ជួង ចិត្រា"!
-  4. PEN-INK DURATION ("duration"):
-     - Read the pen ink written after "សំណើសុំច្បាប់ចំនួន ......" (e.g. "១ ថ្ងៃ", "២ ថ្ងៃ", "១ ព្រឹក", "១ ល្ងាច").
-  5. PEN-INK START DATE ("date"):
-     - Read the pen ink written on "គិតចាប់ពីថ្ងៃទី... ខែ... ឆ្នាំ..." and format as a single start date "DD/MM/២០២៦" in Khmer numerals (e.g. "២១/១០/២០២៦").
-     - Academic year is strictly 2026 (២០២៦). NEVER include "ដល់..." or end dates.
-  6. PEN-INK REASON ("reason"):
-     - Read the pen ink written after "មូលហេតុ ៖ ........................" (e.g. "ក្ដៅខ្លួន", "ក្ដៅខ្លួន ឈឺចុកពោះ", "អាពាធ គ្រុនក្ដៅ", "អាពាធ ឈឺក្បាល").
-${studentListContext}
-Task:
-Output strictly valid JSON with this exact schema:
-
-{
-  "detectedType": "leave" | "finance",
-  "rotateClockwiseDegrees": 0 | 90 | 180 | 270,
-  "confidence": 0.0 to 1.0,
-  "leaveItems": [
-    {
-      "surnamePenInk": "នាមត្រកូលទឹកប៊ិចលើបន្ទាត់ទី១ (ពាក្យទី១)",
-      "givenNamePenInk": "នាមខ្លួនទឹកប៊ិចលើបន្ទាត់ទី១ (ពាក្យទី២)",
-      "rawHandwrittenName": "តួអក្សរទឹកប៊ិចឆៅពេញលេញដែលអានឃើញផ្ទាល់លើបន្ទាត់ទី១ (ហាមលាយបន្ទាត់ទី២ វត្តខេមវ័ន)",
-      "topNameCandidates": ["បេក្ខភាពឈ្មោះទី១", "បេក្ខភាពឈ្មោះទី២"],
-      "name": "ឈ្មោះសមណសិស្សដែលត្រូវនឹងតួអក្សរទឹកប៊ិចពិតប្រាកដក្នុងថ្នាក់នោះ",
-      "grade": "ថ្នាក់ទី (មត្តេយ្យ, ១, ២, ឬ ៣)",
-      "reason": "មូលហេតុសរសេរទឹកប៊ិច",
-      "duration": "ចំនួនថ្ងៃឈប់សរសេរទឹកប៊ិច (ឧ. ១ ថ្ងៃ, ២ ថ្ងៃ, ១ ព្រឹក, ១ ល្ងាច)",
-      "date": "កាលបរិច្ឆេទចាប់ផ្ដើមសរសេរទឹកប៊ិច (DD/MM/២០២៦ តែថ្ងៃមួយគត់ ហាមដាក់ពាក្យ ដល់)",
-      "note": ""
-    }
-  ],
-  "financeItems": [
-    {
-      "category": "expense" | "income",
-      "desc": "ឈ្មោះឥវ៉ាន់ ឬបរិយាយ",
-      "qty": "ចំនួន (ឧ. 1 ម៉ាស៊ីន, 2 សន្លឹក, 3 លីត្រ)",
-      "unitPrice": 0,
-      "total": 0,
-      "note": "ផ្សេងៗ"
-    }
-  ]
-}
-
-Instructions:
-- Return ONLY the raw JSON object without markdown or code fences (\`\`\`json).
-- If currency is written in Riel (៛) or USD ($), convert numeric value to pure numbers in unitPrice and total.
-`;
-
-  // Use gemini-3.8-flash as primary candidate model (active & verified)
-  const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+  // Use gemini-3-flash-preview (~1.9s) and gemini-3.6-flash (~3.2s) with thinkingBudget: 0 as primary vision models
+  const candidateModels = ['gemini-3-flash-preview', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.8-flash'];
   const keysToTry = [
     apiKey,
     ...DEFAULT_GEMINI_KEYS.filter(k => k && k !== apiKey)
   ].filter(Boolean);
 
   let lastError = null;
-  const badKeys = new Set();
 
   const messageParts = [
     { text: prompt },
+    { text: 'Full Document:' },
     {
       inlineData: {
         mimeType: mimeType || 'image/jpeg',
@@ -830,33 +918,27 @@ Instructions:
     }
   ];
 
-  // Attach Image 2: 3x Super-Zoomed Student Name & Grade Line 1 crop
-  if (nameLineCropBase64 && docTypeHint !== 'finance') {
-    messageParts.push({
-      inlineData: {
-        mimeType: 'image/jpeg',
-        data: nameLineCropBase64
-      }
-    });
+  if (crops?.penInkCropBase64) {
+    messageParts.push({ text: 'Document Body (Lines 1-5):' });
+    messageParts.push({ inlineData: { mimeType: 'image/jpeg', data: crops.penInkCropBase64 } });
   }
-
-  // Attach Image 3: Zoomed Middle Pen-Ink Fill-In Section crop
-  if (penInkCropBase64 && docTypeHint !== 'finance') {
-    messageParts.push({
-      inlineData: {
-        mimeType: 'image/jpeg',
-        data: penInkCropBase64
-      }
-    });
+  if (crops?.nameLineCropBase64) {
+    messageParts.push({ text: 'Super-Zoom of Line 1 (Student Name & Grade):' });
+    messageParts.push({ inlineData: { mimeType: 'image/jpeg', data: crops.nameLineCropBase64 } });
   }
 
   for (const model of candidateModels) {
+    const supportsThinkingBudget = !model.includes('lite');
+    const generationConfig = supportsThinkingBudget
+      ? { temperature: 0.0, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } }
+      : { temperature: 0.0, responseMimeType: 'application/json' };
+
     for (const activeKey of keysToTry) {
-      if (badKeys.has(activeKey)) continue;
+      if (!isKeyUsable(activeKey)) continue;
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 35000);
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${activeKey}`;
         const response = await fetch(url, {
           method: 'POST',
@@ -868,10 +950,7 @@ Instructions:
                 parts: messageParts
               }
             ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: 'application/json'
-            }
+            generationConfig
           })
         });
         clearTimeout(timeoutId);
@@ -879,11 +958,12 @@ Instructions:
         if (!response.ok) {
           const errText = await response.text();
           if (response.status === 429) {
+            sessionRateLimitedKeys.set(activeKey, Date.now());
             console.warn(`Key rate-limited (429) for ${model}, rotating to next key in pool...`);
             continue;
           }
           if (response.status === 400 || response.status === 401 || response.status === 403) {
-            badKeys.add(activeKey);
+            sessionBadKeys.add(activeKey);
             continue;
           }
           if (response.status === 404 || response.status === 503) {
@@ -902,6 +982,9 @@ Instructions:
       } catch (err) {
         lastError = err;
         console.warn(`Attempt with ${model} failed:`, err.message || err);
+        if (err?.name === 'AbortError' || String(err?.message || '').includes('aborted')) {
+          break; // Switch to next candidate model immediately on timeout instead of looping all keys
+        }
       }
     }
   }
@@ -959,19 +1042,61 @@ function createManualBlankItem(file, docTypeHint, isPortrait = true, errorMessag
 /**
  * Main process function that handles single or batch image processing
  */
-export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey = '', studentMaster = [], allLeaves = {}, preOrientedDataUrl = '', skipOrientRetry = false } = {}) {
+export async function processUploadedImage(
+  file,
+  {
+    docTypeHint = 'auto',
+    apiKey = '',
+    studentMaster = [],
+    allLeaves = {},
+    preOrientedDataUrl = '',
+    skipOrientRetry = false,
+    isMobileCapture = false,
+    prefetchedTrainingDataset = null,
+    onStageChange = null
+  } = {}
+) {
+  const scanStartMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  onStageChange?.('orient');
   // Step 0: Read raw file → auto-orient sideways camera photos upright (like Image 3) → compute 512-bit Visual Image Fingerprint
   let rawDataUrl = preOrientedDataUrl;
   if (!rawDataUrl) {
     const { dataUrl: initialDataUrl } = await fileToBase64(file);
-    const oriented = await autoOrientDocumentImage(initialDataUrl, docTypeHint, apiKey);
-    rawDataUrl = oriented.dataUrl || initialDataUrl;
+    if (isMobileCapture) {
+      const mobileCheck = await classifyMobileCapture(initialDataUrl, docTypeHint);
+      if (mobileCheck.format === 'unknown') {
+        return {
+          id: `scan-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          fileName: file.name,
+          fileSize: file.size,
+          imageHash: '',
+          previewUrl: initialDataUrl,
+          processingMode: 'unrecognized_format',
+          unrecognizedFormat: true,
+          unrecognizedReason: 'ប្រព័ន្ធមិនស្គាល់ទម្រង់រូបនេះទេ (រូបងងឹត ព្រិល ឬមិនមែនជាក្រដាសច្បាប់)។ សូមថតម្ដងទៀតតាមទម្រង់ទី ១ ឬទី ២។',
+          timestamp: new Date().toISOString(),
+          result: {
+            detectedType: docTypeHint === 'finance' ? 'finance' : 'leave',
+            unrecognizedFormat: true,
+            unrecognizedReason: 'ប្រព័ន្ធមិនស្គាល់ទម្រង់រូបនេះទេ (រូបងងឹត ព្រិល ឬមិនមែនជាក្រដាសច្បាប់)។ សូមថតម្ដងទៀតតាមទម្រង់ទី ១ ឬទី ២។',
+            leaveItems: [],
+            financeItems: []
+          }
+        };
+      }
+      rawDataUrl = mobileCheck.dataUrl || initialDataUrl;
+    } else {
+      const oriented = await autoOrientDocumentImage(initialDataUrl, docTypeHint, apiKey);
+      rawDataUrl = oriented.dataUrl || initialDataUrl;
+    }
   }
   const imageHash = await computeImageFingerprint(rawDataUrl);
 
-  // Ensure we have latest training samples from Cloud (in case trained on another device moments ago)
-  let trainingDataset = getStoredTrainingDataset();
-  if (navigator.onLine) {
+  // Ensure we have latest training samples from Cloud (use prefetched batch dataset when provided to avoid per-image latency)
+  let trainingDataset = Array.isArray(prefetchedTrainingDataset)
+    ? prefetchedTrainingDataset
+    : getStoredTrainingDataset();
+  if (!Array.isArray(prefetchedTrainingDataset) && navigator.onLine) {
     try {
       const cloudMerged = await fetchTrainingFromCloud();
       if (Array.isArray(cloudMerged) && cloudMerged.length > 0) {
@@ -1002,44 +1127,63 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     }) || null;
   }
 
-  if (matchedSample && matchedSample.groundTruth) {
-    console.log('✨ [AI Flywheel] Instant Cross-Device Ground-Truth memory recall for:', file.name);
-    const gt = matchedSample.groundTruth;
-    let cleanDate = String(gt.date || '').trim();
-    cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
-    if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
-      const parts = cleanDate.split(/ដល់|-|\/to\//i);
-      if (parts[0] && parts[0].trim().length >= 6) {
-        cleanDate = parts[0].trim();
-      }
+  // Build official 80-student lookup sets (both canonical names and all known aliases)
+  const officialStudentNames = new Set(
+    (studentMaster || []).map(s => String(s.name || '').replace(/[\s\u200B]/g, ''))
+  );
+  const allOfficialAndAliasNames = new Set();
+  (studentMaster || []).forEach(s => {
+    if (s.name) allOfficialAndAliasNames.add(String(s.name).replace(/[\s\u200B]/g, ''));
+    if (Array.isArray(s.aliases)) {
+      s.aliases.forEach(a => allOfficialAndAliasNames.add(String(a).replace(/[\s\u200B]/g, '')));
     }
-    const cleanReason = String(gt.reason || 'ការងារផ្ទាល់ខ្លួន').replace(/\s+/g, ' ').trim();
-    const isLeave = matchedSample.docType !== 'finance';
+  });
 
-    return {
-      id: `scan-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      fileName: file.name,
-      fileSize: file.size,
-      imageHash,
-      previewUrl: rawDataUrl,
-      processingMode: 'ai_flywheel_memory',
-      timestamp: new Date().toISOString(),
-      result: {
-        detectedType: matchedSample.docType || 'leave',
-        confidence: 1.0,
-        isLearnedMemory: true,
-        imageHash,
-        leaveItems: isLeave ? [{
-          name: gt.name || 'សមណសិស្ស',
-          grade: gt.grade || '២',
-          reason: cleanReason,
-          duration: gt.duration || '១ថ្ងៃ',
-          date: cleanDate || new Date().toLocaleDateString('en-GB'),
-          note: gt.note || ''
-        }] : [],
-        financeItems: !isLeave ? [gt] : []
+  if (matchedSample && matchedSample.groundTruth) {
+    const gt = matchedSample.groundTruth;
+    const isLeave = matchedSample.docType !== 'finance';
+    const verifiedMatch = isLeave && gt.name
+      ? matchStudentName(gt.name, studentMaster, gt.grade)
+      : null;
+
+    // Only use AI Flywheel memory for leave slips if the stored groundTruth name is a valid student in the 80-student roster
+    if (!isLeave || (verifiedMatch && verifiedMatch.confidence >= 0.75)) {
+      console.log('✨ [AI Flywheel] Instant Cross-Device Ground-Truth memory recall for:', file.name);
+      let cleanDate = String(gt.date || '').trim();
+      cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
+      if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
+        const parts = cleanDate.split(/ដល់|-|\/to\//i);
+        if (parts[0] && parts[0].trim().length >= 6) {
+          cleanDate = parts[0].trim();
+        }
       }
-    };
+      const cleanReason = String(gt.reason || 'ការងារផ្ទាល់ខ្លួន').replace(/\s+/g, ' ').trim();
+
+      return {
+        id: `scan-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        fileName: file.name,
+        fileSize: file.size,
+        imageHash,
+        previewUrl: rawDataUrl,
+        processingMode: 'ai_flywheel_memory',
+        timestamp: new Date().toISOString(),
+        result: {
+          detectedType: matchedSample.docType || 'leave',
+          confidence: 1.0,
+          isLearnedMemory: true,
+          imageHash,
+          leaveItems: isLeave ? [{
+            name: verifiedMatch.student.name,
+            grade: verifiedMatch.student.grade || gt.grade || '២',
+            reason: cleanReason,
+            duration: gt.duration || '១ថ្ងៃ',
+            date: cleanDate || new Date().toLocaleDateString('en-GB'),
+            note: gt.note || ''
+          }] : [],
+          financeItems: !isLeave ? [gt] : []
+        }
+      };
+    }
   }
 
   // Step 2: Smart-compress for OCR (safe for Khmer cursive: max 1800px, quality 0.88)
@@ -1058,16 +1202,6 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
   // Vertical / Portrait documents (height >= width * 1.05) are almost exclusively A4 leave slips
   const isPortrait = dimensions.height >= dimensions.width * 1.05;
 
-  // Step 2B: For Leave Slips (BOTH Portrait and Landscape), generate:
-  //   1) 3x Super-Zoomed Student Name & Grade Line 1 crop (nameLineCropBase64)
-  //   2) Middle 5-Line Pen-Ink Fill-In section crop (penInkCropBase64)
-  const [nameLineCropBase64, penInkCropBase64] = (docTypeHint !== 'finance')
-    ? await Promise.all([
-        cropLeaveSlipNameLineZone(rawDataUrl),
-        cropLeaveSlipPenInkZone(rawDataUrl)
-      ])
-    : ['', ''];
-
   let extractionResult;
   let processingMode = 'gemini_cloud';
   const effectiveApiKey = apiKey || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0];
@@ -1080,17 +1214,22 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     processingMode = 'missing_api_key';
   } else {
     try {
+      onStageChange?.('ocr');
+      let crops = {};
+      if (docTypeHint !== 'finance') {
+        const nameLineCropBase64 = await cropLeaveSlipNameLineZone(dataUrl);
+        crops = { nameLineCropBase64 };
+      }
       extractionResult = await callGeminiVision(
         base64,
         compressedMimeType || file.type,
         effectiveApiKey,
         docTypeHint,
         studentMaster,
-        isPortrait,
-        penInkCropBase64,
-        nameLineCropBase64
+        crops
       );
       processingMode = 'gemini_cloud';
+      onStageChange?.('match');
     } catch (err) {
       console.warn('Gemini Cloud OCR failed:', err);
       extractionResult = createManualBlankItem(file, docTypeHint, isPortrait, 'មិនអាចស្កេនបានដោយសារបញ្ហាបណ្ដាញ៖ ' + (err.message || 'Error'));
@@ -1098,8 +1237,11 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     }
   }
 
-  // Step 2C: AI Orientation Guard — if Gemini reports the page is still sideways / upside-down,
-  // rotate the image by the reported angle and re-run the scan ONCE on the upright image (0° / Image 3 format).
+  // Step 2C: AI Orientation Guard
+  // - On Mobile (`isMobileCapture === true`): we already oriented Format 1 (0°) or Format 2 (270°) locally in ~0.2s.
+  //   If Gemini still reports the page is sideways / upside-down (90°/180°/270°), DO NOT waste a second Gemini round-trip;
+  //   immediately flag `unrecognizedFormat: true` so the UI tells the user the system does not recognize this format.
+  // - On PC (`!isMobileCapture`): keep existing behavior (rotate and re-run once).
   const aiRotateDegrees = Number(extractionResult?.rotateClockwiseDegrees) || 0;
   if (
     !skipOrientRetry &&
@@ -1107,6 +1249,29 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     processingMode === 'gemini_cloud' &&
     [90, 180, 270].includes(aiRotateDegrees)
   ) {
+    if (isMobileCapture) {
+      const elapsedMs = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - scanStartMs);
+      console.log(`📵 [Mobile 2-Format Guard] Gemini reported non-upright (${aiRotateDegrees}°) after local 2-format check (${elapsedMs}ms) → flagging as unrecognized format`);
+      const unrecognizedMsg = 'ប្រព័ន្ធមិនស្គាល់ទម្រង់រូបនេះទេ (រូបបញ្ច្រាស ឬខុសពី ២ ទម្រង់កំណត់)។ សូមចុចប៊ូតុងបង្វិល ↻ លើរូប ឬថតម្ដងទៀតតាមទម្រង់ទី ១ ឬទី ២។';
+      return {
+        id: `scan-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        fileName: file.name,
+        fileSize: file.size,
+        imageHash,
+        previewUrl: rawDataUrl,
+        processingMode: 'unrecognized_format',
+        unrecognizedFormat: true,
+        unrecognizedReason: unrecognizedMsg,
+        timestamp: new Date().toISOString(),
+        result: {
+          ...extractionResult,
+          detectedType: extractionResult?.detectedType || (docTypeHint === 'finance' ? 'finance' : 'leave'),
+          unrecognizedFormat: true,
+          unrecognizedReason: unrecognizedMsg
+        }
+      };
+    }
+
     console.log(`🔄 [AI Orientation Guard] Gemini says rotate ${aiRotateDegrees}° clockwise → re-scanning upright image`);
     const fixed = await rotateImageDataUrl(rawDataUrl, aiRotateDegrees);
     if (fixed?.dataUrl && fixed.rotatedDegrees) {
@@ -1116,20 +1281,30 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
         studentMaster,
         allLeaves,
         preOrientedDataUrl: fixed.dataUrl,
-        skipOrientRetry: true
+        skipOrientRetry: true,
+        isMobileCapture: false,
+        prefetchedTrainingDataset: trainingDataset
       });
     }
   }
-  // Build safe non-conflicting alias map from user corrections (only when rawOcrName is NOT another real student's official name)
-  const officialStudentNames = new Set(
-    (studentMaster || []).map(s => String(s.name || '').replace(/[\s\u200B]/g, ''))
-  );
+
+  if (isMobileCapture) {
+    const elapsedMs = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - scanStartMs);
+    console.log(`⚡ [Mobile 1-Pass Scan] Completed in ${elapsedMs}ms for ${file.name}`);
+  }
+  // Build safe non-conflicting alias map from user corrections:
+  //  - Target `groundTruth.name` MUST be one of the 80 official students
+  //  - `rawOcrName` must NOT be another student's official name or alias
+  //  - `rawOcrName` must genuinely resemble `groundTruth.name` (>= 0.70) so a misread of Student A never overwrites Student B
   const safeLearnedAliasMap = new Map();
   if (Array.isArray(trainingDataset)) {
     trainingDataset.forEach(s => {
       if (s.docType === 'finance' || !s.groundTruth?.name) return;
+      const gtName = String(s.groundTruth.name || '').trim();
+      const gtCompact = gtName.replace(/[\s\u200B]/g, '');
+      if (!officialStudentNames.has(gtCompact)) return;
       const rawN = (s.rawOcrName || s.rawOcr?.initialOcrName || '').replace(/[\s\u200B]/g, '');
-      if (rawN && !officialStudentNames.has(rawN)) {
+      if (rawN && !allOfficialAndAliasNames.has(rawN) && computeKhmerNameSimilarity(rawN, gtName) >= 0.70) {
         safeLearnedAliasMap.set(rawN, s.groundTruth);
       }
     });
@@ -1148,14 +1323,54 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
 
       let cleanDate = String(item.date || '').trim();
       let cleanReason = String(item.reason || '').replace(/\s+/g, ' ').trim();
-      // Enforce year 2026 instead of 2024
-      cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
+      let cleanDuration = String(item.duration || '').trim();
+
+      // Normalize duration (e.g. "1 ល្ងាចថ្ងៃ" or "1 ល្ងាច" -> "១ល្ងាច", "1 ថ្ងៃ" -> "១ថ្ងៃ")
+      if (cleanDuration) {
+        const dKhmer = toKhmerDigits(cleanDuration).replace(/\s+/g, '');
+        const numMatch = dKhmer.match(/[០-៩]+/);
+        const num = numMatch ? numMatch[0] : '១';
+        if (dKhmer.includes('ល្ងាច')) {
+          cleanDuration = `${num}ល្ងាច`;
+        } else if (dKhmer.includes('ព្រឹក')) {
+          cleanDuration = `${num}ព្រឹក`;
+        } else if (dKhmer.includes('កន្លះ')) {
+          cleanDuration = `${num}ថ្ងៃកន្លះ`;
+        } else {
+          cleanDuration = `${num}ថ្ងៃ`;
+        }
+      } else {
+        cleanDuration = '១ថ្ងៃ';
+      }
 
       // Strip any "ដល់..." or "- date" or "to date" completely! Always keep only the single start date
       if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
         const parts = cleanDate.split(/ដល់|-|\/to\//i);
-        if (parts[0] && parts[0].trim().length >= 6) {
+        if (parts[0] && parts[0].trim().length >= 4) {
           cleanDate = parts[0].trim();
+        }
+      }
+
+      // Normalize Khmer month names and Arabic digits into standard Khmer DD/MM/២០២៦ format
+      if (cleanDate) {
+        const khmerMonthMap = {
+          'មករា': '01', 'កុម្ភៈ': '02', 'កុម្ភះ': '02', 'មីនា': '03', 'មេសា': '04',
+          'ឧសភា': '05', 'មិថុនា': '06', 'កក្កដា': '07', 'សីហា': '08',
+          'កញ្ញា': '09', 'តុលា': '10', 'វិច្ឆិកា': '11', 'ធ្នូ': '12'
+        };
+        let arabicDate = toArabicDigits(cleanDate);
+        for (const [mName, mNum] of Object.entries(khmerMonthMap)) {
+          if (arabicDate.includes(mName)) {
+            arabicDate = arabicDate.replace(mName, `/${mNum}/`);
+          }
+        }
+        const dateNums = arabicDate.match(/\d+/g);
+        if (dateNums && dateNums.length >= 2) {
+          const day = dateNums[0].padStart(2, '0');
+          const month = dateNums[1].padStart(2, '0');
+          cleanDate = toKhmerDigits(`${day}/${month}/2026`);
+        } else {
+          cleanDate = toKhmerDigits(cleanDate.replace(/2024|2025|2014|២០២៤|២០២៥|២០១៤/g, '២០២៦'));
         }
       }
 
@@ -1168,6 +1383,7 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
           name: learnedGt.name,
           grade: normGrade || learnedGt.grade || item.grade,
           reason: cleanReason || learnedGt.reason,
+          duration: cleanDuration,
           date: cleanDate,
           initialOcrName
         };
@@ -1217,8 +1433,16 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
           const simPrimaryStudent = computeKhmerNameSimilarity(rawHandwritten, matchPrimary.student.name);
           bestMatch = simRawStudent >= simPrimaryStudent ? bestRawMatch : matchPrimary;
         }
-      } else {
-        bestMatch = bestRawMatch || bestCandidateMatch || matchPrimary;
+      } else if (bestRawMatch || bestCandidateMatch) {
+        bestMatch = bestRawMatch || bestCandidateMatch;
+      } else if (matchPrimary) {
+        // Only trust matchPrimary when rawHandwritten is empty or actually resembles matchPrimary.student.name
+        const simToRaw = rawHandwritten
+          ? computeKhmerNameSimilarity(rawHandwritten, matchPrimary.student.name)
+          : 1.0;
+        if (simToRaw >= 0.58) {
+          bestMatch = matchPrimary;
+        }
       }
 
       if (bestMatch && bestMatch.confidence >= 0.72) {
@@ -1227,6 +1451,7 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
           name: bestMatch.student.name,
           grade: bestMatch.student.grade || normGrade || item.grade,
           reason: cleanReason,
+          duration: cleanDuration,
           date: cleanDate,
           matchedStudent: bestMatch.student,
           matchConfidence: bestMatch.confidence,
@@ -1234,11 +1459,15 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
         };
       }
 
+      // STRICT 80-STUDENT ROSTER LOCK:
+      // Never output an unverified or hallucinated name outside the 80 official students (e.g. "ឡេង អាន").
+      // Leave `name` blank ('') so the user can pick the real student without fake data.
       return {
         ...item,
-        name: rawHandwritten || cleanedPrimaryName || item.name,
+        name: '',
         grade: normGrade || item.grade,
         reason: cleanReason,
+        duration: cleanDuration,
         date: cleanDate,
         initialOcrName
       };
@@ -1253,8 +1482,8 @@ export async function processUploadedImage(file, { docTypeHint = 'auto', apiKey 
     fileName: file.name,
     fileSize: file.size,
     imageHash,
-    // Use raw (uncompressed) dataUrl for preview so image quality is sharp for user review
-    previewUrl: rawDataUrl,
+    // Use 1800px compressed dataUrl for preview (crystal sharp for zoom review while 10x lighter in memory)
+    previewUrl: dataUrl || rawDataUrl,
     processingMode,
     timestamp: new Date().toISOString(),
     result: extractionResult

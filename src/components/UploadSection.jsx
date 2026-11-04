@@ -15,6 +15,7 @@ export default function UploadSection({
   onProcessQueue,
   onUpdateQueueItem,
   onRotateQueueItem,
+  onRetakeQueueItem,
   onApproveItem,
   onApproveAll,
   isProcessing = false,
@@ -119,6 +120,28 @@ export default function UploadSection({
 
   const processedItems = queue.filter(q => q.status === 'processed');
   const hasActiveScanning = queue.some(q => q.status === 'pending' || q.status === 'processing');
+
+  const getScanCountdownInfo = (item) => {
+    if (item.scanStage === 'orient') {
+      return {
+        stepBadge: '1/3',
+        mobileText: 'រៀបចំរូបភាព (1/3)...',
+        pcText: '⏳ កំពុងរៀបចំរូបភាព (1/3)...'
+      };
+    }
+    if (item.scanStage === 'match') {
+      return {
+        stepBadge: '3/3',
+        mobileText: 'ផ្ទៀងឈ្មោះសិស្ស (3/3)...',
+        pcText: '⏳ កំពុងផ្ទៀងឈ្មោះសិស្ស (3/3)...'
+      };
+    }
+    return {
+      stepBadge: '2/3',
+      mobileText: 'កំពុងអានអក្សរ (2/3)...',
+      pcText: '⏳ កំពុងអានអក្សរដោយ AI (2/3)...'
+    };
+  };
 
   return (
     <div className="no-print">
@@ -234,6 +257,21 @@ export default function UploadSection({
               />
             </label>
           </div>
+
+          {isMobile && (
+            <div style={{
+              fontSize: 11,
+              color: '#475569',
+              background: '#f1f5f9',
+              border: '1px solid #e2e8f0',
+              borderRadius: 8,
+              padding: '6px 10px',
+              lineHeight: 1.45,
+              maxWidth: 420
+            }}>
+              📐 <strong>ទម្រង់ថត៖</strong> (១) ថតបញ្ឈរពេញសន្លឹក ឬ (២) ថតពាក់កណ្ដាលខាងលើ (ក្បាលលិខិតនៅខាងស្ដាំ) • ផ្អៀងទូរសព្ទបន្តិច
+            </div>
+          )}
 
           <span style={{ fontSize: 12, color: '#94a3b8' }}>
             ឬចុចសាកល្បង៖{' '}
@@ -427,6 +465,7 @@ export default function UploadSection({
               const detectedType = rawDetectedType === 'auto' ? 'leave' : rawDetectedType;
               const isLeave = detectedType === 'leave';
               const isPending = item.status === 'pending' || item.status === 'processing';
+              const scanCountdown = item.status === 'processing' ? getScanCountdownInfo(item) : null;
               const processingMode = item.processedData?.rawScan?.processingMode || item.processedData?.processingMode || (resultData.isLearnedMemory ? 'ai_flywheel_memory' : 'gemini_cloud');
               const isLearnedMemory = processingMode === 'ai_flywheel_memory' || Boolean(resultData.isLearnedMemory);
               const isCloudScan = !isPending && (processingMode === 'gemini_cloud' || isLearnedMemory || item.status === 'processed');
@@ -490,6 +529,9 @@ export default function UploadSection({
               };
 
               if (isMobile) {
+                const isUnrecognized =
+                  item.status === 'unrecognized' ||
+                  Boolean(item.processedData?.unrecognizedFormat || resultData.unrecognizedFormat);
                 const isNameFocused = focusedField?.itemId === item.id && focusedField?.field === 'name';
                 const isReasonFocused = focusedField?.itemId === item.id && focusedField?.field === 'reason';
                 const isDurationFocused = focusedField?.itemId === item.id && focusedField?.field === 'duration';
@@ -503,6 +545,7 @@ export default function UploadSection({
                   studentSuggestions.exactMatches.length > 0 || studentSuggestions.phoneticMatches.length > 0;
                 const showStudentSuggestBox =
                   isLeave &&
+                  !isUnrecognized &&
                   (isNameFocused || !studentMatch?.isExact) &&
                   (nameQuery.length > 0 ? hasStudentSuggestions : isNameFocused);
 
@@ -518,10 +561,10 @@ export default function UploadSection({
                   <div
                     key={item.id}
                     style={{
-                      border: '1px solid #cbd5e1',
+                      border: isUnrecognized ? '1.5px solid #fca5a5' : '1px solid #cbd5e1',
                       borderRadius: 12,
                       padding: 12,
-                      background: '#ffffff',
+                      background: isUnrecognized ? '#fffafa' : '#ffffff',
                       boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
                       display: 'flex',
                       flexDirection: 'column',
@@ -725,6 +768,22 @@ export default function UploadSection({
                                 <AlertTriangle size={11} color="#dc2626" />
                                 <span>Offline</span>
                               </span>
+                            ) : isUnrecognized ? (
+                              <span style={{
+                                fontSize: 10,
+                                padding: '2px 6px',
+                                borderRadius: 6,
+                                background: '#fef2f2',
+                                color: '#b91c1c',
+                                border: '1px solid #fecaca',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontWeight: 700
+                              }}>
+                                <AlertTriangle size={11} color="#dc2626" />
+                                <span>មិនស្គាល់ទម្រង់</span>
+                              </span>
                             ) : item.status === 'error' ? (
                               <span style={{
                                 fontSize: 10,
@@ -756,28 +815,29 @@ export default function UploadSection({
                                   : item.status === 'pending'
                                     ? '#64748b'
                                     : (isCloudScan ? '#065f46' : '#b45309'),
-                                border: `1px solid ${
-                                  item.status === 'processing'
+                                border: `1px solid ${item.status === 'processing'
                                     ? '#bfdbfe'
                                     : item.status === 'pending'
                                       ? '#cbd5e1'
                                       : (isCloudScan ? '#a7f3d0' : '#fde68a')
-                                }`,
+                                  }`,
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: 3,
                                 fontWeight: 600
                               }}>
-                                <Sparkles size={11} color={
-                                  item.status === 'processing'
-                                    ? '#2563eb'
-                                    : item.status === 'pending'
+                                {item.status === 'processing' ? (
+                                  <RefreshCw size={11} color="#2563eb" className="spin" />
+                                ) : (
+                                  <Sparkles size={11} color={
+                                    item.status === 'pending'
                                       ? '#94a3b8'
                                       : (isCloudScan ? '#059669' : '#d97706')
-                                } />
+                                  } />
+                                )}
                                 <span>
                                   {item.status === 'processing'
-                                    ? 'កំពុងស្កេន...'
+                                    ? (scanCountdown ? scanCountdown.mobileText : 'កំពុងស្កេន...')
                                     : item.status === 'pending'
                                       ? 'រង់ចាំស្កេន...'
                                       : isLearnedMemory
@@ -811,6 +871,79 @@ export default function UploadSection({
                             <span>លុប</span>
                           </button>
                         </div>
+
+                        {isUnrecognized && (
+                          <div style={{
+                            background: '#fef2f2',
+                            border: '1px solid #fecaca',
+                            borderRadius: 8,
+                            padding: '8px 10px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6
+                          }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', lineHeight: 1.4 }}>
+                              ⚠️ ប្រព័ន្ធមិនស្គាល់ទម្រង់រូបនេះទេ
+                            </div>
+                            <div style={{ fontSize: 11, color: '#7f1d1d', lineHeight: 1.45 }}>
+                              សូមថតតែ ២ ទម្រង់៖ <strong>(១)</strong> បញ្ឈរពេញសន្លឹក ឬ <strong>(២)</strong> ពាក់កណ្ដាលខាងលើ (ក្បាលលិខិតនៅខាងស្ដាំ)។
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                              {onRetakeQueueItem && (
+                                <label style={{
+                                  background: '#dc2626',
+                                  color: '#ffffff',
+                                  padding: '5px 10px',
+                                  borderRadius: 6,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}>
+                                  <Camera size={12} />
+                                  <span>ថតម្ដងទៀត</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0];
+                                      if (f) {
+                                        onRetakeQueueItem(item.id, f);
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                    style={{ display: 'none' }}
+                                  />
+                                </label>
+                              )}
+                              {onRotateQueueItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => onRotateQueueItem(item.id, 90)}
+                                  style={{
+                                    background: '#ffffff',
+                                    color: '#991b1b',
+                                    border: '1px solid #fca5a5',
+                                    padding: '5px 10px',
+                                    borderRadius: 6,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}
+                                >
+                                  <RotateCw size={12} />
+                                  <span>បង្វិល 90°</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         {isLeave ? (
                           <>
@@ -1555,28 +1688,29 @@ export default function UploadSection({
                             : item.status === 'pending'
                               ? '#64748b'
                               : (isCloudScan ? '#065f46' : '#b45309'),
-                          border: `1px solid ${
-                            item.status === 'processing'
+                          border: `1px solid ${item.status === 'processing'
                               ? '#bfdbfe'
                               : item.status === 'pending'
                                 ? '#cbd5e1'
                                 : (isCloudScan ? '#a7f3d0' : '#fde68a')
-                          }`,
+                            }`,
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: 5,
                           fontWeight: 600
                         }}>
-                          <Sparkles size={13} color={
-                            item.status === 'processing'
-                              ? '#2563eb'
-                              : item.status === 'pending'
+                          {item.status === 'processing' ? (
+                            <RefreshCw size={13} color="#2563eb" className="spin" />
+                          ) : (
+                            <Sparkles size={13} color={
+                              item.status === 'pending'
                                 ? '#94a3b8'
                                 : (isCloudScan ? '#059669' : '#d97706')
-                          } />
+                            } />
+                          )}
                           <span>
                             {item.status === 'processing'
-                              ? '⏳ កំពុងវិភាគដោយ AI Vision...'
+                              ? (scanCountdown ? scanCountdown.pcText : '⏳ កំពុងវិភាគដោយ AI Vision...')
                               : item.status === 'pending'
                                 ? '⏳ រង់ចាំស្កេន...'
                                 : isLearnedMemory

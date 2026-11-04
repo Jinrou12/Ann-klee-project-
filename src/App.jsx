@@ -38,6 +38,7 @@ import {
   processUploadedImage,
   fileToBase64,
   autoOrientDocumentImage,
+  classifyMobileCapture,
   rotateImageDataUrl
 } from './utils/ocrService';
 import { parseDurationShorthand } from './utils/khmerNumerals';
@@ -308,6 +309,15 @@ export default function App() {
     setIsProcessing(true);
 
     try {
+      // Non-blocking background cloud training fetch so image rotation starts at 0ms without network wait!
+      let batchTrainingDataset = getStoredTrainingDataset();
+      const cloudTrainingPromise = navigator.onLine
+        ? Promise.race([
+          fetchTrainingFromCloud().catch(() => null),
+          new Promise(resolve => setTimeout(() => resolve(null), 900))
+        ])
+        : Promise.resolve(null);
+
       while (true) {
         // Pick next item that needs processing (status is 'pending')
         const currentList = queueRef.current || [];
@@ -317,50 +327,127 @@ export default function App() {
         const itemId = nextItem.id;
         const targetFile = nextItem.file;
         const targetDocType = nextItem.docTypeHint || 'auto';
+        const oldBlobUrl = (nextItem.previewUrl && nextItem.previewUrl.startsWith('blob:')) ? nextItem.previewUrl : '';
 
-        // 1. Mark this item as 'processing' so it is never picked twice
-        updateQueueSafe(prev => prev.map(q => q.id === itemId ? { ...q, status: 'processing' } : q));
+        // 1. Mark this item as 'processing' with real start timestamp & stage so live countdown ticks immediately
+        const startedAt = Date.now();
+        updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+          ...q,
+          status: 'processing',
+          scanStartedAt: startedAt,
+          scanStage: 'orient',
+          error: null
+        } : q));
 
-        // 2. Pre-orientation check (AI 4-Candidate Auto-Orientation: 0/90/180/270 deg)
+        // 2. Orientation check:
+        //    - Mobile (/mobile): instant on-device 2-format check (~0.1s, 0 Gemini calls, max 1800px!)
+        //      * Format 1 (upright full page) -> keep 0°
+        //      * Format 2 (sideways top-half) -> rotate 270°
+        //      * Unknown (dark/blank/non-doc) -> reject immediately without calling Gemini
+        //    - PC: existing AI 4-candidate orientation check
         let orientedDataUrl = nextItem.previewUrl;
+        let mobileRejectedEarly = false;
         try {
           if (targetFile) {
             const { dataUrl } = await fileToBase64(targetFile);
-            const oriented = await autoOrientDocumentImage(dataUrl, targetDocType, apiKey);
-            if (oriented?.dataUrl) {
-              orientedDataUrl = oriented.dataUrl;
-              updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
-                ...q,
-                previewUrl: orientedDataUrl
-              } : q));
+            if (isMobile) {
+              const mobileCheck = await classifyMobileCapture(dataUrl, targetDocType);
+              if (mobileCheck.format === 'unknown') {
+                mobileRejectedEarly = true;
+                const rejectMsg = 'ប្រព័ន្ធមិនស្គាល់ទម្រង់រូបនេះទេ (រូបងងឹត ព្រិល ឬមិនមែនជាក្រដាសច្បាប់)។ សូមថតម្ដងទៀតតាមទម្រង់ទី ១ ឬទី ២។';
+                updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+                  ...q,
+                  previewUrl: dataUrl,
+                  status: 'unrecognized',
+                  scanStage: null,
+                  error: rejectMsg,
+                  processedData: {
+                    detectedType: targetDocType === 'finance' ? 'finance' : 'leave',
+                    unrecognizedFormat: true,
+                    unrecognizedReason: rejectMsg,
+                    leaveItems: [],
+                    financeItems: []
+                  }
+                } : q));
+              } else if (mobileCheck?.dataUrl) {
+                orientedDataUrl = mobileCheck.dataUrl;
+                updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+                  ...q,
+                  previewUrl: orientedDataUrl,
+                  scanStage: 'ocr'
+                } : q));
+                if (oldBlobUrl) {
+                  try { URL.revokeObjectURL(oldBlobUrl); } catch { /* ignore */ }
+                }
+              }
+            } else {
+              const oriented = await autoOrientDocumentImage(dataUrl, targetDocType, apiKey);
+              if (oriented?.dataUrl) {
+                orientedDataUrl = oriented.dataUrl;
+                updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+                  ...q,
+                  previewUrl: orientedDataUrl,
+                  scanStage: 'ocr'
+                } : q));
+                if (oldBlobUrl) {
+                  try { URL.revokeObjectURL(oldBlobUrl); } catch { /* ignore */ }
+                }
+              }
             }
           }
         } catch (e) {
           console.warn('Pre-orientation fallback for item', itemId, e);
         }
 
-        // 3. AI OCR Recognition
+        if (mobileRejectedEarly) {
+          continue;
+        }
+
+        // Resolve non-blocking cloud training dataset if ready
+        try {
+          const cloudMerged = await cloudTrainingPromise;
+          if (Array.isArray(cloudMerged) && cloudMerged.length > 0) {
+            batchTrainingDataset = cloudMerged;
+          }
+        } catch {
+          // Keep local batchTrainingDataset
+        }
+
+        // 3. AI OCR Recognition (Single-pass on Mobile, with real-time stage updates)
         try {
           const res = await processUploadedImage(targetFile, {
             docTypeHint: targetDocType,
             apiKey,
             studentMaster: appState.studentMaster,
             allLeaves: appState.leaves,
-            preOrientedDataUrl: (orientedDataUrl && orientedDataUrl.startsWith('data:')) ? orientedDataUrl : ''
+            preOrientedDataUrl: (orientedDataUrl && orientedDataUrl.startsWith('data:')) ? orientedDataUrl : '',
+            isMobileCapture: isMobile,
+            prefetchedTrainingDataset: batchTrainingDataset,
+            onStageChange: (stage) => {
+              updateQueueSafe(prev => prev.map(q => q.id === itemId ? { ...q, scanStage: stage } : q));
+            }
           });
+
+          const isUnrecognized = Boolean(isMobile && (res.unrecognizedFormat || res.result?.unrecognizedFormat));
+          const unrecognizedReason = res.unrecognizedReason || res.result?.unrecognizedReason || '';
+          const slimRawScan = res ? { ...res, previewUrl: undefined } : null;
 
           updateQueueSafe(prev => prev.map(q => {
             if (q.id !== itemId) return q;
             return {
               ...q,
               previewUrl: res.previewUrl || orientedDataUrl || q.previewUrl,
-              status: 'processed',
+              status: isUnrecognized ? 'unrecognized' : 'processed',
+              scanStage: null,
+              error: isUnrecognized ? unrecognizedReason : null,
               imageHash: res.imageHash || res.result?.imageHash || '',
               processedData: {
                 ...(res.result || {}),
+                unrecognizedFormat: isUnrecognized,
+                unrecognizedReason,
                 imageHash: res.imageHash || res.result?.imageHash || '',
                 initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
-                rawScan: res
+                rawScan: slimRawScan
               }
             };
           }));
@@ -369,6 +456,7 @@ export default function App() {
           updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
             ...q,
             status: 'error',
+            scanStage: null,
             error: err.message || 'ការស្កេនបរាជ័យ'
           } : q));
         }
@@ -385,7 +473,7 @@ export default function App() {
         setIsProcessing(false);
       }
     }
-  }, [apiKey, appState.studentMaster, appState.leaves, updateQueueSafe]);
+  }, [apiKey, appState.studentMaster, appState.leaves, isMobile, updateQueueSafe]);
 
   const handleAddToQueue = useCallback((files, docTypeHint) => {
     setActiveTab('upload');
@@ -411,6 +499,24 @@ export default function App() {
     }, 10);
   }, [updateQueueSafe, processQueueWorker]);
 
+  const handleRetakeQueueItem = useCallback((id, newFile) => {
+    if (!newFile) return;
+    updateQueueSafe(prev => prev.map(item => item.id === id ? {
+      ...item,
+      file: newFile,
+      fileName: newFile.name,
+      fileSize: newFile.size,
+      previewUrl: URL.createObjectURL(newFile),
+      status: 'pending',
+      error: null,
+      processedData: null
+    } : item));
+
+    setTimeout(() => {
+      processQueueWorker();
+    }, 10);
+  }, [updateQueueSafe, processQueueWorker]);
+
   const handleRotateQueueItem = async (id, degreesClockwise = 90) => {
     const currentList = queueRef.current || queue;
     const target = currentList.find(q => q.id === id);
@@ -424,28 +530,42 @@ export default function App() {
       updateQueueSafe(prev => prev.map(item => item.id === id ? {
         ...item,
         previewUrl: rotated.dataUrl,
-        status: 'processing'
+        status: 'processing',
+        scanStartedAt: Date.now(),
+        scanStage: 'ocr',
+        error: null
       } : item));
 
-      // Re-run OCR on the newly rotated upright image
+      // Re-run OCR on the newly rotated upright image (skipOrientRetry: true so manual rotation is respected)
       const res = await processUploadedImage(target.file, {
         docTypeHint: target.docTypeHint,
         apiKey,
         studentMaster: appState.studentMaster,
         allLeaves: appState.leaves,
-        preOrientedDataUrl: rotated.dataUrl
+        preOrientedDataUrl: rotated.dataUrl,
+        skipOrientRetry: true,
+        isMobileCapture: isMobile,
+        onStageChange: (stage) => {
+          updateQueueSafe(prev => prev.map(item => item.id === id ? { ...item, scanStage: stage } : item));
+        }
       });
+
+      const slimRawScan = res ? { ...res, previewUrl: undefined } : null;
 
       updateQueueSafe(prev => prev.map(item => item.id === id ? {
         ...item,
-        previewUrl: rotated.dataUrl,
+        previewUrl: res.previewUrl || rotated.dataUrl,
         status: 'processed',
+        scanStage: null,
+        error: null,
         imageHash: res.imageHash || res.result?.imageHash || '',
         processedData: {
           ...(res.result || {}),
+          unrecognizedFormat: false,
+          unrecognizedReason: '',
           imageHash: res.imageHash || res.result?.imageHash || '',
           initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
-          rawScan: res
+          rawScan: slimRawScan
         }
       } : item));
     } catch (err) {
@@ -453,6 +573,7 @@ export default function App() {
       updateQueueSafe(prev => prev.map(item => item.id === id ? {
         ...item,
         status: 'error',
+        scanStage: null,
         error: err.message
       } : item));
     }
@@ -825,6 +946,7 @@ export default function App() {
             onProcessQueue={handleProcessQueue}
             onUpdateQueueItem={handleUpdateQueueItem}
             onRotateQueueItem={handleRotateQueueItem}
+            onRetakeQueueItem={handleRetakeQueueItem}
             onApproveItem={handleApproveSingleItem}
             onApproveAll={handleApproveAllQueue}
             isProcessing={isProcessing}

@@ -40,9 +40,25 @@ export const DEFAULT_STUDENT_MASTER = [
   { id: 'g2-1', name: 'ឃិន ស៊ិវម៉ិញ', aliases: ['ឃិន សៀវម៉ិញ', 'គិន ស៊ិវម៉ិញ', 'ឃិន ស៊ីវម៉ិញ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-2', name: 'ចាន់ ឆៃអ៊ង', aliases: ['ឆាន ឆៃអ៊ង', 'ចាន់ ឆៃអង', 'ឆាន ឆៃអង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-3', name: 'ចាន់ណា រ៉ាបូ', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-4', name: 'ឆេងអាន ឈាងហេង', aliases: ['ឆេង អានឈាងហេង', 'ឆេងអាន ឈាងហេង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  {
+    id: 'g2-4',
+    name: 'ឆេងអាន ឈាងហេង',
+    aliases: [
+      'ឆេង អានឈាងហេង',
+      'ឆេងអាន ឈាងហេង',
+      'ឆេង អានលាងហេង',
+      'ឈេង អានលាងហេង',
+      'ឈេងអាន លាងហេង',
+      'ឈេងអាន ឈាងហេង',
+      'ឈេង អានឈាងហេង',
+      'ឆេងអាន លាងហេង'
+    ],
+    grade: '២',
+    gender: 'សមណសិស្ស',
+    monkStatus: 'សាមណេរ'
+  },
   { id: 'g2-5', name: 'ជួង ចិត្រា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-6', name: 'ឈុនហ៊ាង គីមហុង', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-6', name: 'ឈុនហ៊ាង គីមហុង', aliases: ['ឈុន ហ៊ាងគីមហុង', 'ឈុនហ៊ាង គឹមហុង', 'ឆុនហ៊ាង គីមហុង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-7', name: 'ណុន តាវ៉ាន់', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-8', name: 'ប៉ុនធឿន ឧត្តម', aliases: ['ប៊ិន ធឿនឧត្តម', 'ប៊ិនធឿន ឧត្តម'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-9', name: 'ថេង សុខលីន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
@@ -60,12 +76,12 @@ export const DEFAULT_STUDENT_MASTER = [
   { id: 'g2-21', name: 'ស៊ីម សុវណ្ណរាជ', aliases: ['ស៊ឹម សុវណ្ណរាជ', 'ស៊ិម សុវណ្ណរាជ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-22', name: 'សារ៉ាត់ ចិត្ត្រា', aliases: ['សារ៉ាត់ ចិត្រា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-23', name: 'សុន ម៉ែងអ៊័ង', aliases: ['សុន ម៉េងអ៊័ង', 'សុន ម៉េងអង', 'សុន ម៉ែងអង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-24', name: 'សេងលី ទីសា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-24', name: 'សេងលី ទីសា', aliases: ['សេង លីទីសា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-25', name: 'ហេន សិលា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-26', name: 'ឡាយ ប៊ុនយ៉ុង', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-27', name: 'ឡាយ វីរះ', aliases: ['ឡាយ វីរៈ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-28', name: 'ឡេង ហេងលាន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-29', name: 'អ៊ុន សារ៉េន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-26', name: 'ឡាយ ប៊ុនយ៉ុង', aliases: ['លាយ ប៊ុនយ៉ុង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-27', name: 'ឡាយ វីរះ', aliases: ['ឡាយ វីរៈ', 'លាយ វីរះ', 'លាយ វីរៈ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-28', name: 'ឡេង ហេងលាន', aliases: ['លេង ហេងលាន', 'ឡេង ហេងលាង', 'លេង ហេងលាង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-29', name: 'អ៊ុន សារ៉េន', aliases: ['អុន សារ៉េន', 'អ៊ន សារ៉េន', 'ឯល សារ៉េន'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-30', name: 'អាន វឌ្ឍនា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
 
   // ថ្នាក់ទី៣ (21 នាក់)
@@ -169,10 +185,9 @@ export function normalizeKhmerHandwritingSkeleton(str) {
  */
 export function normalizeKhmerPenVisualSkeleton(str) {
   return normalizeKhmerHandwritingSkeleton(str)
-    .replace(/[គឃ]/g, 'ក')
-    .replace(/[ឆ]/g, 'ច')
-    .replace(/[ឈញ]/g, 'ជ')
-    .replace(/[ឌតទធ]/g, 'ដ')
+    .replace(/[ខគឃ]/g, 'ក')
+    .replace(/[ឆជឈញ]/g, 'ច')
+    .replace(/[ឌតទធថឋឍ]/g, 'ដ')
     .replace(/[ណ]/g, 'ន')
     .replace(/[ផពភ]/g, 'ប')
     .replace(/[ឡ]/g, 'ល');
@@ -293,6 +308,31 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER, 
   } else if (subMatches.length > 1 && normGrade) {
     const gradeSub = subMatches.find(s => s.grade === normGrade) || subMatches[0];
     return { student: gradeSub, confidence: 0.93, isExact: false };
+  }
+
+  // 3.5. Grade + Unique Given-Name Match (when cursive surname is hard to read, e.g. "ឯល សារ៉េន" -> "អ៊ុន សារ៉េន" in Grade 2)
+  const inputWords = strippedName.split(/\s+/).filter(Boolean);
+  if (normGrade && inputWords.length >= 2) {
+    const inputGivenSkel = normalizeKhmerHandwritingSkeleton(inputWords.slice(1).join(''));
+    if (inputGivenSkel.length >= 3) {
+      const sameGradeStudents = studentList.filter(s => s.grade === normGrade);
+      const uniqueGivenMatches = sameGradeStudents.filter(s => {
+        const candidates = [s.name, ...(s.aliases || [])];
+        return candidates.some(cand => {
+          const cWords = cleanHandwrittenStudentName(cand).split(/\s+/).filter(Boolean);
+          if (cWords.length < 2) return false;
+          const cGivenSkel = normalizeKhmerHandwritingSkeleton(cWords.slice(1).join(''));
+          if (!cGivenSkel) return false;
+          if (cGivenSkel === inputGivenSkel) return true;
+          const maxLen = Math.max(cGivenSkel.length, inputGivenSkel.length);
+          const sim = maxLen > 0 ? 1 - (levenshteinDistance(cGivenSkel, inputGivenSkel) / maxLen) : 0;
+          return sim >= 0.85;
+        });
+      });
+      if (uniqueGivenMatches.length === 1) {
+        return { student: uniqueGivenMatches[0], confidence: 0.89, isExact: false };
+      }
+    }
   }
 
   // 4. Grade-First + Two-Syllable + Khmer Cursive Skeleton Fuzzy Match
