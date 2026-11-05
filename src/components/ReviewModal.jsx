@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCw, CheckCircle2, AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, Trash2, Sparkles } from 'lucide-react';
 import { matchStudentName, getPhoneticStudentSuggestions, getRealReasonSuggestions } from '../utils/studentMaster';
-import { parseDurationShorthand, getDurationSuggestions } from '../utils/khmerNumerals';
+import { parseDurationShorthand, getDurationSuggestions, normalizeCurrency, getCurrencySymbol } from '../utils/khmerNumerals';
 import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
+import CurrencyToggle from './CurrencyToggle';
 
 export default function ReviewModal({
   isOpen,
@@ -22,16 +23,18 @@ export default function ReviewModal({
   queueIndex = 1,
   queueTotal = 1
 }) {
-  if (!isOpen || !queueItem) return null;
-
   const [focusedField, setFocusedField] = useState(null); // 'name' | 'reason' | 'duration' | null
   const [isImageExpanded, setIsImageExpanded] = useState(false);
   const touchStartRef = useRef(null);
-  const trainingDataset = useMemo(() => getStoredTrainingDataset(), [queueItem.id]);
+  const queueItemId = queueItem?.id || '';
+  const trainingDataset = useMemo(() => {
+    void queueItemId;
+    return getStoredTrainingDataset();
+  }, [queueItemId]);
 
-  const initialExtracted = queueItem.processedData?.result || queueItem.processedData || {};
+  const initialExtracted = queueItem?.processedData?.result || queueItem?.processedData || {};
   const resolveDocType = (rawType) => (!rawType || rawType === 'auto') ? 'leave' : rawType;
-  const [docType, setDocType] = useState(resolveDocType(queueItem.processedData?.detectedType || initialExtracted.detectedType || queueItem.docTypeHint));
+  const [docType, setDocType] = useState(resolveDocType(queueItem?.processedData?.detectedType || initialExtracted.detectedType || queueItem?.docTypeHint));
 
   // Helper to sanitize leave date to single start date in 2026
   const sanitizeLeaveDate = (rawDate) => {
@@ -43,10 +46,10 @@ export default function ReviewModal({
         clean = parts[0].trim();
       }
     }
-    return clean || new Date().toLocaleDateString('en-GB');
+    return clean || '០១/០៧/២០២៦';
   };
 
-  const rawInitLeave = queueItem.processedData?.leaveItems?.[0] || initialExtracted.leaveItems?.[0] || {};
+  const rawInitLeave = queueItem?.processedData?.leaveItems?.[0] || initialExtracted.leaveItems?.[0] || {};
   const defaultLeaveItem = {
     name: rawInitLeave.name || '',
     grade: rawInitLeave.grade || '៣',
@@ -57,12 +60,13 @@ export default function ReviewModal({
   };
   const [leaveItem, setLeaveItem] = useState(defaultLeaveItem);
 
-  const defaultFinanceItem = queueItem.processedData?.financeItems?.[0] || initialExtracted.financeItems?.[0] || {
+  const defaultFinanceItem = queueItem?.processedData?.financeItems?.[0] || initialExtracted.financeItems?.[0] || {
     category: 'expense',
     desc: '',
     qty: '1',
     unitPrice: 0,
     total: 0,
+    currency: 'KHR',
     note: ''
   };
   const [financeItem, setFinanceItem] = useState(defaultFinanceItem);
@@ -85,21 +89,24 @@ export default function ReviewModal({
       date: sanitizeLeaveDate(rawLeave.date),
       note: rawLeave.note || ''
     });
-    setFinanceItem(queueItem.processedData?.financeItems?.[0] || extracted.financeItems?.[0] || {
-      category: 'expense',
-      desc: '',
-      qty: '1',
-      unitPrice: 0,
-      total: 0,
-      note: ''
+    const rawFin = queueItem.processedData?.financeItems?.[0] || extracted.financeItems?.[0] || {};
+    setFinanceItem({
+      category: rawFin.category || 'expense',
+      desc: rawFin.desc || '',
+      qty: rawFin.qty || '1',
+      unitPrice: rawFin.unitPrice || 0,
+      total: rawFin.total || 0,
+      currency: normalizeCurrency(rawFin.currency),
+      note: rawFin.note || ''
     });
     setZoom(1);
     setRotation(0);
     setFocusedField(null);
-  }, [queueItem.id]);
+  }, [queueItem]);
 
   // Keyboard shortcut listener: Left/Right arrows for document navigation
   useEffect(() => {
+    if (!isOpen || !queueItem) return undefined;
     const handleKeyDown = (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
       if (e.key === 'ArrowLeft' && hasPrev && onNavigatePrev) {
@@ -112,7 +119,9 @@ export default function ReviewModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hasPrev, hasNext, onNavigatePrev, onNavigateNext, onClose]);
+  }, [isOpen, queueItem, hasPrev, hasNext, onNavigatePrev, onNavigateNext, onClose]);
+
+  if (!isOpen || !queueItem) return null;
 
   const studentMatch = matchStudentName(leaveItem.name, studentMaster);
 
@@ -193,6 +202,7 @@ export default function ReviewModal({
           qty: financeItem.qty || '1',
           unitPrice: Number(financeItem.unitPrice) || 0,
           total: Number(financeItem.total) || 0,
+          currency: normalizeCurrency(financeItem.currency),
           note: financeItem.note || ''
         },
         queueId: queueItem.id,
@@ -884,8 +894,12 @@ export default function ReviewModal({
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
-                      តម្លៃសរុប (៛)៖
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
+                      <span>តម្លៃសរុប ({getCurrencySymbol(financeItem.currency)})៖</span>
+                      <CurrencyToggle
+                        value={financeItem.currency}
+                        onChange={cur => applyFinancePatch({ currency: cur })}
+                      />
                     </label>
                     <input
                       type="number"
@@ -2038,8 +2052,12 @@ export default function ReviewModal({
                       />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                        តម្លៃរាយ (៛)៖
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                        <span>តម្លៃរាយ ({getCurrencySymbol(financeItem.currency)})៖</span>
+                        <CurrencyToggle
+                          value={financeItem.currency}
+                          onChange={cur => applyFinancePatch({ currency: cur })}
+                        />
                       </label>
                       <input
                         type="number"
@@ -2053,7 +2071,7 @@ export default function ReviewModal({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                     <div>
                       <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                        តម្លៃសរុប (៛)៖
+                        តម្លៃសរុប ({getCurrencySymbol(financeItem.currency)})៖
                       </label>
                       <input
                         type="number"

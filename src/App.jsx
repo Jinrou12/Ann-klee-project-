@@ -5,6 +5,7 @@ import TabNavigation from './components/TabNavigation';
 import LeaveTableView from './components/LeaveTableView';
 import FinanceTableView from './components/FinanceTableView';
 import UploadSection from './components/UploadSection';
+import SummaryTableView from './components/SummaryTableView';
 import StudentMasterModal from './components/StudentMasterModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import ReviewModal from './components/ReviewModal';
@@ -12,6 +13,7 @@ import ReviewModal from './components/ReviewModal';
 // Mobile-Dedicated Components (Rule: Strict PC vs Mobile Isolation)
 import LeaveMobileView from './components/mobile/LeaveMobileView';
 import FinanceMobileView from './components/mobile/FinanceMobileView';
+import SummaryMobileView from './components/mobile/SummaryMobileView';
 import MobileBottomNav from './components/mobile/MobileBottomNav';
 import { useDeviceMode } from './utils/useDeviceMode';
 
@@ -39,9 +41,12 @@ import {
   fileToBase64,
   autoOrientDocumentImage,
   classifyMobileCapture,
-  rotateImageDataUrl
+  rotateImageDataUrl,
+  detectUprightRotationWithAI,
+  compressImageForOCR,
+  formatKhmerScanError
 } from './utils/ocrService';
-import { parseDurationShorthand } from './utils/khmerNumerals';
+import { parseDurationShorthand, normalizeCurrency } from './utils/khmerNumerals';
 
 export default function App() {
   // Device mode detection (Rule: Clean PC vs Mobile Separation)
@@ -212,11 +217,48 @@ export default function App() {
   }, [queue]);
 
   const currentMonthKey = appState.meta.currentMonth || '2026-07';
+  const activeYear = (currentMonthKey || '2026-07').split('-')[0] || '2026';
+
+  // Scoped available months for the currently selected activeYear
   const availableMonths = Array.from(new Set([
-    ...Object.keys(appState.leaves),
-    ...Object.keys(appState.finance),
+    ...Object.keys(appState.leaves).filter(k => k.startsWith(`${activeYear}-`)),
+    ...Object.keys(appState.finance).filter(k => k.startsWith(`${activeYear}-`)),
     currentMonthKey
   ])).sort().reverse();
+
+  // Compute Year Stats List for the Left School Logo Drawer (2027, 2026, 2025 + any custom year)
+  const allYearKeys = Array.from(new Set([
+    '2027',
+    '2026',
+    '2025',
+    ...(appState.meta.availableYears || []),
+    ...Object.keys(appState.leaves).map(k => k.split('-')[0]).filter(Boolean),
+    ...Object.keys(appState.finance).map(k => k.split('-')[0]).filter(Boolean),
+    activeYear
+  ])).sort().reverse();
+
+  const yearStatsList = allYearKeys.map(yr => {
+    const monthKeysInYear = Array.from(new Set([
+      ...Object.keys(appState.leaves).filter(k => k.startsWith(`${yr}-`)),
+      ...Object.keys(appState.finance).filter(k => k.startsWith(`${yr}-`))
+    ]));
+    let leaveCount = 0;
+    let financeCount = 0;
+    let activeMonthsCount = 0;
+    monthKeysInYear.forEach(mk => {
+      const l = appState.leaves[mk]?.length || 0;
+      const f = (appState.finance[mk]?.income?.length || 0) + (appState.finance[mk]?.expense?.length || 0);
+      leaveCount += l;
+      financeCount += f;
+      if (l > 0 || f > 0) activeMonthsCount += 1;
+    });
+    return {
+      year: yr,
+      activeMonthsCount,
+      leaveCount,
+      financeCount
+    };
+  });
 
   const currentLeaves = appState.leaves[currentMonthKey] || [];
   const currentFinance = appState.finance[currentMonthKey] || { income: [], expense: [] };
@@ -287,6 +329,38 @@ export default function App() {
     }));
   }, []);
 
+  const mutateSelectYear = useCallback((targetYear) => {
+    const cleanYr = String(targetYear || '').trim();
+    if (!cleanYr) return;
+    setAppState(prev => {
+      const existingMonthsInYear = Array.from(new Set([
+        ...Object.keys(prev.leaves || {}).filter(k => k.startsWith(`${cleanYr}-`)),
+        ...Object.keys(prev.finance || {}).filter(k => k.startsWith(`${cleanYr}-`))
+      ])).sort().reverse();
+
+      const nextMonthKey = existingMonthsInYear[0] || `${cleanYr}-01`;
+      const prevYears = Array.isArray(prev.meta?.availableYears) ? prev.meta.availableYears : [];
+      const updatedYears = Array.from(new Set([...prevYears, cleanYr]));
+
+      return {
+        ...prev,
+        leaves: {
+          ...prev.leaves,
+          [nextMonthKey]: prev.leaves[nextMonthKey] || []
+        },
+        finance: {
+          ...prev.finance,
+          [nextMonthKey]: prev.finance[nextMonthKey] || { income: [], expense: [] }
+        },
+        meta: {
+          ...prev.meta,
+          currentMonth: nextMonthKey,
+          availableYears: updatedYears
+        }
+      };
+    });
+  }, []);
+
   // 3. Queue & Upload Actions (Concurrent-Safe Auto-Scan & Sequential Review Pipeline)
   const queueRef = useRef(queue);
   const isWorkerRunningRef = useRef(false);
@@ -346,7 +420,14 @@ export default function App() {
         //      * Unknown (dark/blank/non-doc) -> reject immediately without calling Gemini
         //    - PC: existing AI 4-candidate orientation check
         let orientedDataUrl = nextItem.previewUrl;
+        let preResolvedDocType = '';
+        let preRouterError = '';
         let mobileRejectedEarly = false;
+        // Mobile Format-2 (sideways) guard: remember the original photo so a receipt that was
+        // wrongly rotated 270° (vertical table borders look like sideways text) can be restored after OCR.
+        let mobileOriginalDataUrl = '';
+        let mobileSidewaysRotated = false;
+        let deferredBlobUrlToRevoke = '';
         try {
           if (targetFile) {
             const { dataUrl } = await fileToBase64(targetFile);
@@ -354,7 +435,9 @@ export default function App() {
               const mobileCheck = await classifyMobileCapture(dataUrl, targetDocType);
               if (mobileCheck.format === 'unknown') {
                 mobileRejectedEarly = true;
-                const rejectMsg = 'ប្រព័ន្ធមិនស្គាល់ទម្រង់រូបនេះទេ (រូបងងឹត ព្រិល ឬមិនមែនជាក្រដាសច្បាប់)។ សូមថតម្ដងទៀតតាមទម្រង់ទី ១ ឬទី ២។';
+                const rejectMsg = targetDocType === 'leave'
+                  ? 'ប្រព័ន្ធមិនស្គាល់ទម្រង់រូបនេះទេ (រូបងងឹត ព្រិល ឬមិនមែនជាក្រដាសច្បាប់)។ សូមថតម្ដងទៀតតាមទម្រង់ទី ១ ឬទី ២។'
+                  : 'ប្រព័ន្ធមិនអាចសម្គាល់ឯកសារបានទេ (រូបងងឹតខ្លាំង ឬព្រិលខ្លាំង)។ សូមថតឱ្យច្បាស់ម្ដងទៀត។';
                 updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
                   ...q,
                   previewUrl: dataUrl,
@@ -371,17 +454,26 @@ export default function App() {
                 } : q));
               } else if (mobileCheck?.dataUrl) {
                 orientedDataUrl = mobileCheck.dataUrl;
-                updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
-                  ...q,
-                  previewUrl: orientedDataUrl,
-                  scanStage: 'ocr'
-                } : q));
-                if (oldBlobUrl) {
-                  try { URL.revokeObjectURL(oldBlobUrl); } catch { /* ignore */ }
+                if (mobileCheck.format === 'sideways_half') {
+                  mobileOriginalDataUrl = dataUrl;
+                  mobileSidewaysRotated = true;
+                  deferredBlobUrlToRevoke = oldBlobUrl;
+                  updateQueueSafe(prev => prev.map(q => q.id === itemId ? { ...q, scanStage: 'ocr' } : q));
+                } else {
+                  updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+                    ...q,
+                    previewUrl: orientedDataUrl,
+                    scanStage: 'ocr'
+                  } : q));
+                  if (oldBlobUrl) {
+                    try { URL.revokeObjectURL(oldBlobUrl); } catch { /* ignore */ }
+                  }
                 }
               }
             } else {
               const oriented = await autoOrientDocumentImage(dataUrl, targetDocType, apiKey);
+              preResolvedDocType = oriented?.detectedDocType || '';
+              preRouterError = oriented?.routerError || '';
               if (oriented?.dataUrl) {
                 orientedDataUrl = oriented.dataUrl;
                 updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
@@ -413,10 +505,12 @@ export default function App() {
           // Keep local batchTrainingDataset
         }
 
-        // 3. AI OCR Recognition (Single-pass on Mobile, with real-time stage updates)
+        // 3. AI OCR Recognition (Isolated Leave vs Finance Engines)
         try {
           const res = await processUploadedImage(targetFile, {
             docTypeHint: targetDocType,
+            resolvedDocType: preResolvedDocType,
+            preRouterError,
             apiKey,
             studentMaster: appState.studentMaster,
             allLeaves: appState.leaves,
@@ -428,6 +522,38 @@ export default function App() {
             }
           });
 
+          // Receipt Orientation Restore: the local Mobile check rotated this photo 270° as a sideways
+          // leave slip, but OCR says it is a finance receipt → pick the true upright angle from the ORIGINAL
+          // photo (AI 4-candidate check), fallback to Gemini's own rotate hint, and never leave it sideways.
+          let finalPreviewUrl = res.previewUrl || orientedDataUrl;
+          const resolvedType = res.result?.detectedType;
+          if (mobileSidewaysRotated && mobileOriginalDataUrl && resolvedType === 'finance') {
+            try {
+              const upright = await detectUprightRotationWithAI(mobileOriginalDataUrl, apiKey || getStoredApiKey());
+              let restoreDegrees;
+              if (upright) {
+                restoreDegrees = upright.degrees;
+              } else {
+                const geminiHint = Number(res.result?.rotateClockwiseDegrees) || 0;
+                restoreDegrees = [90, 180, 270].includes(geminiHint) ? (270 + geminiHint) % 360 : 0;
+              }
+              if (restoreDegrees === 0) {
+                const compressed = await compressImageForOCR(mobileOriginalDataUrl, targetFile?.size || 0, 'image/jpeg');
+                finalPreviewUrl = compressed?.dataUrl || mobileOriginalDataUrl;
+              } else {
+                const rotated = await rotateImageDataUrl(mobileOriginalDataUrl, restoreDegrees, 1800);
+                finalPreviewUrl = rotated?.dataUrl || finalPreviewUrl;
+              }
+              console.log(`🧾 [Receipt Orientation Restore] finance receipt → upright at ${restoreDegrees}° (${upright ? 'AI' : 'hint'})`);
+            } catch (orientErr) {
+              console.warn('Receipt orientation restore failed, keeping scanned preview', orientErr);
+            }
+          }
+          if (deferredBlobUrlToRevoke) {
+            try { URL.revokeObjectURL(deferredBlobUrlToRevoke); } catch { /* ignore */ }
+            deferredBlobUrlToRevoke = '';
+          }
+
           const isUnrecognized = Boolean(isMobile && (res.unrecognizedFormat || res.result?.unrecognizedFormat));
           const unrecognizedReason = res.unrecognizedReason || res.result?.unrecognizedReason || '';
           const slimRawScan = res ? { ...res, previewUrl: undefined } : null;
@@ -436,7 +562,7 @@ export default function App() {
             if (q.id !== itemId) return q;
             return {
               ...q,
-              previewUrl: res.previewUrl || orientedDataUrl || q.previewUrl,
+              previewUrl: finalPreviewUrl || q.previewUrl,
               status: isUnrecognized ? 'unrecognized' : 'processed',
               scanStage: null,
               error: isUnrecognized ? unrecognizedReason : null,
@@ -447,6 +573,7 @@ export default function App() {
                 unrecognizedReason,
                 imageHash: res.imageHash || res.result?.imageHash || '',
                 initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
+                initialFinanceItems: res.result?.initialFinanceItems || res.result?.financeItems || [],
                 rawScan: slimRawScan
               }
             };
@@ -457,7 +584,7 @@ export default function App() {
             ...q,
             status: 'error',
             scanStage: null,
-            error: err.message || 'ការស្កេនបរាជ័យ'
+            error: formatKhmerScanError(err)
           } : q));
         }
       }
@@ -537,14 +664,19 @@ export default function App() {
       } : item));
 
       // Re-run OCR on the newly rotated upright image (skipOrientRetry: true so manual rotation is respected)
+      const knownType = target.processedData?.detectedType;
+      const effectiveRotateHint = (knownType === 'leave' || knownType === 'finance')
+        ? knownType
+        : target.docTypeHint;
       const res = await processUploadedImage(target.file, {
-        docTypeHint: target.docTypeHint,
+        docTypeHint: effectiveRotateHint,
         apiKey,
         studentMaster: appState.studentMaster,
         allLeaves: appState.leaves,
         preOrientedDataUrl: rotated.dataUrl,
         skipOrientRetry: true,
         isMobileCapture: isMobile,
+        prefetchedTrainingDataset: getStoredTrainingDataset(),
         onStageChange: (stage) => {
           updateQueueSafe(prev => prev.map(item => item.id === id ? { ...item, scanStage: stage } : item));
         }
@@ -565,6 +697,7 @@ export default function App() {
           unrecognizedReason: '',
           imageHash: res.imageHash || res.result?.imageHash || '',
           initialOcrName: res.result?.initialOcrName || res.result?.leaveItems?.[0]?.initialOcrName || '',
+          initialFinanceItems: res.result?.initialFinanceItems || res.result?.financeItems || [],
           rawScan: slimRawScan
         }
       } : item));
@@ -574,7 +707,7 @@ export default function App() {
         ...item,
         status: 'error',
         scanStage: null,
-        error: err.message
+        error: formatKhmerScanError(err)
       } : item));
     }
   };
@@ -618,16 +751,43 @@ export default function App() {
       finalItem = { ...item, date: cleanDate };
       mutateLeaves([...currentLeaves, finalItem]);
     } else {
-      const section = item.category === 'income' ? 'income' : 'expense';
-      mutateFinance({
-        ...currentFinance,
-        [section]: [...currentFinance[section], item]
-      });
+      const rawFinanceItems = rawOcr?.financeItems;
+      if (Array.isArray(rawFinanceItems) && rawFinanceItems.length > 1) {
+        let updatedFin = {
+          ...currentFinance,
+          income: [...(currentFinance.income || [])],
+          expense: [...(currentFinance.expense || [])]
+        };
+        rawFinanceItems.forEach((f, idx) => {
+          const sec = f.category === 'income' ? 'income' : 'expense';
+          updatedFin[sec].push({
+            id: `fin-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+            category: sec,
+            desc: f.desc?.trim() || 'ទំនិញ/សេវា',
+            qty: f.qty || '1',
+            unitPrice: Number(f.unitPrice) || 0,
+            total: Number(f.total) || 0,
+            currency: normalizeCurrency(f.currency),
+            note: f.note || ''
+          });
+        });
+        mutateFinance(updatedFin);
+        finalItem = { items: rawFinanceItems };
+      } else {
+        const section = item.category === 'income' ? 'income' : 'expense';
+        mutateFinance({
+          ...currentFinance,
+          [section]: [...(currentFinance[section] || []), item]
+        });
+      }
     }
 
-    // 2. AI Flywheel: Harvest verified ground-truth training pair with Visual Fingerprint & Learned Name Correction
+    // 2. AI Flywheel: Harvest verified ground-truth training pair with Visual Fingerprint & Learned Corrections
     const resolvedHash = imageHash || rawOcr?.imageHash || rawOcr?.rawScan?.imageHash || '';
     const resolvedRawName = rawOcr?.initialOcrName || rawOcr?.leaveItems?.[0]?.initialOcrName || '';
+    const resolvedRawFinanceItems = type === 'finance'
+      ? (rawOcr?.initialFinanceItems || rawOcr?.rawScan?.result?.initialFinanceItems || rawOcr?.rawScan?.result?.financeItems || undefined)
+      : undefined;
     const sample = {
       id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       fileName: fileName || 'sample',
@@ -635,6 +795,7 @@ export default function App() {
       fileSize: fileSize || rawOcr?.rawScan?.fileSize || undefined,
       imageHash: resolvedHash || undefined,
       rawOcrName: resolvedRawName || undefined,
+      rawOcrFinanceItems: resolvedRawFinanceItems,
       docType: type,
       timestamp: new Date().toISOString(),
       rawOcr: rawOcr || null,
@@ -693,6 +854,7 @@ export default function App() {
           qty: f.qty || '1',
           unitPrice: Number(f.unitPrice) || 0,
           total: Number(f.total) || 0,
+          currency: normalizeCurrency(f.currency),
           note: f.note || ''
         },
         queueId: qItem.id,
@@ -753,28 +915,34 @@ export default function App() {
           groundTruth: leaveRecord
         });
       } else {
-        const f = qItem.processedData?.financeItems?.[0] || {};
-        const cat = f.category === 'income' ? 'income' : 'expense';
-        const finRecord = {
-          id: `fin-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          category: cat,
-          desc: f.desc?.trim() || 'ទំនិញ/សេវា',
-          qty: f.qty || '1',
-          unitPrice: Number(f.unitPrice) || 0,
-          total: Number(f.total) || 0,
-          note: f.note || ''
-        };
-        newFinance[cat].push(finRecord);
-        batchSamples.push({
-          id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          fileName: qItem.fileName,
-          originalFileName: qItem.fileName,
-          fileSize: qItem.fileSize,
-          imageHash: itemHash || undefined,
-          docType: 'finance',
-          timestamp: new Date().toISOString(),
-          groundTruth: finRecord
-        });
+        const rawFinanceItems = qItem.processedData?.financeItems;
+        if (Array.isArray(rawFinanceItems) && rawFinanceItems.length > 0) {
+          rawFinanceItems.forEach((f, fIdx) => {
+            const cat = f.category === 'income' ? 'income' : 'expense';
+            const finRecord = {
+              id: `fin-${Date.now()}-${fIdx}-${Math.random().toString(36).substr(2, 5)}`,
+              category: cat,
+              desc: f.desc?.trim() || 'ទំនិញ/សេវា',
+              qty: f.qty || '1',
+              unitPrice: Number(f.unitPrice) || 0,
+              total: Number(f.total) || 0,
+              currency: normalizeCurrency(f.currency),
+              note: f.note || ''
+            };
+            newFinance[cat].push(finRecord);
+          });
+          batchSamples.push({
+            id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            fileName: qItem.fileName,
+            originalFileName: qItem.fileName,
+            fileSize: qItem.fileSize,
+            imageHash: itemHash || undefined,
+            rawOcrFinanceItems: qItem.processedData?.initialFinanceItems || qItem.processedData?.rawScan?.result?.financeItems || undefined,
+            docType: 'finance',
+            timestamp: new Date().toISOString(),
+            groundTruth: { items: rawFinanceItems }
+          });
+        }
       }
     });
 
@@ -810,6 +978,10 @@ export default function App() {
       {/* Top Header */}
       <Header
         metadata={appState.meta}
+        activeYear={activeYear}
+        yearStatsList={yearStatsList}
+        onSelectYear={mutateSelectYear}
+        onAddYear={mutateSelectYear}
         studentCount={appState.studentMaster.length}
         trainingCount={trainingCount}
         hasApiKey={Boolean(apiKey)}
@@ -952,6 +1124,33 @@ export default function App() {
             isProcessing={isProcessing}
             isMobile={isMobile}
           />
+        )}
+
+        {/* ======================================================== */}
+        {/* VIEW 4: MONTHLY & YEARLY SUMMARY ANALYTICS               */}
+        {/* ======================================================== */}
+        {activeTab === 'summary' && (
+          isMobile ? (
+            <SummaryMobileView
+              currentMonthKey={currentMonthKey}
+              allLeaves={appState.leaves}
+              allFinance={appState.finance}
+              studentMaster={appState.studentMaster}
+              useKhmerNumerals={appState.meta.useKhmerNumerals}
+              onSelectMonth={mutateMonth}
+              onSelectYear={mutateSelectYear}
+            />
+          ) : (
+            <SummaryTableView
+              currentMonthKey={currentMonthKey}
+              allLeaves={appState.leaves}
+              allFinance={appState.finance}
+              studentMaster={appState.studentMaster}
+              useKhmerNumerals={appState.meta.useKhmerNumerals}
+              onSelectMonth={mutateMonth}
+              onSelectYear={mutateSelectYear}
+            />
+          )
         )}
       </main>
 

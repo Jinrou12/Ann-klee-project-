@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Trash2 } from 'lucide-react';
-import { toKhmerDigits, formatKhmerCurrency } from '../utils/khmerNumerals';
+import { toKhmerDigits, formatKhmerCurrency, formatMoney, sumByCurrency, formatCurrencyTotals } from '../utils/khmerNumerals';
+import { getMonthEndReportDates } from '../utils/khmerCalendar';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
+import CurrencyToggle from './CurrencyToggle';
 
 /**
  * OfficialFinanceDocument: The canonical, authentic A4 Ministry replica for Income/Expense (PDF 1)
@@ -14,6 +16,7 @@ export default function OfficialFinanceDocument({
   monthName = 'កក្កដា',
   yearDisplay = '២០២៦',
   useKhmerNumerals = true,
+  monthKey = '2026-07',
   isEditable = false,
   editingId = null,
   setEditingId = () => {},
@@ -23,8 +26,17 @@ export default function OfficialFinanceDocument({
   const incomeList = financeData?.income || [];
   const expenseList = financeData?.expense || [];
 
+  const incomeTotals = sumByCurrency(incomeList);
+  const expenseTotals = sumByCurrency(expenseList);
   const totalIncome = incomeList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const totalExpense = expenseList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+
+  // Automatically calculate the last working day of the month (excluding Saturday/Sunday)
+  const reportDates = useMemo(() => getMonthEndReportDates(monthKey, {
+    watName: metadata.wat,
+    customLunarTemplate: metadata.lunarDateHeader,
+    useKhmerNumerals
+  }), [monthKey, metadata.wat, metadata.lunarDateHeader, useKhmerNumerals]);
 
   return (
     <div id={id} className="printable-document">
@@ -162,24 +174,30 @@ export default function OfficialFinanceDocument({
                         onClick={() => isEditable && setEditingId(item.id)} 
                         style={{ cursor: isEditable ? 'pointer' : 'default' }}
                       >
-                        {item.unitPrice ? formatKhmerCurrency(item.unitPrice, useKhmerNumerals) : ''}
+                        {item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmerNumerals) : ''}
                       </div>
                     )}
                   </td>
                   <td style={{ border: '1px solid #000', textAlign: 'right', padding: '4px 8px', fontWeight: 600 }}>
                     {isItemEditing ? (
-                      <input
-                        type="text"
-                        value={item.total}
-                        onChange={e => handleCellChange('income', item.id, 'total', e.target.value)}
-                        style={{ width: '100%', textAlign: 'right', fontSize: 13 }}
-                      />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input
+                          type="text"
+                          value={item.total}
+                          onChange={e => handleCellChange('income', item.id, 'total', e.target.value)}
+                          style={{ width: '100%', textAlign: 'right', fontSize: 13 }}
+                        />
+                        <CurrencyToggle
+                          value={item.currency}
+                          onChange={cur => handleCellChange('income', item.id, 'currency', cur)}
+                        />
+                      </div>
                     ) : (
                       <div 
                         onClick={() => isEditable && setEditingId(item.id)} 
                         style={{ cursor: isEditable ? 'pointer' : 'default' }}
                       >
-                        {formatKhmerCurrency(item.total, useKhmerNumerals)}
+                        {formatMoney(item.total, item.currency, useKhmerNumerals)}
                       </div>
                     )}
                   </td>
@@ -229,7 +247,7 @@ export default function OfficialFinanceDocument({
                 <span className="font-moul" style={{ fontSize: 13 }}>សរុបចំណូល</span>
               </td>
               <td style={{ border: '1px solid #000', textAlign: 'right', padding: '6px 8px' }}>
-                {formatKhmerCurrency(totalIncome, useKhmerNumerals)}
+                {formatCurrencyTotals(incomeTotals, useKhmerNumerals)}
               </td>
               <td style={{ border: '1px solid #000' }}></td>
               {isEditable && <td className="no-print" style={{ border: '1px solid #cbd5e1' }}></td>}
@@ -322,24 +340,30 @@ export default function OfficialFinanceDocument({
                         onClick={() => isEditable && setEditingId(item.id)} 
                         style={{ cursor: isEditable ? 'pointer' : 'default' }}
                       >
-                        {item.unitPrice ? formatKhmerCurrency(item.unitPrice, useKhmerNumerals) : ''}
+                        {item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmerNumerals) : ''}
                       </div>
                     )}
                   </td>
                   <td style={{ border: '1px solid #000', textAlign: 'right', padding: '4px 8px', fontWeight: 600 }}>
                     {isItemEditing ? (
-                      <input
-                        type="text"
-                        value={item.total}
-                        onChange={e => handleCellChange('expense', item.id, 'total', e.target.value)}
-                        style={{ width: '100%', textAlign: 'right', fontSize: 13 }}
-                      />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input
+                          type="text"
+                          value={item.total}
+                          onChange={e => handleCellChange('expense', item.id, 'total', e.target.value)}
+                          style={{ width: '100%', textAlign: 'right', fontSize: 13 }}
+                        />
+                        <CurrencyToggle
+                          value={item.currency}
+                          onChange={cur => handleCellChange('expense', item.id, 'currency', cur)}
+                        />
+                      </div>
                     ) : (
                       <div 
                         onClick={() => isEditable && setEditingId(item.id)} 
                         style={{ cursor: isEditable ? 'pointer' : 'default' }}
                       >
-                        {formatKhmerCurrency(item.total, useKhmerNumerals)}
+                        {formatMoney(item.total, item.currency, useKhmerNumerals)}
                       </div>
                     )}
                   </td>
@@ -389,7 +413,7 @@ export default function OfficialFinanceDocument({
                 <span className="font-moul" style={{ fontSize: 13 }}>សរុបចំណាយ</span>
               </td>
               <td style={{ border: '1px solid #000', textAlign: 'right', padding: '6px 8px' }}>
-                {formatKhmerCurrency(totalExpense, useKhmerNumerals)}
+                {formatCurrencyTotals(expenseTotals, useKhmerNumerals)}
               </td>
               <td style={{ border: '1px solid #000' }}></td>
               {isEditable && <td className="no-print" style={{ border: '1px solid #cbd5e1' }}></td>}
@@ -412,8 +436,8 @@ export default function OfficialFinanceDocument({
           <div className="font-moul" style={{ fontSize: 13, marginBottom: 4, whiteSpace: 'nowrap' }}>
             បានឃើញ និង……………..
           </div>
-          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ………..…….ខែ………..….ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០</div>
-          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃទី………. ខែ……….. ឆ្នាំ២០២៦</div>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ………..…….ខែ………..….ឆ្នាំ{reportDates.zodiac || 'មមី'} {reportDates.sak || 'អដ្ឋស័ក'} ព.ស.{reportDates.beYear || '២៥៧០'}</div>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃទី………. ខែ……….. ឆ្នាំ{reportDates.yearKhmer}</div>
           <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
@@ -421,10 +445,10 @@ export default function OfficialFinanceDocument({
           </div>
         </div>
 
-        {/* Right Signature: Reporter */}
+        {/* Right Signature: Reporter (Automatically calculated last working day, excluding Sat/Sun) */}
         <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
-          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមីអដ្ឋស័ក ព.ស.២៥៧០</div>
-          <div style={{ whiteSpace: 'nowrap' }}>{metadata.wat || 'វត្តខេមវ័ន'} ថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
+          <div style={{ whiteSpace: 'nowrap' }}>{reportDates.lunarDateText}</div>
+          <div style={{ whiteSpace: 'nowrap' }}>{reportDates.solarDateTextFinance}</div>
           <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>

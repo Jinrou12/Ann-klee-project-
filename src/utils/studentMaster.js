@@ -154,10 +154,10 @@ export function cleanHandwrittenStudentName(rawName) {
     .replace(/\u17BB([\u17B7\u17B8\u17B9\u17BA])/g, '\u17CA$1')
     // Normalize vowel before shifter (e.g. ី + ៊ -> ៊ + ី)
     .replace(/([\u17B7-\u17C5])([\u17C9\u17CA])/g, '$2$1')
-    // Strip printed prefixes on Line 1
-    .replace(/^(ខ្ញុំបាទសមណសិស្សឈ្មោះ|ខ្ញុំបាទ|នាងខ្ញុំ|សមណសិស្សឈ្មោះ|សមណសិស្ស|សាមណេរ|ភិក្ខុ|ព្រះនាម|ឈ្មោះ|នាម)[\s៖:.…]*/gi, '')
-    // Strip printed or handwritten suffixes from Line 1 ("អាយុ...", "ថ្នាក់ទី...") and Line 2 bleed ("ពុទ្ធិកបឋមសិក្សា", "វត្តខេមវ័ន", "បឹងកុក", "ហ៊ុន ណេង")
-    .replace(/\s*(អាយុ|ជាសមណសិស្ស|ថ្នាក់ទី|នៃសាលា|ពុទ្ធិកបឋមសិក្សា|វត្តខេមវ័ន|ខេមវ័ន|បឹងកុក|ហ៊ុន\s*ណេង).*$/gi, '')
+    // Strip printed prefixes on Line 1 (including "ខ្ញុំបាទ/នាងខ្ញុំឈ្មោះ:")
+    .replace(/^(ខ្ញុំបាទ\/នាងខ្ញុំឈ្មោះ|ខ្ញុំបាទ\/នាងខ្ញុំ|ខ្ញុំបាទសមណសិស្សឈ្មោះ|ខ្ញុំបាទ|នាងខ្ញុំឈ្មោះ|នាងខ្ញុំ|សមណសិស្សឈ្មោះ|សមណសិស្ស|សាមណេរ|ភិក្ខុ|ព្រះនាម|ឈ្មោះ|នាម)[\s៖:.…]*/gi, '')
+    // Strip printed or handwritten suffixes from Line 1 ("ភេទ...", "អាយុ...", "ថ្នាក់ទី...") and Line 2 bleed ("កម្រង ហ៊ុន ណេង", "ពុទ្ធិកបឋមសិក្សា", "វត្តខេមវ័ន")
+    .replace(/\s*(ភេទ|បព្វជិត|អាយុ|ជាសមណសិស្ស|ជាសិស្ស|ថ្នាក់ទី|នៃសាលា|ពុទ្ធិកបឋមសិក្សា|កម្រង|វត្តខេមវ័ន|ខេមវ័ន|បឹងកុក|ហ៊ុន\s*ណេង).*$/gi, '')
     .replace(/[៖:.…_()[\]«»"']/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -220,6 +220,12 @@ export function computeKhmerNameSimilarity(nameA, nameB) {
   const maxPenLen = Math.max(penA.length, penB.length);
   const penSim = maxPenLen > 0 ? (1 - (penDist / maxPenLen)) * 0.92 : 0;
 
+  // Cursive 3-loop lookalike skeleton (in fast Khmer ballpoint pen ink, ឈ, ណ, and ញ share the same 3-loop baseline)
+  const loopA = penA.replace(/ន/g, 'ច');
+  const loopB = penB.replace(/ន/g, 'ច');
+  const maxLoopLen = Math.max(loopA.length, loopB.length);
+  const loopSim = maxLoopLen >= 6 ? (1 - (levenshteinDistance(loopA, loopB) / maxLoopLen)) * 0.89 : 0;
+
   // Word-by-word (Surname + Given Name) structural comparison
   const wordsA = cleanA.split(/\s+/).filter(Boolean);
   const wordsB = cleanB.split(/\s+/).filter(Boolean);
@@ -237,7 +243,7 @@ export function computeKhmerNameSimilarity(nameA, nameB) {
     wordPartSim = (surScore * 0.48 + givScore * 0.52) * 0.96;
   }
 
-  return Math.max(rawSim, skelSim, penSim, wordPartSim);
+  return Math.max(rawSim, skelSim, penSim, loopSim, wordPartSim);
 }
 
 /**
@@ -287,8 +293,25 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER, 
       const isRightGrade = !normGrade || skelMatches[0].grade === normGrade;
       return { student: skelMatches[0], confidence: isRightGrade ? 0.97 : 0.88, isExact: false };
     } else if (skelMatches.length > 1 && normGrade) {
-      const gradeFiltered = skelMatches.find(s => s.grade === normGrade);
-      if (gradeFiltered) return { student: gradeFiltered, confidence: 0.97, isExact: false };
+      const gradeFiltered = skelMatches.filter(s => s.grade === normGrade);
+      if (gradeFiltered.length === 1) return { student: gradeFiltered[0], confidence: 0.97, isExact: false };
+    }
+  }
+
+  // 2.5. Phonetic / Homophone Consonant Skeleton match for young novices who confuse similar sounds
+  //      (e.g. ឆ↔ឈ↔ជ↔ច: writing "ឈេងអាន ឈាងហេង" for "ឆេងអាន ឈាងហេង", គ↔ឃ, ណ↔ន, ដ↔ឌ↔ត↔ទ↔ធ, ល↔ឡ)
+  const penInput = normalizeKhmerPenVisualSkeleton(strippedName);
+  if (penInput.length >= 4) {
+    const penMatches = studentList.filter(s => {
+      const candidates = [s.name, ...(s.aliases || [])];
+      return candidates.some(c => normalizeKhmerPenVisualSkeleton(c) === penInput);
+    });
+    if (penMatches.length === 1) {
+      const isRightGrade = !normGrade || penMatches[0].grade === normGrade;
+      return { student: penMatches[0], confidence: isRightGrade ? 0.96 : 0.87, isExact: false };
+    } else if (penMatches.length > 1 && normGrade) {
+      const gradeFiltered = penMatches.filter(s => s.grade === normGrade);
+      if (gradeFiltered.length === 1) return { student: gradeFiltered[0], confidence: 0.96, isExact: false };
     }
   }
 
@@ -332,6 +355,26 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER, 
       if (uniqueGivenMatches.length === 1) {
         return { student: uniqueGivenMatches[0], confidence: 0.89, isExact: false };
       }
+    }
+  }
+
+  // 3.6. Grade + Unique Multi-Syllable Prefix Match (when a 3- or 4-syllable name squeezes its last syllable
+  //      against printed "ភេទ:" on Line 1, e.g. reading "ឈាង អាន ណាង" / "ឈេងអាន ឈាង" for "ឆេងអាន ឈាងហេង" in Grade 2)
+  const inputLoopSkel = normalizeKhmerPenVisualSkeleton(strippedName).replace(/ន/g, 'ច');
+  if (normGrade && inputLoopSkel.length >= 7) {
+    const sameGradeStudents = studentList.filter(s => s.grade === normGrade);
+    const uniquePrefixMatches = sameGradeStudents.filter(s => {
+      const candidates = [s.name, ...(s.aliases || [])];
+      return candidates.some(cand => {
+        const candLoop = normalizeKhmerPenVisualSkeleton(cand).replace(/ន/g, 'ច');
+        if (candLoop.length < inputLoopSkel.length || candLoop.length > inputLoopSkel.length + 4) return false;
+        const candPrefix = candLoop.slice(0, inputLoopSkel.length);
+        const sim = 1 - (levenshteinDistance(inputLoopSkel, candPrefix) / inputLoopSkel.length);
+        return sim >= 0.85;
+      });
+    });
+    if (uniquePrefixMatches.length === 1) {
+      return { student: uniquePrefixMatches[0], confidence: 0.91, isExact: false };
     }
   }
 

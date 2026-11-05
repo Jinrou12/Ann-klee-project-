@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Trash2 } from 'lucide-react';
 import { toKhmerDigits, parseDurationShorthand } from '../utils/khmerNumerals';
+import { getMonthEndReportDates } from '../utils/khmerCalendar';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 
 /**
@@ -14,6 +15,7 @@ export default function OfficialLeaveDocument({
   monthName = 'កក្កដា',
   yearDisplay = '២០២៦',
   useKhmerNumerals = true,
+  monthKey = '2026-07',
   isEditable = false,
   editingRowId = null,
   setEditingRowId = () => {},
@@ -21,6 +23,12 @@ export default function OfficialLeaveDocument({
   handleDeleteRow = () => {},
   studentMaster = []
 }) {
+  // Automatically calculate the last working day of the month (excluding Saturday/Sunday)
+  const reportDates = useMemo(() => getMonthEndReportDates(monthKey, {
+    watName: metadata.wat,
+    customLunarTemplate: metadata.lunarDateHeader,
+    useKhmerNumerals
+  }), [monthKey, metadata.wat, metadata.lunarDateHeader, useKhmerNumerals]);
   return (
     <div id={id} className="printable-document">
       {/* Header Block */}
@@ -293,8 +301,8 @@ export default function OfficialLeaveDocument({
           <div className="font-moul" style={{ fontSize: 13, marginBottom: 4, whiteSpace: 'nowrap' }}>
             បានឃើញ និង..................
           </div>
-          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ.......................ខែ..................ឆ្នាំមមីអដ្ឋស័ក ព.ស ២៥៧០</div>
-          <div style={{ whiteSpace: 'nowrap' }}>ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ២០២៦</div>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ.......................ខែ..................ឆ្នាំ{reportDates.zodiac || 'មមី'}{reportDates.sak || 'អដ្ឋស័ក'} ព.ស {reportDates.beYear || '២៥៧០'}</div>
+          <div style={{ whiteSpace: 'nowrap' }}>ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ{reportDates.yearKhmer}</div>
           <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
@@ -302,10 +310,10 @@ export default function OfficialLeaveDocument({
           </div>
         </div>
 
-        {/* Right Signature: Reporter */}
+        {/* Right Signature: Reporter (Automatically calculated last working day, excluding Sat/Sun) */}
         <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
-          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃសុក្រ២រោច ខែទុតិយាសាឍ ឆ្នាំមមី អដ្ឋស័ក ព.ស ២៥៧០</div>
-          <div style={{ whiteSpace: 'nowrap' }}>ត្រូវនឹងថ្ងៃទី៣១ ខែកក្កដា ឆ្នាំ២០២៦</div>
+          <div style={{ whiteSpace: 'nowrap' }}>{reportDates.lunarDateText}</div>
+          <div style={{ whiteSpace: 'nowrap' }}>{reportDates.solarDateTextLeave}</div>
           <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>

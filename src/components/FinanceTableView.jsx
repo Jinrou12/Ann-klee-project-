@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Printer, FileSpreadsheet, DollarSign, ArrowDownRight, ArrowUpRight, Download, Loader2 } from 'lucide-react';
-import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber } from '../utils/khmerNumerals';
+import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals } from '../utils/khmerNumerals';
 import { exportFinanceToExcel } from '../utils/excelExporter';
 import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
@@ -29,7 +29,10 @@ export default function FinanceTableView({
   const incomeList = financeData.income || [];
   const expenseList = financeData.expense || [];
 
-  // Auto-calculated totals
+  // Auto-calculated totals (supporting Multi-Currency KHR / USD)
+  const incomeTotals = sumByCurrency(incomeList);
+  const expenseTotals = sumByCurrency(expenseList);
+  const balanceTotals = combineCurrencyTotals(incomeTotals, expenseTotals, -1);
   const totalIncome = incomeList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const totalExpense = expenseList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const remainingBalance = totalIncome - totalExpense;
@@ -156,15 +159,15 @@ export default function FinanceTableView({
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            background: remainingBalance >= 0 ? '#f0fdf4' : '#fee2e2',
-            border: `1px solid ${remainingBalance >= 0 ? '#bbf7d0' : '#fecaca'}`,
+            background: ((balanceTotals.KHR >= 0 && balanceTotals.USD >= 0)) ? '#f0fdf4' : '#fee2e2',
+            border: `1px solid ${((balanceTotals.KHR >= 0 && balanceTotals.USD >= 0)) ? '#bbf7d0' : '#fecaca'}`,
             padding: '4px 10px',
             borderRadius: 6,
             fontSize: 12,
             fontWeight: 600,
-            color: remainingBalance >= 0 ? '#15803d' : '#b91c1c'
+            color: ((balanceTotals.KHR >= 0 && balanceTotals.USD >= 0)) ? '#15803d' : '#b91c1c'
           }}>
-            <span>សមតុល្យនៅសល់៖ {formatKhmerCurrency(remainingBalance, useKhmerNumerals)}</span>
+            <span>សមតុល្យនៅសល់៖ {formatCurrencyTotals(balanceTotals, useKhmerNumerals)}</span>
           </div>
         </div>
 
@@ -243,6 +246,7 @@ export default function FinanceTableView({
           monthName={monthName}
           yearDisplay={yearDisplay}
           useKhmerNumerals={useKhmerNumerals}
+          monthKey={monthKey}
           isEditable={true}
           editingId={editingId}
           setEditingId={setEditingId}

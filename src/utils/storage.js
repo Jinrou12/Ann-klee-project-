@@ -504,6 +504,64 @@ export const INITIAL_TRAINING_SAMPLES = [
       duration: '១ ថ្ងៃ',
       date: '២១/១០/២០២៦'
     }
+  },
+  {
+    id: 'train-verified-finance-kimmeng-001',
+    docType: 'finance',
+    imageHash: 'c08c1000161037121922213269b20892029202428c028d4619061f840ff00ff8:dd1c68b065b0e130923892ccb34810d802c884c8942c942a85289426ba427922:75',
+    fileName: 'media_1793820582939_13a4cbe6.jpg',
+    originalFileName: 'media_1793820582939_13a4cbe6.jpg',
+    rawOcrFinanceItems: [
+      { desc: 'រូបថត 4x6', unitPrice: 6000, currency: 'KHR', note: 'រោងពុម្ព គឹមម៉េង' },
+      { desc: 'កូពី', unitPrice: 500, currency: 'KHR', note: 'រោងពុម្ព គឹមម៉េង' }
+    ],
+    groundTruth: {
+      items: [
+        {
+          category: 'expense',
+          desc: 'រូបថត & អ៊ុត',
+          qty: '5',
+          unitPrice: 6000,
+          total: 30000,
+          note: 'រោងពុម្ព គឹមម៉េង, ថ្ងៃទី 09/08/2026'
+        },
+        {
+          category: 'expense',
+          desc: 'កូល័រ',
+          qty: '2',
+          unitPrice: 500,
+          total: 1000,
+          note: 'រោងពុម្ព គឹមម៉េង, ថ្ងៃទី 09/08/2026'
+        }
+      ]
+    }
+  },
+  {
+    id: 'train-verified-finance-galaxy-001',
+    docType: 'finance',
+    imageHash: 'c0a5c32fc3af81a50147000f000f003f002f006f803f803f802fe03fe034e03f:21d90161016100b500b7013700360836003600b600b700b70037003700370037:75',
+    fileName: 'media_1793819578299_73a57b72.jpg',
+    originalFileName: 'media_1793819578299_73a57b72.jpg',
+    groundTruth: {
+      items: [
+        {
+          category: 'expense',
+          desc: '2D Desktop Barcode Scanner',
+          qty: '1 គ្រឿង',
+          unitPrice: 65,
+          total: 65,
+          note: 'Galaxy Shop, TEL: 086 605 168'
+        },
+        {
+          category: 'expense',
+          desc: 'សេវាផ្ញើ (Delivery Service)',
+          qty: '1',
+          unitPrice: 2,
+          total: 2,
+          note: 'Galaxy Shop, ផ្ញើទៅវីរៈប៊ុនថាំ សាខាស្រុកពញាក្រែក'
+        }
+      ]
+    }
   }
 ];
 
@@ -540,15 +598,34 @@ function sanitizeTrainingSample(s) {
       copy.fileName = orig;
     }
   }
-  // Extract initial OCR name/reason before stripping heavy base64 rawScan payloads
+  // Extract initial OCR name/reason or initial finance items before stripping heavy base64 rawScan payloads
   const rawLeave = copy.rawOcr?.rawScan?.result?.leaveItems?.[0] || copy.rawOcr?.leaveItems?.[0];
   if (!copy.rawOcrName && rawLeave?.name) {
     copy.rawOcrName = String(rawLeave.name).trim();
   }
+  if (copy.docType === 'finance') {
+    const seedMatch = !copy.rawOcrFinanceItems
+      ? INITIAL_TRAINING_SAMPLES.find(init => init.id === copy.id && Array.isArray(init.rawOcrFinanceItems))
+      : null;
+    const rawFinSource =
+      copy.rawOcrFinanceItems ||
+      seedMatch?.rawOcrFinanceItems ||
+      copy.rawOcr?.initialFinanceItems ||
+      copy.rawOcr?.rawScan?.result?.initialFinanceItems ||
+      copy.rawOcr?.rawScan?.result?.financeItems;
+    if (Array.isArray(rawFinSource) && rawFinSource.length > 0) {
+      copy.rawOcrFinanceItems = rawFinSource.slice(0, 15).map(it => ({
+        desc: String(it?.desc || '').trim(),
+        unitPrice: Number(it?.unitPrice) || 0,
+        currency: it?.currency || 'KHR',
+        note: String(it?.note || '').trim().slice(0, 100)
+      })).filter(it => it.desc);
+    }
+  }
   if (copy.rawOcr) {
     // Strip heavy base64 previewUrl inside rawOcr to keep localStorage and Supabase fast & clean
     copy.rawOcr = {
-      detectedType: copy.rawOcr.detectedType || 'leave',
+      detectedType: copy.rawOcr.detectedType || copy.docType || 'leave',
       initialOcrName: copy.rawOcr.initialOcrName || copy.rawOcrName || '',
     };
   }

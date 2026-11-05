@@ -887,6 +887,7 @@ export default function LeaveMobileView({
           monthName={monthName}
           yearDisplay={yearDisplay}
           useKhmerNumerals={useKhmerNumerals}
+          monthKey={monthKey}
           studentMaster={studentMaster}
         />
       </div>

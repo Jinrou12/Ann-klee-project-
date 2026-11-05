@@ -48,6 +48,84 @@ export function formatKhmerCurrency(amount, useKhmerNumerals = true) {
 }
 
 /**
+ * Multi-Currency Support (Riel ៛ / US Dollar $)
+ * Every finance record may carry `currency: 'KHR' | 'USD'`. Records without the field are legacy Riel (KHR).
+ */
+export const CURRENCY_KHR = 'KHR';
+export const CURRENCY_USD = 'USD';
+
+/** Normalize any AI / user currency hint ("$", "usd", "ដុល្លារ", "៛", "រៀល", "KHR") to 'KHR' | 'USD' */
+export function normalizeCurrency(raw) {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (!s) return CURRENCY_KHR;
+  if (s.includes('$') || s.includes('usd') || s.includes('dollar') || s.includes('ដុល្លារ')) return CURRENCY_USD;
+  return CURRENCY_KHR;
+}
+
+/** Currency symbol for a record / currency code */
+export function getCurrencySymbol(currency) {
+  return normalizeCurrency(currency) === CURRENCY_USD ? '$' : '៛';
+}
+
+/**
+ * Format an amount in its own currency.
+ *  - KHR -> "៤៧ ៣៥០៛" (same as formatKhmerCurrency)
+ *  - USD -> "$១២.៥០" / "$12.50" (2 decimals only when there are cents)
+ */
+export function formatMoney(amount, currency = CURRENCY_KHR, useKhmerNumerals = true) {
+  if (normalizeCurrency(currency) !== CURRENCY_USD) {
+    return formatKhmerCurrency(amount, useKhmerNumerals);
+  }
+  const num = typeof amount === 'number'
+    ? amount
+    : parseFloat(toArabicDigits(String(amount ?? '')).replace(/[^0-9.-]/g, '')) || 0;
+  const rounded = Math.round((Number(num) || 0) * 100) / 100;
+  const hasCents = Math.abs(rounded % 1) > 0.000001;
+  const fixed = Math.abs(rounded).toFixed(hasCents ? 2 : 0);
+  const [intPart, decPart] = fixed.split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const formatted = `${rounded < 0 ? '-' : ''}$${grouped}${decPart ? '.' + decPart : ''}`;
+  return useKhmerNumerals ? toKhmerDigits(formatted) : formatted;
+}
+
+/** Sum a list of finance records per currency -> { KHR: number, USD: number } */
+export function sumByCurrency(list) {
+  const totals = { KHR: 0, USD: 0 };
+  (Array.isArray(list) ? list : []).forEach(item => {
+    const cur = normalizeCurrency(item?.currency);
+    const val = typeof item?.total === 'number' ? item.total : parseKhmerNumber(item?.total);
+    totals[cur] += Number(val) || 0;
+  });
+  totals.USD = Math.round(totals.USD * 100) / 100;
+  return totals;
+}
+
+/** Add / subtract two per-currency totals objects */
+export function combineCurrencyTotals(a = {}, b = {}, sign = 1) {
+  return {
+    KHR: (Number(a.KHR) || 0) + sign * (Number(b.KHR) || 0),
+    USD: Math.round(((Number(a.USD) || 0) + sign * (Number(b.USD) || 0)) * 100) / 100
+  };
+}
+
+/**
+ * Display per-currency totals:
+ *  - only Riel   -> "៤៧ ៣៥០៛"
+ *  - only Dollar -> "$១២.៥០"
+ *  - both        -> "៤៧ ៣៥០៛ + $១២.៥០"
+ *  - none        -> "០៛"
+ */
+export function formatCurrencyTotals(totals = {}, useKhmerNumerals = true, separator = ' + ') {
+  const khr = Number(totals.KHR) || 0;
+  const usd = Number(totals.USD) || 0;
+  const parts = [];
+  if (khr !== 0) parts.push(formatMoney(khr, CURRENCY_KHR, useKhmerNumerals));
+  if (usd !== 0) parts.push(formatMoney(usd, CURRENCY_USD, useKhmerNumerals));
+  if (parts.length === 0) return formatKhmerCurrency(0, useKhmerNumerals);
+  return parts.join(separator);
+}
+
+/**
  * Parse a raw string to a pure float number
  * Handles both Khmer and Arabic digits
  * @param {string|number} input 

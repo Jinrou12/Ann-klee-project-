@@ -1,11 +1,10 @@
 import React from 'react';
-import { FileText, DollarSign, Camera, Monitor, Smartphone } from 'lucide-react';
+import { FileText, DollarSign, Camera, BarChart3, Monitor, Smartphone } from 'lucide-react';
 import { toKhmerDigits } from '../../utils/khmerNumerals';
 
 export default function MobileBottomNav({
   activeTab,
   onSelectTab,
-  leaveCount = 0,
   queueCount = 0,
   useKhmerNumerals = true,
   isForcedDesktop = false,
@@ -14,21 +13,35 @@ export default function MobileBottomNav({
   const tabs = [
     {
       id: 'leave',
-      label: 'ច្បាប់សិស្ស',
+      label: 'សុំច្បាប់',
       icon: FileText,
-      badge: leaveCount > 0 ? (useKhmerNumerals ? toKhmerDigits(leaveCount) : leaveCount) : null
+      iconColor: '#d97706',
+      iconBg: '#fef3c7',
+      badge: null
     },
     {
       id: 'finance',
-      label: 'ចំណូល-ចំណាយ',
+      label: 'ចំណូល/ចំណាយ',
       icon: DollarSign,
+      iconColor: '#16a34a',
+      iconBg: '#dcfce7',
       badge: null
     },
     {
       id: 'upload',
-      label: 'ស្កេនរូបភាព',
+      label: 'ស្កេន & OCR',
       icon: Camera,
+      iconColor: '#2563eb',
+      iconBg: '#dbeafe',
       badge: queueCount > 0 ? (useKhmerNumerals ? toKhmerDigits(queueCount) : queueCount) : null
+    },
+    {
+      id: 'summary',
+      label: 'ស្ថិតិរួម',
+      icon: BarChart3,
+      iconColor: '#7c3aed',
+      iconBg: '#ede9fe',
+      badge: null
     }
   ];
 
@@ -47,7 +60,7 @@ export default function MobileBottomNav({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-around',
-        padding: '6px 8px env(safe-area-inset-bottom, 8px)'
+        padding: '6px 6px env(safe-area-inset-bottom, 8px)'
       }}
     >
       {tabs.map(tab => {
@@ -64,22 +77,32 @@ export default function MobileBottomNav({
               alignItems: 'center',
               justifyContent: 'center',
               gap: 3,
-              background: 'transparent',
-              border: 'none',
-              padding: '6px 4px',
-              borderRadius: 8,
+              background: isActive ? '#fffbeb' : 'transparent',
+              border: isActive ? '1px solid #fde68a' : '1px solid transparent',
+              padding: '5px 2px',
+              borderRadius: 10,
               cursor: 'pointer',
-              color: isActive ? '#b45309' : '#64748b',
+              color: isActive ? '#b45309' : '#334155',
               position: 'relative'
             }}
           >
-            <div style={{ position: 'relative' }}>
-              <Icon size={20} strokeWidth={isActive ? 2.4 : 1.8} />
+            <div style={{
+              position: 'relative',
+              width: 28,
+              height: 28,
+              borderRadius: 8,
+              background: tab.iconBg,
+              color: tab.iconColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Icon size={17} strokeWidth={2.3} />
               {tab.badge && (
                 <span style={{
                   position: 'absolute',
                   top: -4,
-                  right: -10,
+                  right: -8,
                   background: '#dc2626',
                   color: '#ffffff',
                   fontSize: 10,
@@ -94,9 +117,10 @@ export default function MobileBottomNav({
               )}
             </div>
             <span style={{
-              fontSize: 11,
-              fontWeight: isActive ? 700 : 500,
-              letterSpacing: -0.2
+              fontSize: 10.5,
+              fontWeight: isActive ? 700 : 600,
+              letterSpacing: -0.2,
+              whiteSpace: 'nowrap'
             }}>
               {tab.label}
             </span>
@@ -117,7 +141,7 @@ export default function MobileBottomNav({
             gap: 3,
             background: isForcedDesktop ? '#fef3c7' : 'transparent',
             border: isForcedDesktop ? '1px solid #fde68a' : 'none',
-            padding: '6px 8px',
+            padding: '5px 6px',
             borderRadius: 8,
             cursor: 'pointer',
             color: isForcedDesktop ? '#b45309' : '#94a3b8'

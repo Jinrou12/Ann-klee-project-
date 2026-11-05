@@ -1,39 +1,52 @@
 import React from 'react';
-import { FileText, DollarSign, Camera } from 'lucide-react';
+import { FileText, DollarSign, Camera, BarChart3 } from 'lucide-react';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 
 export default function TabNavigation({
   activeTab,
   onSelectTab,
-  leaveCount = 0,
   queueCount = 0,
-  useKhmerNumerals
+  useKhmerNumerals = true
 }) {
   const tabs = [
     {
       id: 'leave',
-      label: 'ច្បាប់សមណសិស្ស (PDF 2)',
+      label: 'សមណសិស្សសុំច្បាប់',
       icon: FileText,
-      badge: `${useKhmerNumerals ? toKhmerDigits(leaveCount) : leaveCount} អង្គ`
+      iconColor: '#d97706',
+      iconBg: '#fef3c7',
+      badge: null
     },
     {
       id: 'finance',
-      label: 'ចំណូល-ចំណាយ (PDF 1)',
+      label: 'ចំណូល-ចំណាយ',
       icon: DollarSign,
-      badge: 'របាយការណ៍ហិរញ្ញវត្ថុ'
+      iconColor: '#16a34a',
+      iconBg: '#dcfce7',
+      badge: null
     },
     {
       id: 'upload',
       label: 'ស្កេនរូបភាព & OCR',
       icon: Camera,
-      badge: queueCount > 0 ? `${queueCount} រង់ចាំ` : 'Upload'
+      iconColor: '#2563eb',
+      iconBg: '#dbeafe',
+      badge: queueCount > 0 ? `${useKhmerNumerals ? toKhmerDigits(queueCount) : queueCount}` : null
+    },
+    {
+      id: 'summary',
+      label: 'ស្ថិតិរួម',
+      icon: BarChart3,
+      iconColor: '#7c3aed',
+      iconBg: '#ede9fe',
+      badge: null
     }
   ];
 
   return (
     <div className="no-print" style={{
       display: 'flex',
-      gap: 8,
+      gap: 10,
       marginBottom: 20,
       borderBottom: '2px solid #e2e8f0',
       paddingBottom: 4,
@@ -49,29 +62,44 @@ export default function TabNavigation({
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 8,
-              padding: '10px 18px',
-              borderRadius: '8px 8px 0 0',
-              fontWeight: 600,
+              gap: 10,
+              padding: '9px 18px',
+              borderRadius: '10px 10px 0 0',
+              fontWeight: 700,
               fontSize: 14,
-              background: isActive ? '#b45309' : '#f8fafc',
-              color: isActive ? '#ffffff' : '#64748b',
-              border: '1px solid',
-              borderColor: isActive ? '#b45309' : '#e2e8f0',
+              background: isActive ? '#b45309' : '#ffffff',
+              color: isActive ? '#ffffff' : '#334155',
+              borderTop: `1px solid ${isActive ? '#b45309' : '#e2e8f0'}`,
+              borderLeft: `1px solid ${isActive ? '#b45309' : '#e2e8f0'}`,
+              borderRight: `1px solid ${isActive ? '#b45309' : '#e2e8f0'}`,
               borderBottom: 'none',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
-              boxShadow: isActive ? '0 -2px 6px rgba(180,83,9,0.15)' : 'none',
+              boxShadow: isActive ? '0 -2px 8px rgba(180,83,9,0.18)' : '0 1px 2px rgba(0,0,0,0.03)',
               transition: 'all 0.15s'
             }}
           >
-            <Icon size={18} />
+            <span style={{
+              width: 28,
+              height: 28,
+              borderRadius: 8,
+              background: isActive ? '#ffffff' : tab.iconBg,
+              color: tab.iconColor,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
+            }}>
+              <Icon size={17} strokeWidth={2.4} />
+            </span>
             <span>{tab.label}</span>
             {tab.badge && (
               <span style={{
-                background: isActive ? 'rgba(255, 255, 255, 0.25)' : '#e2e8f0',
-                color: isActive ? '#ffffff' : '#475569',
+                background: isActive ? 'rgba(255, 255, 255, 0.25)' : '#fee2e2',
+                color: isActive ? '#ffffff' : '#dc2626',
                 fontSize: 11,
+                fontWeight: 700,
                 padding: '2px 8px',
                 borderRadius: 12
               }}>

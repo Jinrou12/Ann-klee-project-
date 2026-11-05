@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, Plus } from 'lucide-react';
 import { KHMER_SOLAR_MONTHS } from '../utils/khmerCalendar';
 import { toKhmerDigits } from '../utils/khmerNumerals';
@@ -8,19 +8,22 @@ export default function MonthSelector({
   availableMonths,
   onSelectMonth,
   onAddNewMonth,
-  useKhmerNumerals,
-  onToggleNumerals
+  useKhmerNumerals
 }) {
+  const activeYearFromMonth = (currentMonth || '2026-07').split('-')[0] || '2026';
   const [showAddMonth, setShowAddMonth] = useState(false);
-  const [newYear, setNewYear] = useState('2026');
+  const [newYear, setNewYear] = useState(activeYearFromMonth);
   const [newMonthNum, setNewMonthNum] = useState('08');
+
+  useEffect(() => {
+    setNewYear(activeYearFromMonth);
+  }, [activeYearFromMonth]);
 
   const formatMonthLabel = (mKey) => {
     // mKey is in format "YYYY-MM"
-    const [y, m] = mKey.split('-');
+    const [, m] = mKey.split('-');
     const monthName = KHMER_SOLAR_MONTHS[parseInt(m, 10) - 1] || m;
-    const yearDisplay = useKhmerNumerals ? toKhmerDigits(y) : y;
-    return `${monthName} ${yearDisplay}`;
+    return `ខែ${monthName}`;
   };
 
   const handleCreateMonth = (e) => {
@@ -44,24 +47,48 @@ export default function MonthSelector({
       marginBottom: 16,
       boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
     }}>
-      {/* Month picker dropdown */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {/* Month picker: [+] [ខែ ▾] */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#b45309', fontWeight: 600, fontSize: 14 }}>
           <Calendar size={18} />
           <span>ខែប្រចាំការ៖</span>
         </div>
 
+        {/* [+] Compact Add Month Button */}
+        <button
+          type="button"
+          onClick={() => setShowAddMonth(!showAddMonth)}
+          title="បង្កើតខែថ្មី"
+          style={{
+            background: showAddMonth ? '#b45309' : '#f1f5f9',
+            border: '1px solid #cbd5e1',
+            color: showAddMonth ? '#ffffff' : '#334155',
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            transition: 'all 0.15s'
+          }}
+        >
+          <Plus size={16} />
+        </button>
+
+        {/* [ខែ ▾] Month Dropdown */}
         <select
           value={currentMonth}
           onChange={e => onSelectMonth(e.target.value)}
           style={{
             fontSize: 14,
-            fontWeight: 600,
+            fontWeight: 700,
             color: '#0f172a',
             borderColor: '#cbd5e1',
             background: '#f8fafc',
             padding: '6px 14px',
-            borderRadius: 8
+            borderRadius: 8,
+            cursor: 'pointer'
           }}
         >
           {availableMonths.map(mKey => (
@@ -70,25 +97,6 @@ export default function MonthSelector({
             </option>
           ))}
         </select>
-
-        <button
-          onClick={() => setShowAddMonth(!showAddMonth)}
-          style={{
-            background: '#f1f5f9',
-            border: '1px solid #cbd5e1',
-            color: '#334155',
-            padding: '6px 12px',
-            borderRadius: 8,
-            fontSize: 12,
-            fontWeight: 600,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4
-          }}
-        >
-          <Plus size={14} />
-          <span>បង្កើតខែថ្មី</span>
-        </button>
       </div>
 
       {/* New Month Popover Form */}
@@ -102,7 +110,7 @@ export default function MonthSelector({
           borderTop: '1px dashed #e2e8f0',
           marginTop: 6
         }}>
-          <span style={{ fontSize: 13, color: '#64748b' }}>ជ្រើសរើសខែ និងឆ្នាំថ្មី៖</span>
+          <span style={{ fontSize: 13, color: '#64748b' }}>ជ្រើសរើសខែថ្មីក្នុងឆ្នាំ {useKhmerNumerals ? toKhmerDigits(newYear) : newYear}៖</span>
           <select
             value={newMonthNum}
             onChange={e => setNewMonthNum(e.target.value)}
@@ -113,12 +121,6 @@ export default function MonthSelector({
               return <option key={val} value={val}>{mName}</option>;
             })}
           </select>
-          <input
-            type="number"
-            value={newYear}
-            onChange={e => setNewYear(e.target.value)}
-            style={{ width: 80, fontSize: 13, padding: '4px 8px' }}
-          />
           <button
             type="submit"
             style={{

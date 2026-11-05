@@ -182,6 +182,7 @@ export default function LeaveTableView({
           monthName={monthName}
           yearDisplay={yearDisplay}
           useKhmerNumerals={useKhmerNumerals}
+          monthKey={monthKey}
           isEditable={true}
           editingRowId={editingRowId}
           setEditingRowId={setEditingRowId}
@@ -189,7 +190,7 @@ export default function LeaveTableView({
           handleDeleteRow={handleDeleteRow}
           studentMaster={studentMaster}
         />
-    </A4SheetScaler>
+      </A4SheetScaler>
   </div>
   );
 }

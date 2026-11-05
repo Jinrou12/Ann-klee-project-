@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Camera, Upload, Trash2, CheckCircle2, Sparkles, RefreshCw, ZoomIn, X, RotateCw, ArrowRight, AlertTriangle } from 'lucide-react';
 import { matchStudentName, getPhoneticStudentSuggestions, getRealReasonSuggestions } from '../utils/studentMaster';
-import { parseDurationShorthand, getDurationSuggestions } from '../utils/khmerNumerals';
+import { parseDurationShorthand, getDurationSuggestions, toArabicDigits, sumByCurrency, formatCurrencyTotals, getCurrencySymbol, normalizeCurrency } from '../utils/khmerNumerals';
 import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
 import ReviewModal from './ReviewModal';
+import CurrencyToggle from './CurrencyToggle';
+
+// Keep typed amounts as raw text (so "12." / "12.5" for USD cents can be typed), Khmer digits -> Arabic
+const sanitizeAmountInput = (raw) => toArabicDigits(String(raw ?? '')).replace(/[^0-9.]/g, '');
 
 export default function UploadSection({
   queue = [],
@@ -21,7 +25,7 @@ export default function UploadSection({
   isProcessing = false,
   isMobile = false
 }) {
-  const [docTypeHint, setDocTypeHint] = useState('auto');
+  const docTypeHint = 'auto';
   const [selectedReviewIndex, setSelectedReviewIndex] = useState(null);
   const [focusedField, setFocusedField] = useState(null); // { itemId, field: 'name' | 'reason' }
   const trainingDataset = useMemo(() => getStoredTrainingDataset(), [queue.length]);
@@ -36,42 +40,6 @@ export default function UploadSection({
   const handleNavigateNext = () => {
     if (hasNext) setSelectedReviewIndex(idx => idx + 1);
   };
-
-  // Auto-heal / Auto-classify images based on orientation and file characteristics
-  useEffect(() => {
-    queue.forEach(item => {
-      if (item.status === 'processed' && item.previewUrl) {
-        const img = new Image();
-        img.onload = () => {
-          const isPortrait = (img.naturalHeight || img.height) >= (img.naturalWidth || img.width) * 1.05;
-          const resultData = item.processedData?.result || item.processedData || {};
-          const currentType = item.processedData?.detectedType || resultData.detectedType;
-
-          // If vertical portrait (A4 document) and classified as finance, auto-correct to leave
-          if (isPortrait && currentType === 'finance') {
-            const existingLeave = item.processedData?.leaveItems?.[0] || {};
-            const defaultLeave = {
-              name: existingLeave.name || '',
-              grade: existingLeave.grade || '៣',
-              reason: existingLeave.reason || '',
-              duration: existingLeave.duration || '១ថ្ងៃ',
-              date: existingLeave.date || new Date().toLocaleDateString('en-GB'),
-              note: existingLeave.note || ''
-            };
-            onUpdateQueueItem(item.id, {
-              processedData: {
-                ...item.processedData,
-                detectedType: 'leave',
-                leaveItems: [defaultLeave],
-                autoClassified: true
-              }
-            });
-          }
-        };
-        img.src = item.previewUrl;
-      }
-    });
-  }, [queue.length]);
 
   const handleFiles = (e) => {
     const files = Array.from(e.target.files || []);
@@ -147,52 +115,25 @@ export default function UploadSection({
     <div className="no-print">
       {/* Upload Box & Controls */}
       <div className="app-card" style={{ padding: isMobile ? '16px 12px' : 24, textAlign: 'center', background: '#ffffff', marginBottom: 20 }}>
-        {!isMobile && (
-          <div className="hide-on-mobile">
+        {!isMobile ? (
+          <div className="hide-on-mobile" style={{ marginBottom: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#0f172a' }}>
-              បញ្ចូលរូបថតក្រដាសសុំច្បាប់ ឬប៉ុងចំណាយ (Instant AI Scan)
+              បញ្ចូលរូបថតក្រដាសសុំច្បាប់ ឬប៉ុងចំណាយ (Smart Auto-Detect Scan)
             </h2>
-            <p style={{ fontSize: 13, color: '#64748b', maxWidth: 650, margin: '0 auto 20px' }}>
-              បងអាចថតរូបផ្ទាល់ ឬ Upload រូបថតក្រដាសសុំច្បាប់/ប៉ុងលុយ។ <strong>ប្រព័ន្ធនឹងស្រង់ទិន្នន័យបង្ហាញក្នុងតារាងខាងក្រោមភ្លាមៗ ឱ្យបងកែសម្រួលផ្ទាល់ដៃមុនបញ្ចូល!</strong>
+            <p style={{ fontSize: 13, color: '#64748b', maxWidth: 650, margin: '0 auto' }}>
+              បងអាចថតរូបផ្ទាល់ ឬ Upload រូបថតក្រដាសសុំច្បាប់ និងប៉ុងចំណាយ-ចំណូល — <strong>ប្រព័ន្ធ AI នឹង Auto-Detect ចែកបន្ទប់ស្វ័យប្រវត្តិតាមប្រភេទឯកសារភ្លាមៗ!</strong>
             </p>
           </div>
+        ) : (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+              ថតរូប ឬបញ្ចូលឯកសារ (Auto-detect)
+            </div>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+              ស្គាល់ទាំងក្រដាសសុំច្បាប់ (PDF 2) និងប៉ុងចំណាយ (PDF 1)
+            </div>
+          </div>
         )}
-
-        {/* Document Type Hint Radio */}
-        <div style={{
-          display: 'inline-flex',
-          background: '#f1f5f9',
-          padding: 4,
-          borderRadius: 8,
-          marginBottom: isMobile ? 14 : 20,
-          gap: 4
-        }}>
-          {[
-            { id: 'auto', label: isMobile ? 'ស្វ័យប្រវត្តិ' : 'ស្វ័យប្រវត្តិ (Auto-detect)' },
-            { id: 'leave', label: isMobile ? 'ក្រដាសសុំច្បាប់' : 'ក្រដាសសុំច្បាប់ (Leave Slip)' },
-            { id: 'finance', label: isMobile ? 'ប៉ុងចំណាយ/ចំណូល' : 'ប៉ុងចំណាយ/ចំណូល (Receipt)' },
-          ].map(opt => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => setDocTypeHint(opt.id)}
-              style={{
-                background: docTypeHint === opt.id ? '#ffffff' : 'transparent',
-                color: docTypeHint === opt.id ? '#b45309' : '#64748b',
-                fontWeight: 600,
-                fontSize: isMobile ? 12 : 13,
-                padding: isMobile ? '6px 10px' : '6px 14px',
-                borderRadius: 6,
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: docTypeHint === opt.id ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
 
         {/* Drag Drop Area */}
         <div style={{
@@ -481,14 +422,20 @@ export default function UploadSection({
               };
 
               // Finance fields
-              const financeItem = item.processedData?.financeItems?.[0] || resultData.financeItems?.[0] || {
+              const rawFinances = item.processedData?.financeItems || resultData.financeItems || [];
+              const hasMultipleFinances = Array.isArray(rawFinances) && rawFinances.length > 1;
+              const financeItem = rawFinances[0] || {
                 category: 'expense',
                 desc: '',
                 qty: '1',
                 unitPrice: 0,
                 total: 0,
+                currency: 'KHR',
                 note: ''
               };
+              // Multi-currency grand total: "47,350៛" / "$12.50" / "47,350៛ + $12.50"
+              const grandFinanceTotals = sumByCurrency(hasMultipleFinances ? rawFinances : [financeItem]);
+              const grandFinanceTotalLabel = formatCurrencyTotals(grandFinanceTotals, false);
 
               // Student match suggestion
               const studentMatch = isLeave ? matchStudentName(leaveItem.name, studentMaster) : null;
@@ -511,11 +458,15 @@ export default function UploadSection({
                 onUpdateQueueItem(item.id, { processedData: updated });
               };
 
-              const updateFinanceField = (field, val) => {
+              const updateFinanceField = (field, val, itemIdx = 0) => {
+                const currentList = Array.isArray(item.processedData?.financeItems) && item.processedData.financeItems.length > 0
+                  ? [...item.processedData.financeItems]
+                  : [{ ...financeItem }];
+                currentList[itemIdx] = { ...(currentList[itemIdx] || financeItem), [field]: val };
                 const updated = {
                   ...item.processedData,
                   detectedType: 'finance',
-                  financeItems: [{ ...financeItem, [field]: val }]
+                  financeItems: currentList
                 };
                 onUpdateQueueItem(item.id, { processedData: updated });
               };
@@ -525,6 +476,27 @@ export default function UploadSection({
                   ...item.processedData,
                   detectedType: type
                 };
+                if (type === 'leave' && (!updated.leaveItems || updated.leaveItems.length === 0)) {
+                  updated.leaveItems = [{
+                    name: '',
+                    grade: '៣',
+                    reason: '',
+                    duration: '១ថ្ងៃ',
+                    date: new Date().toLocaleDateString('en-GB'),
+                    note: ''
+                  }];
+                }
+                if (type === 'finance' && (!updated.financeItems || updated.financeItems.length === 0)) {
+                  updated.financeItems = [{
+                    category: 'expense',
+                    desc: '',
+                    qty: '1',
+                    unitPrice: 0,
+                    total: 0,
+                    currency: 'KHR',
+                    note: ''
+                  }];
+                }
                 onUpdateQueueItem(item.id, { processedData: updated });
               };
 
@@ -1139,46 +1111,95 @@ export default function UploadSection({
                               </div>
                             </div>
 
-                            <div>
-                              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
-                                បរិមាណ / ចំនួន៖
-                              </label>
-                              <input
-                                type="text"
-                                value={financeItem.qty || ''}
-                                onChange={e => updateFinanceField('qty', e.target.value)}
-                                placeholder="ឧ. 1 សន្លឹក..."
-                                style={{
-                                  width: '100%',
-                                  fontSize: 13,
-                                  padding: '6px 8px',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: 6,
-                                  background: '#ffffff'
-                                }}
-                              />
-                            </div>
+                            {hasMultipleFinances ? (
+                              <>
+                                <div>
+                                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
+                                    មុខទំនិញ៖
+                                  </label>
+                                  <div style={{
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    color: '#0f766e',
+                                    padding: '6px 8px',
+                                    background: '#f0fdfa',
+                                    border: '1px solid #ccfbf1',
+                                    borderRadius: 6
+                                  }}>
+                                    {rawFinances.length} មុខក្នុងប៉ុង
+                                  </div>
+                                </div>
 
-                            <div>
-                              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
-                                តម្លៃសរុប (៛)៖
-                              </label>
-                              <input
-                                type="number"
-                                value={financeItem.total || 0}
-                                onChange={e => updateFinanceField('total', Number(e.target.value))}
-                                style={{
-                                  width: '100%',
-                                  fontSize: 14,
-                                  fontWeight: 700,
-                                  color: '#b45309',
-                                  padding: '6px 8px',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: 6,
-                                  background: '#ffffff'
-                                }}
-                              />
-                            </div>
+                                <div>
+                                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
+                                    សរុបរួម៖
+                                  </label>
+                                  <div style={{
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    color: '#b45309',
+                                    padding: '6px 8px',
+                                    background: '#fffbeb',
+                                    border: '1px solid #fed7aa',
+                                    borderRadius: 6,
+                                    wordBreak: 'break-word'
+                                  }}>
+                                    {grandFinanceTotalLabel}
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div>
+                                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
+                                    បរិមាណ / ចំនួន៖
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={financeItem.qty || ''}
+                                    onChange={e => updateFinanceField('qty', e.target.value)}
+                                    placeholder="ឧ. 1 សន្លឹក..."
+                                    style={{
+                                      width: '100%',
+                                      fontSize: 13,
+                                      padding: '6px 8px',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: 6,
+                                      background: '#ffffff'
+                                    }}
+                                  />
+                                </div>
+
+                                <div>
+                                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
+                                    <span>តម្លៃសរុប ({getCurrencySymbol(financeItem.currency)})៖</span>
+                                    <CurrencyToggle
+                                      value={financeItem.currency}
+                                      onChange={cur => updateFinanceField('currency', cur)}
+                                    />
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={String(financeItem.total ?? '')}
+                                    onChange={e => updateFinanceField('total', sanitizeAmountInput(e.target.value))}
+                                    placeholder={normalizeCurrency(financeItem.currency) === 'USD' ? '0.00' : '0'}
+                                    style={{
+                                      width: '100%',
+                                      minWidth: 0,
+                                      boxSizing: 'border-box',
+                                      fontSize: 14,
+                                      fontWeight: 700,
+                                      color: '#b45309',
+                                      padding: '6px 8px',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: 6,
+                                      background: '#ffffff'
+                                    }}
+                                  />
+                                </div>
+                              </>
+                            )}
                           </>
                         )}
                       </div>
@@ -1444,26 +1465,80 @@ export default function UploadSection({
                         </>
                       ) : (
                         /* Bottom Full-Width Section when Finance Receipt is selected */
-                        <div>
-                          <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
-                            ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
-                          </label>
-                          <input
-                            type="text"
-                            value={financeItem.desc || ''}
-                            onChange={e => updateFinanceField('desc', e.target.value)}
-                            placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
-                            style={{
-                              width: '100%',
-                              fontSize: 14,
-                              fontWeight: 600,
-                              padding: '8px 12px',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: 6,
-                              background: '#ffffff'
-                            }}
-                          />
-                        </div>
+                        hasMultipleFinances ? (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                              <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
+                                📦 មុខទំនិញក្នុងប៉ុង ({rawFinances.length} មុខ)៖
+                              </label>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: '#0f766e', background: '#f0fdfa', padding: '2px 8px', borderRadius: 6, border: '1px solid #ccfbf1' }}>
+                                សរុប {grandFinanceTotalLabel}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {rawFinances.map((f, fIdx) => (
+                                <div key={fIdx} style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 8px', minWidth: 0, boxSizing: 'border-box' }}>
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, minWidth: 0 }}>
+                                    <span style={{ background: '#0f766e', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>
+                                      #{fIdx + 1}
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={f.desc || ''}
+                                      onChange={e => updateFinanceField('desc', e.target.value, fIdx)}
+                                      placeholder="ឈ្មោះទំនិញ..."
+                                      style={{ flex: 1, minWidth: 0, width: '100%', boxSizing: 'border-box', fontSize: 13, fontWeight: 600, padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                    />
+                                  </div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6 }}>
+                                    <input
+                                      type="text"
+                                      value={f.qty || ''}
+                                      onChange={e => updateFinanceField('qty', e.target.value, fIdx)}
+                                      placeholder="ចំនួន (ឧ. 5)"
+                                      style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                    />
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={String(f.total ?? '')}
+                                        onChange={e => updateFinanceField('total', sanitizeAmountInput(e.target.value), fIdx)}
+                                        placeholder={`តម្លៃ (${getCurrencySymbol(f.currency)})`}
+                                        style={{ flex: 1, width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, fontWeight: 700, color: '#b45309', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                      />
+                                      <CurrencyToggle
+                                        value={f.currency}
+                                        onChange={cur => updateFinanceField('currency', cur, fIdx)}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
+                              ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
+                            </label>
+                            <input
+                              type="text"
+                              value={financeItem.desc || ''}
+                              onChange={e => updateFinanceField('desc', e.target.value)}
+                              placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
+                              style={{
+                                width: '100%',
+                                fontSize: 14,
+                                fontWeight: 600,
+                                padding: '8px 12px',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6,
+                                background: '#ffffff'
+                              }}
+                            />
+                          </div>
+                        )
                       )}
                     </div>
 
@@ -2236,111 +2311,204 @@ export default function UploadSection({
                       );
                     })() : (
                       /* Dynamic Fields for FINANCE RECEIPT */
-                      <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 8 }}>
-                          <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
-                              ប្រភេទ៖
-                            </label>
-                            <div style={{ display: 'flex', gap: 4 }}>
-                              <button
-                                type="button"
-                                onClick={() => updateFinanceField('category', 'expense')}
+                      hasMultipleFinances ? (
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
+                                📦 មុខទំនិញក្នុងប៉ុង ({rawFinances.length} មុខ)៖
+                              </label>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => updateFinanceField('category', 'expense', 0)}
+                                  style={{
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    background: financeItem.category === 'expense' ? '#ef4444' : '#f1f5f9',
+                                    color: financeItem.category === 'expense' ? '#ffffff' : '#64748b',
+                                    border: 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  ចំណាយ
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateFinanceField('category', 'income', 0)}
+                                  style={{
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    background: financeItem.category === 'income' ? '#10b981' : '#f1f5f9',
+                                    color: financeItem.category === 'income' ? '#ffffff' : '#64748b',
+                                    border: 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  ចំណូល
+                                </button>
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#0f766e', background: '#f0fdfa', padding: '3px 10px', borderRadius: 6, border: '1px solid #ccfbf1' }}>
+                              សរុប {grandFinanceTotalLabel}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {rawFinances.map((f, fIdx) => (
+                              <div key={fIdx} style={{ display: 'grid', gridTemplateColumns: '26px minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto', gap: 8, alignItems: 'center', background: '#ffffff', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
+                                <span style={{ background: '#0f766e', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 4, textAlign: 'center', padding: '2px 0' }}>
+                                  #{fIdx + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={f.desc || ''}
+                                  onChange={e => updateFinanceField('desc', e.target.value, fIdx)}
+                                  placeholder="ឈ្មោះទំនិញ..."
+                                  style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 13, fontWeight: 600, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                />
+                                <input
+                                  type="text"
+                                  value={f.qty || ''}
+                                  onChange={e => updateFinanceField('qty', e.target.value, fIdx)}
+                                  placeholder="ចំនួន (ឧ. 5)"
+                                  style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                />
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={String(f.total ?? '')}
+                                  onChange={e => updateFinanceField('total', sanitizeAmountInput(e.target.value), fIdx)}
+                                  placeholder={`តម្លៃ (${getCurrencySymbol(f.currency)})`}
+                                  style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, fontWeight: 700, color: '#b45309', padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                />
+                                <CurrencyToggle
+                                  value={f.currency}
+                                  onChange={cur => updateFinanceField('currency', cur, fIdx)}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginBottom: 8 }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                                ប្រភេទ៖
+                              </label>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => updateFinanceField('category', 'expense')}
+                                  style={{
+                                    flex: 1,
+                                    padding: '5px',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    background: financeItem.category === 'expense' ? '#ef4444' : '#f1f5f9',
+                                    color: financeItem.category === 'expense' ? '#ffffff' : '#64748b',
+                                    border: 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  ចំណាយ
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateFinanceField('category', 'income')}
+                                  style={{
+                                    flex: 1,
+                                    padding: '5px',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    background: financeItem.category === 'income' ? '#10b981' : '#f1f5f9',
+                                    color: financeItem.category === 'income' ? '#ffffff' : '#64748b',
+                                    border: 'none',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  ចំណូល
+                                </button>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                                ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
+                              </label>
+                              <input
+                                type="text"
+                                value={financeItem.desc || ''}
+                                onChange={e => updateFinanceField('desc', e.target.value)}
+                                placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
                                 style={{
-                                  flex: 1,
-                                  padding: '5px',
-                                  borderRadius: 4,
-                                  fontSize: 11,
+                                  width: '100%',
+                                  fontSize: 13,
                                   fontWeight: 600,
-                                  background: financeItem.category === 'expense' ? '#ef4444' : '#f1f5f9',
-                                  color: financeItem.category === 'expense' ? '#ffffff' : '#64748b',
-                                  border: 'none',
-                                  cursor: 'pointer'
+                                  padding: '6px 10px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: 6
                                 }}
-                              >
-                                ចំណាយ
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => updateFinanceField('category', 'income')}
-                                style={{
-                                  flex: 1,
-                                  padding: '5px',
-                                  borderRadius: 4,
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  background: financeItem.category === 'income' ? '#10b981' : '#f1f5f9',
-                                  color: financeItem.category === 'income' ? '#ffffff' : '#64748b',
-                                  border: 'none',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                ចំណូល
-                              </button>
+                              />
                             </div>
                           </div>
 
-                          <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
-                              ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
-                            </label>
-                            <input
-                              type="text"
-                              value={financeItem.desc || ''}
-                              onChange={e => updateFinanceField('desc', e.target.value)}
-                              placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
-                              style={{
-                                width: '100%',
-                                fontSize: 13,
-                                fontWeight: 600,
-                                padding: '6px 10px',
-                                border: '1px solid #cbd5e1',
-                                borderRadius: 6
-                              }}
-                            />
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                                បរិមាណ / ចំនួន៖
+                              </label>
+                              <input
+                                type="text"
+                                value={financeItem.qty || ''}
+                                onChange={e => updateFinanceField('qty', e.target.value)}
+                                placeholder="ឧ. 1 សន្លឹក, 3 លីត្រ..."
+                                style={{
+                                  width: '100%',
+                                  fontSize: 13,
+                                  padding: '6px 10px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: 6
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                                <span>តម្លៃសរុប ({getCurrencySymbol(financeItem.currency)})៖</span>
+                                <CurrencyToggle
+                                  value={financeItem.currency}
+                                  onChange={cur => updateFinanceField('currency', cur)}
+                                />
+                              </label>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={String(financeItem.total ?? '')}
+                                onChange={e => updateFinanceField('total', sanitizeAmountInput(e.target.value))}
+                                placeholder={normalizeCurrency(financeItem.currency) === 'USD' ? '0.00' : '0'}
+                                style={{
+                                  width: '100%',
+                                  minWidth: 0,
+                                  boxSizing: 'border-box',
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                  color: '#b45309',
+                                  padding: '6px 10px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: 6
+                                }}
+                              />
+                            </div>
                           </div>
                         </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
-                              បរិមាណ / ចំនួន៖
-                            </label>
-                            <input
-                              type="text"
-                              value={financeItem.qty || ''}
-                              onChange={e => updateFinanceField('qty', e.target.value)}
-                              placeholder="ឧ. 1 សន្លឹក, 3 លីត្រ..."
-                              style={{
-                                width: '100%',
-                                fontSize: 13,
-                                padding: '6px 10px',
-                                border: '1px solid #cbd5e1',
-                                borderRadius: 6
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
-                              តម្លៃសរុប (៛)៖
-                            </label>
-                            <input
-                              type="number"
-                              value={financeItem.total || 0}
-                              onChange={e => updateFinanceField('total', Number(e.target.value))}
-                              style={{
-                                width: '100%',
-                                fontSize: 13,
-                                fontWeight: 700,
-                                color: '#b45309',
-                                padding: '6px 10px',
-                                border: '1px solid #cbd5e1',
-                                borderRadius: 6
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      )
                     )}
                   </div>
 
@@ -2434,7 +2602,7 @@ export default function UploadSection({
                 ...selectedReviewItem.processedData,
                 detectedType: type,
                 leaveItems: type === 'leave' ? [item] : [],
-                financeItems: type === 'finance' ? [item] : []
+                financeItems: type === 'finance' ? (selectedReviewItem.processedData?.financeItems?.length > 1 ? selectedReviewItem.processedData.financeItems : [item]) : []
               }
             };
             onApproveItem(updatedItem);

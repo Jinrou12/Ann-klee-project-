@@ -3,10 +3,11 @@ import {
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, Eye, 
   DollarSign, ArrowDownRight, ArrowUpRight, Wallet, ShoppingBag, Search, Download, Loader2, Printer 
 } from 'lucide-react';
-import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber } from '../../utils/khmerNumerals';
+import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, formatMoney, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals, getCurrencySymbol, normalizeCurrency } from '../../utils/khmerNumerals';
 import { exportFinanceToExcel } from '../../utils/excelExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
 import OfficialFinanceDocument from '../OfficialFinanceDocument';
+import CurrencyToggle from '../CurrencyToggle';
 
 export default function FinanceMobileView({
   financeData = { income: [], expense: [] },
@@ -36,7 +37,10 @@ export default function FinanceMobileView({
   const incomeList = financeData.income || [];
   const expenseList = financeData.expense || [];
 
-  // Totals
+  // Totals (supporting Multi-Currency KHR / USD)
+  const incomeTotals = sumByCurrency(incomeList);
+  const expenseTotals = sumByCurrency(expenseList);
+  const balanceTotals = combineCurrencyTotals(incomeTotals, expenseTotals, -1);
   const totalIncome = incomeList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const totalExpense = expenseList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const remainingBalance = totalIncome - totalExpense;
@@ -47,6 +51,7 @@ export default function FinanceMobileView({
     qty: '',
     unitPrice: '',
     total: '',
+    currency: 'KHR',
     note: ''
   });
 
@@ -95,7 +100,8 @@ export default function FinanceMobileView({
     const createdItem = {
       id: `${activeSubTab}-${Date.now()}`,
       ...newItem,
-      total: Number(newItem.total) || 0
+      total: Number(newItem.total) || 0,
+      currency: normalizeCurrency(newItem.currency)
     };
     onUpdateFinance({
       ...financeData,
@@ -107,6 +113,7 @@ export default function FinanceMobileView({
       qty: '',
       unitPrice: '',
       total: '',
+      currency: 'KHR',
       note: ''
     });
   };
@@ -115,12 +122,16 @@ export default function FinanceMobileView({
     const qNum = parseKhmerNumber(qtyVal);
     const pNum = parseKhmerNumber(priceVal);
     if (qNum > 0 && pNum > 0 && !isNaN(qNum) && !isNaN(pNum)) {
-      setter(prev => ({
-        ...prev,
-        qty: qtyVal,
-        unitPrice: priceVal,
-        total: Math.round(qNum * pNum)
-      }));
+      setter(prev => {
+        const isUsd = normalizeCurrency(prev?.currency) === 'USD';
+        const calc = isUsd ? Math.round(qNum * pNum * 100) / 100 : Math.round(qNum * pNum);
+        return {
+          ...prev,
+          qty: qtyVal,
+          unitPrice: priceVal,
+          total: calc
+        };
+      });
     } else {
       setter(prev => ({ ...prev, qty: qtyVal, unitPrice: priceVal }));
     }
@@ -174,8 +185,8 @@ export default function FinanceMobileView({
             <span style={{ fontSize: 12, opacity: 0.9, fontWeight: 600 }}>ប្រាក់សល់បច្ចុប្បន្ន (សមតុល្យ)</span>
             <Wallet size={16} style={{ opacity: 0.8 }} />
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4, letterSpacing: 0.5 }}>
-            {formatKhmerCurrency(remainingBalance, useKhmerNumerals)}
+          <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4, letterSpacing: 0.5, wordBreak: 'break-word' }}>
+            {formatCurrencyTotals(balanceTotals, useKhmerNumerals)}
           </div>
           <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>
             ប្រចាំខែ{monthName} ឆ្នាំ{yearDisplay}
@@ -195,8 +206,8 @@ export default function FinanceMobileView({
               <ArrowDownRight size={14} />
               <span>ចំណូលសរុប</span>
             </div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#15803d', marginTop: 4 }}>
-              {formatKhmerCurrency(totalIncome, useKhmerNumerals)}
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d', marginTop: 4, wordBreak: 'break-word' }}>
+              {formatCurrencyTotals(incomeTotals, useKhmerNumerals)}
             </div>
             <div style={{ fontSize: 11, color: '#64748b' }}>
               {incomeList.length} ប្រតិបត្តិការ
@@ -214,8 +225,8 @@ export default function FinanceMobileView({
               <ArrowUpRight size={14} />
               <span>ចំណាយសរុប</span>
             </div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c', marginTop: 4 }}>
-              {formatKhmerCurrency(totalExpense, useKhmerNumerals)}
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#b91c1c', marginTop: 4, wordBreak: 'break-word' }}>
+              {formatCurrencyTotals(expenseTotals, useKhmerNumerals)}
             </div>
             <div style={{ fontSize: 11, color: '#64748b' }}>
               {expenseList.length} ប្រតិបត្តិការ
@@ -503,7 +514,13 @@ export default function FinanceMobileView({
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>តម្លៃរាយ (៛)</label>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>តម្លៃរាយ ({getCurrencySymbol(editForm.currency)})</label>
+                          <CurrencyToggle
+                            value={editForm.currency}
+                            onChange={cur => setEditForm(prev => ({ ...prev, currency: cur }))}
+                          />
+                        </div>
                         <input
                           type="text"
                           value={editForm.unitPrice || ''}
@@ -522,7 +539,7 @@ export default function FinanceMobileView({
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>សរុប (៛)</label>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>សរុប ({getCurrencySymbol(editForm.currency)})</label>
                         <input
                           type="number"
                           value={editForm.total || 0}
@@ -597,7 +614,7 @@ export default function FinanceMobileView({
                     fontWeight: 800,
                     color: activeSubTab === 'income' ? '#15803d' : '#b91c1c'
                   }}>
-                    {formatKhmerCurrency(item.total, useKhmerNumerals)}
+                    {formatMoney(item.total, item.currency, useKhmerNumerals)}
                   </div>
                 </div>
 
@@ -607,7 +624,7 @@ export default function FinanceMobileView({
                     {item.qty && <span>ចំនួន៖ <strong>{item.qty}</strong></span>}
                     {item.qty && item.unitPrice ? ' • ' : ''}
                     {item.unitPrice && (
-                      <span>តម្លៃរាយ៖ <strong>{formatKhmerCurrency(item.unitPrice, useKhmerNumerals)}</strong></span>
+                      <span>តម្លៃរាយ៖ <strong>{formatMoney(item.unitPrice, item.currency, useKhmerNumerals)}</strong></span>
                     )}
                   </div>
                 )}
@@ -756,10 +773,16 @@ export default function FinanceMobileView({
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>តម្លៃរាយ (៛)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>តម្លៃរាយ ({getCurrencySymbol(newItem.currency)})</label>
+                    <CurrencyToggle
+                      value={newItem.currency}
+                      onChange={cur => setNewItem(prev => ({ ...prev, currency: cur }))}
+                    />
+                  </div>
                   <input
                     type="text"
-                    placeholder="ឧ. 20000"
+                    placeholder={normalizeCurrency(newItem.currency) === 'USD' ? 'ឧ. 5.00' : 'ឧ. 20000'}
                     value={newItem.unitPrice}
                     onChange={(e) => handleAutoCalcTotal(newItem.qty, e.target.value, setNewItem)}
                     style={{
@@ -776,11 +799,11 @@ export default function FinanceMobileView({
 
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>
-                  ទឹកប្រាក់សរុប (៛) <span style={{ color: '#dc2626' }}>*</span>
+                  ទឹកប្រាក់សរុប ({getCurrencySymbol(newItem.currency)}) <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input
                   type="number"
-                  placeholder="ឧ. 40000"
+                  placeholder={normalizeCurrency(newItem.currency) === 'USD' ? 'ឧ. 10.00' : 'ឧ. 40000'}
                   value={newItem.total}
                   onChange={(e) => setNewItem({ ...newItem, total: e.target.value })}
                   style={{
@@ -874,6 +897,7 @@ export default function FinanceMobileView({
           monthName={monthName}
           yearDisplay={yearDisplay}
           useKhmerNumerals={useKhmerNumerals}
+          monthKey={monthKey}
         />
       </div>
     </div>
