@@ -407,6 +407,48 @@ export function matchStudentName(rawName, studentList = DEFAULT_STUDENT_MASTER, 
 }
 
 /**
+ * Rank the closest official roster students for one or more raw OCR handwriting readings
+ * (Line 1 pen-ink name + bottom-right signature name), preferring the slip's grade.
+ * Used to fill / suggest a student when the deterministic matcher is below its strict threshold,
+ * so the name box is never left completely blank when AI did read handwriting.
+ *
+ * @param {string|string[]} rawNames
+ * @param {Array} studentList
+ * @param {string} extractedGrade
+ * @param {number} limit
+ * @returns {Array<{ student: object, score: number, sameGrade: boolean }>}
+ */
+export function getClosestStudentsByOcr(rawNames, studentList = DEFAULT_STUDENT_MASTER, extractedGrade = '', limit = 4) {
+  const readings = (Array.isArray(rawNames) ? rawNames : [rawNames])
+    .map(n => cleanHandwrittenStudentName(n))
+    .filter(n => n.replace(/[\s\u200B]/g, '').length >= 2);
+  if (readings.length === 0 || !Array.isArray(studentList) || studentList.length === 0) return [];
+
+  const normGrade = normalizeStudentGrade(extractedGrade);
+  const ranked = [];
+  for (const s of studentList) {
+    const candidates = [s.name, ...(s.aliases || [])];
+    let best = 0;
+    for (const reading of readings) {
+      for (const cand of candidates) {
+        const sim = computeKhmerNameSimilarity(reading, cand);
+        if (sim > best) best = sim;
+      }
+    }
+    const sameGrade = Boolean(normGrade) && s.grade === normGrade;
+    let score = best;
+    if (normGrade) {
+      score = sameGrade ? Math.min(0.99, best + 0.08) : Math.max(0, best - 0.12);
+    }
+    ranked.push({ student: s, score, sameGrade });
+  }
+
+  return ranked
+    .sort((a, b) => (b.score - a.score) || (Number(b.sameGrade) - Number(a.sameGrade)))
+    .slice(0, Math.max(1, limit));
+}
+
+/**
  * Khmer Consonant Phonetic / Homophone Groups (ក្រុមព្យញ្ជនៈមានសម្លេងស្រដៀងគ្នា)
  */
 export const KHMER_PHONETIC_MAP = {

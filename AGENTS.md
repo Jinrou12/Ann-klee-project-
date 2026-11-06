@@ -81,5 +81,5 @@
 * **គោលការណ៍ Rolling Snapshot**: ផ្នែកនេះត្រូវតែប្រើប្រព័ន្ធ **In-Place Overwrite** រក្សាត្រឹមតែ ៣-៤ បន្ទាត់សង្ខេបចុងក្រោយ (ហាម append logs នាំឱ្យឯកសាររីកធំ)។
 * **កាលបរិច្ឆេទ**: 2026-11-06
 * **គម្រោង**: Ann Klee Project (ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស និងចំណូលចំណាយ)
-* **ស្ថានភាព**: ដោះស្រាយដាច់ស្រឡះបញ្ហាលោត `Offline` លើ Vercel (/mp)៖ បញ្ចូលប្រព័ន្ធប្ដូរវេនសោ AI ទាំង ១៣ គ្រាប់តាម Cloud (`meta.geminiKeys` + Cold-Start Guard), កែការចាប់កំហុស `429` តាម `Model+Key` ក្នុង [ocrCore.js], និងបំបែកស្លាក `Offline` ចេញពីករណីស្កេនបរាជ័យធម្មតា។
+* **ស្ថានភាព**: ដោះស្រាយដាច់ស្រឡះបញ្ហា `leaveItem.name` លោតទទេ (Blank Name) លើ Vercel (/mp)៖ បញ្ចូល Roster Reference តាមថ្នាក់ក្នុង AI Prompt, បង្កើត [OcrNameReviewHint.jsx] និង Fallback Suggestion Pills សម្រាប់ទាំង Mobile & PC, និងផ្ទេរ Routing ទៅ `gemini-3.6-flash` ដើម្បីរក្សា Quota 20 RPD លើ Flash-Preview។
 * **ការងារបន្ទាប់**: រង់ចាំសំណើ ឬមុខងារបន្ទាប់ពីបង។

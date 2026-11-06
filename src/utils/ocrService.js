@@ -16,6 +16,7 @@ import {
 } from './storage';
 import {
   callGeminiJsonWithResilience,
+  GEMINI_ROUTER_MODELS,
   getCandidateApiKeys,
   formatKhmerScanError,
   fileToBase64,
@@ -90,7 +91,8 @@ export async function classifyAndOrientDocument(dataUrl, apiKey = '') {
     apiKey,
     thinkingBudget: 0,
     timeoutMs: 18000,
-    maxTimeoutAttempts: 2
+    maxTimeoutAttempts: 2,
+    models: GEMINI_ROUTER_MODELS
   });
 
   const rawType = String(parsed?.docType || '').trim().toLowerCase();
@@ -137,7 +139,8 @@ export async function detectUprightRotationWithAI(dataUrl, apiKey = '') {
       apiKey,
       thinkingBudget: 0,
       timeoutMs: 18000,
-      maxTimeoutAttempts: 1
+      maxTimeoutAttempts: 1,
+      models: GEMINI_ROUTER_MODELS
     });
     const idx = labels.indexOf(String(parsed?.uprightImage || '').trim().toUpperCase());
     const confidence = Number(parsed?.confidence);

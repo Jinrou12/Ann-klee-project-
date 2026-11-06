@@ -4,6 +4,7 @@ import { matchStudentName, getPhoneticStudentSuggestions, getRealReasonSuggestio
 import { parseDurationShorthand, getDurationSuggestions, normalizeCurrency, getCurrencySymbol } from '../utils/khmerNumerals';
 import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
 import CurrencyToggle from './CurrencyToggle';
+import OcrNameReviewHint from './OcrNameReviewHint';
 
 export default function ReviewModal({
   isOpen,
@@ -704,7 +705,7 @@ export default function ReviewModal({
                         value={leaveItem.name || ''}
                         onFocus={() => setFocusedField('name')}
                         onBlur={() => setTimeout(() => setFocusedField(prev => prev === 'name' ? null : prev), 180)}
-                        onChange={e => applyLeavePatch({ name: e.target.value })}
+                        onChange={e => applyLeavePatch({ name: e.target.value, needsReview: false, reviewSuggestions: [] })}
                         placeholder="វាយឈ្មោះសិស្ស..."
                         style={{
                           width: '100%',
@@ -745,6 +746,10 @@ export default function ReviewModal({
                         </button>
                       )}
                     </div>
+                    <OcrNameReviewHint
+                      leaveItem={leaveItem}
+                      onPick={(pickedName) => applyLeavePatch({ name: pickedName, needsReview: false, reviewSuggestions: [] })}
+                    />
                   </div>
 
                   {/* Row 3: Duration (Inline Label + Input on Same Row) */}
@@ -1008,7 +1013,7 @@ export default function ReviewModal({
                                     type="button"
                                     onMouseDown={e => e.preventDefault()}
                                     onClick={() => {
-                                      applyLeavePatch({ name: s.name, grade: s.grade });
+                                      applyLeavePatch({ name: s.name, grade: s.grade, needsReview: false, reviewSuggestions: [] });
                                       setFocusedField(null);
                                     }}
                                     style={{
@@ -1044,7 +1049,7 @@ export default function ReviewModal({
                                     type="button"
                                     onMouseDown={e => e.preventDefault()}
                                     onClick={() => {
-                                      applyLeavePatch({ name: s.name, grade: s.grade });
+                                      applyLeavePatch({ name: s.name, grade: s.grade, needsReview: false, reviewSuggestions: [] });
                                       setFocusedField(null);
                                     }}
                                     style={{
@@ -1647,7 +1652,7 @@ export default function ReviewModal({
                                 value={leaveItem.name}
                                 onFocus={() => setFocusedField('name')}
                                 onBlur={() => setTimeout(() => setFocusedField(prev => prev === 'name' ? null : prev), 180)}
-                                onChange={e => applyLeavePatch({ name: e.target.value })}
+                                onChange={e => applyLeavePatch({ name: e.target.value, needsReview: false, reviewSuggestions: [] })}
                                 placeholder="វាយអក្សរផ្ដើម ឧ. ច, ឆ, គ, ណ..."
                                 style={{
                                   width: '100%',
@@ -1686,6 +1691,10 @@ export default function ReviewModal({
                                 </button>
                               )}
                             </div>
+                            <OcrNameReviewHint
+                              leaveItem={leaveItem}
+                              onPick={(pickedName) => applyLeavePatch({ name: pickedName, needsReview: false, reviewSuggestions: [] })}
+                            />
                           </div>
                           <div>
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
@@ -1735,7 +1744,7 @@ export default function ReviewModal({
                                             type="button"
                                             onMouseDown={e => e.preventDefault()}
                                             onClick={() => {
-                                              applyLeavePatch({ name: s.name, grade: s.grade });
+                                              applyLeavePatch({ name: s.name, grade: s.grade, needsReview: false, reviewSuggestions: [] });
                                               setFocusedField(null);
                                             }}
                                             style={{
@@ -1771,7 +1780,7 @@ export default function ReviewModal({
                                             type="button"
                                             onMouseDown={e => e.preventDefault()}
                                             onClick={() => {
-                                              applyLeavePatch({ name: s.name, grade: s.grade });
+                                              applyLeavePatch({ name: s.name, grade: s.grade, needsReview: false, reviewSuggestions: [] });
                                               setFocusedField(null);
                                             }}
                                             style={{

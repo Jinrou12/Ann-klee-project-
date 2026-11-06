@@ -8,20 +8,23 @@ import {
 } from './storage';
 
 const sessionBadKeys = new Set();
-const sessionRateLimitedKeys = new Map(); // `${model}:${key}` -> timestampMs
-const RATE_LIMIT_STORAGE_KEY = 'ann_klee_rate_limited_keys_v1';
-const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+const sessionRateLimitedKeys = new Map(); // `${model}:${key}` -> { ts: number, ttl: number }
+const RATE_LIMIT_STORAGE_KEY = 'ann_klee_rate_limited_keys_v2';
+const RATE_LIMIT_RPM_COOLDOWN_MS = 60 * 1000;
+const RATE_LIMIT_DAILY_COOLDOWN_MS = 30 * 60 * 1000;
 
-// Hydrate recent 60s rate-limit marks from sessionStorage so quick refreshes skip exhausted keys immediately
+// Hydrate active rate-limit marks from sessionStorage so refreshes skip exhausted keys immediately
 try {
   if (typeof sessionStorage !== 'undefined') {
     const raw = sessionStorage.getItem(RATE_LIMIT_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       const now = Date.now();
-      Object.entries(parsed || {}).forEach(([k, ts]) => {
-        if (typeof ts === 'number' && (now - ts) < RATE_LIMIT_COOLDOWN_MS) {
-          sessionRateLimitedKeys.set(k, ts);
+      Object.entries(parsed || {}).forEach(([k, entry]) => {
+        const ts = typeof entry === 'number' ? entry : entry?.ts;
+        const ttl = typeof entry === 'object' && entry?.ttl ? entry.ttl : RATE_LIMIT_RPM_COOLDOWN_MS;
+        if (typeof ts === 'number' && (now - ts) < ttl) {
+          sessionRateLimitedKeys.set(k, { ts, ttl });
         }
       });
     }
@@ -30,16 +33,23 @@ try {
   // Ignore sessionStorage errors in private/restricted contexts
 }
 
-function markKeyRateLimited(model, key) {
+function markKeyRateLimited(model, key, errorBodyText = '') {
   const now = Date.now();
+  const lower = String(errorBodyText || '').toLowerCase();
+  const isDailyQuota =
+    lower.includes('perday') ||
+    lower.includes('per_day') ||
+    /retry in \d+h/i.test(lower) ||
+    /retry in [5-9]\dm/i.test(lower);
+  const ttl = isDailyQuota ? RATE_LIMIT_DAILY_COOLDOWN_MS : RATE_LIMIT_RPM_COOLDOWN_MS;
   const compositeKey = `${model}:${key}`;
-  sessionRateLimitedKeys.set(compositeKey, now);
+  sessionRateLimitedKeys.set(compositeKey, { ts: now, ttl });
   try {
     if (typeof sessionStorage !== 'undefined') {
       const obj = {};
-      sessionRateLimitedKeys.forEach((ts, k) => {
-        if ((now - ts) < RATE_LIMIT_COOLDOWN_MS) {
-          obj[k] = ts;
+      sessionRateLimitedKeys.forEach((val, k) => {
+        if (val && typeof val.ts === 'number' && (now - val.ts) < (val.ttl || RATE_LIMIT_RPM_COOLDOWN_MS)) {
+          obj[k] = val;
         }
       });
       sessionStorage.setItem(RATE_LIMIT_STORAGE_KEY, JSON.stringify(obj));
@@ -55,18 +65,28 @@ export const GEMINI_VISION_MODELS = [
   'gemini-3.5-flash'
 ];
 
+// Lightweight Router & Orientation models: preserve `gemini-3-flash-preview` 20 RPD quota exclusively for deep OCR
+export const GEMINI_ROUTER_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3-flash-preview'
+];
+
 export function isKeyUsable(key, model = '') {
   if (!key || sessionBadKeys.has(key)) return false;
   if (model) {
-    const limitedAt = sessionRateLimitedKeys.get(`${model}:${key}`);
-    if (limitedAt && (Date.now() - limitedAt) < RATE_LIMIT_COOLDOWN_MS) {
-      return false;
+    const entry = sessionRateLimitedKeys.get(`${model}:${key}`);
+    if (entry && typeof entry.ts === 'number') {
+      const ttl = entry.ttl || RATE_LIMIT_RPM_COOLDOWN_MS;
+      if ((Date.now() - entry.ts) < ttl) {
+        return false;
+      }
     }
   }
   return true;
 }
 
-export function getCandidateApiKeys(explicitApiKey = '') {
+export function getCandidateApiKeys(explicitApiKey = '', targetModel = '') {
   const pool = getGeminiKeyPool();
   const explicitList = parseApiKeyList(explicitApiKey);
   const customFirst = explicitList.filter(k => !pool.includes(k));
@@ -77,7 +97,7 @@ export function getCandidateApiKeys(explicitApiKey = '') {
     ...DEFAULT_GEMINI_KEYS
   ])).filter(k => k && !sessionBadKeys.has(k));
 
-  const primaryModel = GEMINI_VISION_MODELS[0];
+  const primaryModel = targetModel || GEMINI_VISION_MODELS[0];
   const readyKeys = merged.filter(k => isKeyUsable(k, primaryModel));
   const coolingKeys = merged.filter(k => !isKeyUsable(k, primaryModel));
   return [...readyKeys, ...coolingKeys];
@@ -156,13 +176,15 @@ export async function callGeminiJsonWithResilience({
   thinkingBudget = 0,
   thinkingLevel = '',
   timeoutMs = 26000,
-  maxTimeoutAttempts = 2
+  maxTimeoutAttempts = 2,
+  models = GEMINI_VISION_MODELS
 }) {
-  let keysToTry = getCandidateApiKeys(apiKey);
+  const modelList = Array.isArray(models) && models.length > 0 ? models : GEMINI_VISION_MODELS;
+  let keysToTry = getCandidateApiKeys(apiKey, modelList[0]);
   if (keysToTry.length <= 1 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
     const hydratedPool = await ensureCloudApiKeyPoolLoaded();
     if (hydratedPool.length > 0) {
-      keysToTry = getCandidateApiKeys(apiKey);
+      keysToTry = getCandidateApiKeys(apiKey, modelList[0]);
     }
   }
   if (keysToTry.length === 0) {
@@ -172,7 +194,8 @@ export async function callGeminiJsonWithResilience({
   let lastError = null;
   let timeoutCount = 0;
 
-  for (const model of GEMINI_VISION_MODELS) {
+  for (const model of modelList) {
+    let emptyResponseCount = 0;
     const supportsThinking = !model.includes('lite');
     const supportsThinkingLevel = Boolean(thinkingLevel) && model === 'gemini-3-flash-preview';
     const generationConfig = supportsThinking
@@ -219,7 +242,7 @@ export async function callGeminiJsonWithResilience({
         if (!response.ok) {
           const errText = await response.text().catch(() => '');
           if (response.status === 429) {
-            markKeyRateLimited(model, activeKey);
+            markKeyRateLimited(model, activeKey, errText);
             lastError = new Error('429 Quota Exceeded');
             continue;
           }
@@ -269,6 +292,14 @@ export async function callGeminiJsonWithResilience({
             throw new Error(formatKhmerScanError(err));
           }
           break; // Try 1 fallback model at most on slow/dead connection
+        }
+
+        // Empty / malformed JSON response: retry once with the next key on the same model before falling back
+        const isEmptyOrBadJson = err?.name === 'SyntaxError' || msg.includes('empty gemini response') || msg.includes('invalid json');
+        if (isEmptyOrBadJson && emptyResponseCount < 1) {
+          emptyResponseCount++;
+          console.warn(`🔁 [Empty Response] ${model} returned empty/invalid JSON → trying next key...`);
+          continue;
         }
 
         break;

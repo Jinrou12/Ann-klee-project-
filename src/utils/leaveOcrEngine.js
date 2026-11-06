@@ -4,7 +4,8 @@ import {
   matchStudentName,
   normalizeStudentGrade,
   cleanHandwrittenStudentName,
-  computeKhmerNameSimilarity
+  computeKhmerNameSimilarity,
+  getClosestStudentsByOcr
 } from './studentMaster';
 import { toArabicDigits, toKhmerDigits } from './khmerNumerals';
 import {
@@ -129,16 +130,42 @@ export function createBlankLeaveResult(errorMessage = '', { isTrulyOffline } = {
 }
 
 /**
- * Pure Literal Pen-Ink Transcription for Student Leave Slips (Zero Roster Bias in Prompt!)
- * Enables thinkingBudget: 1024 so Gemini traces every Khmer consonant, subscript, and vowel accurately.
+ * Build a compact official roster block grouped by grade for visual pen-ink cross-checking.
+ */
+function buildOfficialRosterBlock(studentMaster = []) {
+  if (!Array.isArray(studentMaster) || studentMaster.length === 0) return '';
+  const order = ['មត្តេយ្យ', '១', '២', '៣'];
+  const byGrade = new Map();
+  studentMaster.forEach(s => {
+    if (!s?.name) return;
+    const g = s.grade || '';
+    if (!byGrade.has(g)) byGrade.set(g, []);
+    byGrade.get(g).push(s.name);
+  });
+  const grades = Array.from(byGrade.keys()).sort((a, b) => {
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  return grades
+    .map(g => `   - ថ្នាក់ ${g || '?'}: ${byGrade.get(g).join(', ')}`)
+    .join('\n');
+}
+
+/**
+ * Literal Pen-Ink Transcription for Student Leave Slips + Visual Roster Cross-Check.
+ * Step 1 transcribes the literal ink (zero bias), Step 2 re-examines those same ink strokes against
+ * the official roster of the slip's grade so cursive / novice spellings resolve to the real student.
  */
 export async function extractLeaveSlipWithGemini({
   base64,
   mimeType = 'image/jpeg',
   apiKey = '',
   nameLineCropBase64 = '',
-  signatureCropBase64 = ''
+  signatureCropBase64 = '',
+  studentMaster = []
 }) {
+  const rosterBlock = buildOfficialRosterBlock(studentMaster);
   const prompt = [
     'You are an expert Khmer handwriting Paleographer reading a Cambodian Buddhist monastic primary school Student Leave Slip (លិខិតសុំច្បាប់).',
     'Your ONLY task is LITERAL, CHARACTER-BY-CHARACTER transcription of the blue/black ballpoint pen ink written on the form.',
@@ -162,8 +189,20 @@ export async function extractLeaveSlipWithGemini({
     '   - Output format "DD/MM/YYYY" (e.g. day 20, month "តុលា" = 10, year 2026 -> "20/10/2026").',
     '7. REASON ("reason"):',
     '   - Read ONLY the exact handwritten Khmer words after printed "មូលហេតុ :" (e.g. "ឈឺក្បាលវិលមុខ"). Do not add extra words.',
+    ...(rosterBlock
+      ? [
+          '8. OFFICIAL ROSTER VISUAL CROSS-CHECK ("rosterMatchedName" + "rosterConfidence"):',
+          '   - FIRST finish the literal "line1PenInkName" and "signaturePenInkName" above WITHOUT looking at this roster.',
+          '   - THEN re-examine the ACTUAL pen-ink strokes of Line 1 AND the bottom-right signature against the official students below, prioritizing the grade you read.',
+          '   - Young novices often write ឆ/ឈ/ជ, គ/ឃ, ណ/ន, ល/ឡ, ិ/ី/ឹ interchangeably, squeeze the last syllable before "ភេទ:", or join surname + given name in fast cursive.',
+          '   - Output the EXACT official roster spelling ONLY when the visible ink strokes genuinely correspond to that student (same syllable count & stroke shapes).',
+          '   - If the name area is blank/unreadable or no student truly matches, output "" with rosterConfidence 0. NEVER pick a student just to fill the field.',
+          '   OFFICIAL STUDENT ROSTER BY GRADE:',
+          rosterBlock
+        ]
+      : []),
     'Return strictly valid JSON:',
-    '{"detectedType":"leave","rotateClockwiseDegrees":0,"confidence":0.98,"leaveItems":[{"grade":"","line1PenInkName":"","signaturePenInkName":"","duration":"","date":"","reason":"","note":""}]}'
+    '{"detectedType":"leave","rotateClockwiseDegrees":0,"confidence":0.98,"leaveItems":[{"grade":"","line1PenInkName":"","signaturePenInkName":"","rosterMatchedName":"","rosterConfidence":0,"duration":"","date":"","reason":"","note":""}]}'
   ].join('\n');
 
   const parts = [
@@ -316,35 +355,110 @@ export function resolveLeaveSlipItems(rawItems = [], { studentMaster = [], train
       bestMatch = matchLine1 || matchSig;
     }
 
-    if (bestMatch && bestMatch.confidence >= 0.72) {
-      return {
-        ...item,
-        rawHandwrittenName: initialOcrName,
-        name: bestMatch.student.name,
-        grade: bestMatch.student.grade || normGrade || item.grade,
-        reason: cleanReason,
-        duration: cleanDuration,
-        date: cleanDate,
-        note: String(item.note || '').trim(),
-        matchedStudent: bestMatch.student,
-        matchConfidence: bestMatch.confidence,
-        initialOcrName
-      };
+    // 3. Gemini visual roster cross-check (validated strictly against the official roster + literal ink)
+    const rosterPick = resolveRosterPick(item, { studentMaster, normGrade, line1Raw, sigRaw });
+    if (rosterPick) {
+      if (bestMatch && bestMatch.student.id === rosterPick.student.id) {
+        bestMatch = {
+          student: bestMatch.student,
+          confidence: Math.min(1.0, Math.max(bestMatch.confidence, rosterPick.confidence) + 0.03),
+          isExact: bestMatch.isExact
+        };
+      } else if (!bestMatch || bestMatch.confidence < 0.97) {
+        bestMatch = rosterPick;
+      }
     }
 
-    // Strict 80-student roster guard: never emit an unverified name outside the 80 official students
-    return {
+    const baseResult = {
       ...item,
       rawHandwrittenName: initialOcrName,
-      name: '',
-      grade: normGrade || item.grade || '៣',
       reason: cleanReason,
       duration: cleanDuration,
       date: cleanDate,
       note: String(item.note || '').trim(),
       initialOcrName
     };
+
+    if (bestMatch && bestMatch.confidence >= 0.72) {
+      return {
+        ...baseResult,
+        name: bestMatch.student.name,
+        grade: bestMatch.student.grade || normGrade || item.grade,
+        matchedStudent: bestMatch.student,
+        matchConfidence: bestMatch.confidence,
+        needsReview: false
+      };
+    }
+
+    // 4. Medium-confidence fallback: AI DID read handwriting but spelling drifted below the strict threshold.
+    //    Fill the closest official student of the same grade and flag it for a quick human check,
+    //    instead of wiping the name box completely blank. Never invents an 81st student.
+    const closest = initialOcrName
+      ? getClosestStudentsByOcr([line1Raw, sigRaw], studentMaster, normGrade, 4)
+      : [];
+    const top = closest[0];
+    const reviewSuggestions = closest
+      .filter(c => c.score >= 0.45)
+      .map(c => ({ name: c.student.name, grade: c.student.grade, score: Number(c.score.toFixed(2)) }));
+
+    if (top && top.score >= 0.55 && (!normGrade || top.sameGrade)) {
+      return {
+        ...baseResult,
+        name: top.student.name,
+        grade: top.student.grade || normGrade || item.grade,
+        matchedStudent: top.student,
+        matchConfidence: top.score,
+        needsReview: true,
+        reviewSuggestions
+      };
+    }
+
+    // Strict 80-student roster guard: no plausible official student → keep box empty but surface suggestions
+    return {
+      ...baseResult,
+      name: '',
+      grade: normGrade || item.grade || '៣',
+      needsReview: Boolean(initialOcrName),
+      reviewSuggestions
+    };
   });
+}
+
+/**
+ * Validate Gemini's `rosterMatchedName` so it can only ever resolve to an official roster student,
+ * and only when it is consistent with the literal ink readings / grade (anti-hallucination guard).
+ */
+function resolveRosterPick(item, { studentMaster = [], normGrade = '', line1Raw = '', sigRaw = '' }) {
+  const rosterRaw = cleanHandwrittenStudentName(item?.rosterMatchedName || '');
+  const rosterCompact = rosterRaw.replace(/[\s\u200B]/g, '');
+  if (!rosterCompact || !Array.isArray(studentMaster) || studentMaster.length === 0) return null;
+  // No literal ink was read at all → refuse a roster-only guess
+  if (!line1Raw && !sigRaw) return null;
+
+  const rosterConf = Number(item?.rosterConfidence);
+  if (Number.isFinite(rosterConf) && rosterConf > 0 && rosterConf < 0.6) return null;
+
+  const student = studentMaster.find(s => {
+    const names = [s.name, ...(s.aliases || [])].map(n => String(n || '').replace(/[\s\u200B]/g, ''));
+    return names.includes(rosterCompact);
+  });
+  if (!student) return null;
+
+  // Grade consistency: if slip grade was read, the roster pick must be in that grade
+  if (normGrade && student.grade && student.grade !== normGrade) return null;
+
+  // Ink consistency: the roster pick must share visible structure with what was literally written
+  const candidates = [student.name, ...(student.aliases || [])];
+  let inkSim = 0;
+  [line1Raw, sigRaw].filter(Boolean).forEach(reading => {
+    candidates.forEach(c => {
+      inkSim = Math.max(inkSim, computeKhmerNameSimilarity(reading, c));
+    });
+  });
+  if (inkSim < 0.4) return null;
+
+  const confidence = Math.min(0.97, Math.max(0.8, 0.72 + inkSim * 0.3));
+  return { student, confidence, isExact: false, source: 'roster' };
 }
 
 /**
@@ -381,7 +495,8 @@ export async function runLeaveSlipOcrPipeline({
       mimeType,
       apiKey,
       nameLineCropBase64,
-      signatureCropBase64
+      signatureCropBase64,
+      studentMaster
     });
 
     onStageChange?.('match');

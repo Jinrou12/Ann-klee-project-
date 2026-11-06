@@ -5,6 +5,7 @@ import { parseDurationShorthand, getDurationSuggestions, toArabicDigits, sumByCu
 import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
 import ReviewModal from './ReviewModal';
 import CurrencyToggle from './CurrencyToggle';
+import OcrNameReviewHint from './OcrNameReviewHint';
 
 // Keep typed amounts as raw text (so "12." / "12.5" for USD cents can be typed), Khmer digits -> Arabic
 const sanitizeAmountInput = (raw) => toArabicDigits(String(raw ?? '')).replace(/[^0-9.]/g, '');
@@ -952,7 +953,7 @@ export default function UploadSection({
                                   value={leaveItem.name || ''}
                                   onFocus={() => setFocusedField({ itemId: item.id, field: 'name' })}
                                   onBlur={() => setTimeout(() => setFocusedField(prev => (prev?.itemId === item.id && prev?.field === 'name') ? null : prev), 180)}
-                                  onChange={e => updateLeaveField('name', e.target.value)}
+                                  onChange={e => updateLeaveFields({ name: e.target.value, needsReview: false })}
                                   placeholder="វាយឈ្មោះសិស្ស..."
                                   style={{
                                     width: '100%',
@@ -994,6 +995,11 @@ export default function UploadSection({
                                   </button>
                                 )}
                               </div>
+                              <OcrNameReviewHint
+                                leaveItem={leaveItem}
+                                compact
+                                onPick={(s) => updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false })}
+                              />
                             </div>
 
                             {/* Row 3: Duration (Inline Label + Input on Same Row) */}
@@ -1313,7 +1319,7 @@ export default function UploadSection({
                                               type="button"
                                               onMouseDown={e => e.preventDefault()}
                                               onClick={() => {
-                                                updateLeaveFields({ name: s.name, grade: s.grade });
+                                                updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false });
                                                 setFocusedField(null);
                                               }}
                                               style={{
@@ -1349,7 +1355,7 @@ export default function UploadSection({
                                               type="button"
                                               onMouseDown={e => e.preventDefault()}
                                               onClick={() => {
-                                                updateLeaveFields({ name: s.name, grade: s.grade });
+                                                updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false });
                                                 setFocusedField(null);
                                               }}
                                               style={{
@@ -1893,7 +1899,7 @@ export default function UploadSection({
                                   value={leaveItem.name || ''}
                                   onFocus={() => setFocusedField({ itemId: item.id, field: 'name' })}
                                   onBlur={() => setTimeout(() => setFocusedField(prev => (prev?.itemId === item.id && prev?.field === 'name') ? null : prev), 180)}
-                                  onChange={e => updateLeaveField('name', e.target.value)}
+                                  onChange={e => updateLeaveFields({ name: e.target.value, needsReview: false })}
                                   placeholder="វាយអក្សរផ្ដើម ឧ. ច, ឆ, គ, ណ..."
                                   style={{
                                     width: '100%',
@@ -1934,6 +1940,10 @@ export default function UploadSection({
                                   </button>
                                 )}
                               </div>
+                              <OcrNameReviewHint
+                                leaveItem={leaveItem}
+                                onPick={(s) => updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false })}
+                              />
                             </div>
                             <div>
                               <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
@@ -1991,7 +2001,7 @@ export default function UploadSection({
                                               type="button"
                                               onMouseDown={e => e.preventDefault()}
                                               onClick={() => {
-                                                updateLeaveFields({ name: s.name, grade: s.grade });
+                                                updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false });
                                                 setFocusedField(null);
                                               }}
                                               style={{
@@ -2027,7 +2037,7 @@ export default function UploadSection({
                                               type="button"
                                               onMouseDown={e => e.preventDefault()}
                                               onClick={() => {
-                                                updateLeaveFields({ name: s.name, grade: s.grade });
+                                                updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false });
                                                 setFocusedField(null);
                                               }}
                                               style={{
