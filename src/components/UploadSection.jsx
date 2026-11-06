@@ -438,6 +438,39 @@ export default function UploadSection({
               const grandFinanceTotals = sumByCurrency(hasMultipleFinances ? rawFinances : [financeItem]);
               const grandFinanceTotalLabel = formatCurrencyTotals(grandFinanceTotals, false);
 
+              // Detected Dual Currency & Exchange Rate metadata from OCR
+              const detectedExchangeRate = Number(item.processedData?.exchangeRate) || 0;
+              const detectedGrandTotalKhr = Number(item.processedData?.grandTotalKhr) || 0;
+              const detectedGrandTotalUsd = Number(item.processedData?.grandTotalUsd) || 0;
+              const detectedSeller = item.processedData?.seller || '';
+              const detectedInvoiceNo = item.processedData?.invoiceNo || '';
+
+              const convertAllFinanceCurrency = (targetCurrency) => {
+                const currentList = Array.isArray(item.processedData?.financeItems) && item.processedData.financeItems.length > 0
+                  ? [...item.processedData.financeItems]
+                  : [{ ...financeItem }];
+                const rate = detectedExchangeRate || 4055;
+                const updatedList = currentList.map(it => {
+                  const cur = it.currency || 'USD';
+                  if (cur === targetCurrency) return it;
+                  if (targetCurrency === 'KHR') {
+                    const newPrice = Math.round((Number(it.unitPrice) || 0) * rate);
+                    const newTotal = Math.round((Number(it.total) || 0) * rate);
+                    return { ...it, currency: 'KHR', unitPrice: newPrice, total: newTotal };
+                  } else {
+                    const newPrice = Math.round(((Number(it.unitPrice) || 0) / rate) * 100) / 100;
+                    const newTotal = Math.round(((Number(it.total) || 0) / rate) * 100) / 100;
+                    return { ...it, currency: 'USD', unitPrice: newPrice, total: newTotal };
+                  }
+                });
+                const updated = {
+                  ...item.processedData,
+                  detectedType: 'finance',
+                  financeItems: updatedList
+                };
+                onUpdateQueueItem(item.id, { processedData: updated });
+              };
+
               // Student match suggestion
               const studentMatch = isLeave ? matchStudentName(leaveItem.name, studentMaster) : null;
 
@@ -1503,6 +1536,59 @@ export default function UploadSection({
                                 សរុប {grandFinanceTotalLabel}
                               </span>
                             </div>
+
+                            {/* Dual Currency & Exchange Rate Bar */}
+                            {(detectedExchangeRate > 0 || detectedGrandTotalKhr > 0) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 8px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
+                                  💱 {detectedExchangeRate > 0 ? `អត្រា 1$ = ${detectedExchangeRate.toLocaleString()}៛` : 'រូបិយប័ណ្ណពីរ'}៖
+                                </span>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => convertAllFinanceCurrency('USD')}
+                                    style={{
+                                      padding: '2px 8px',
+                                      borderRadius: 4,
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      background: grandFinanceTotals.USD > 0 ? '#0f766e' : '#ffffff',
+                                      color: grandFinanceTotals.USD > 0 ? '#ffffff' : '#334155',
+                                      border: '1px solid #0f766e',
+                                      cursor: 'pointer'
+                                    }}
+                                    title="បម្លែងទំនិញទាំងអស់ជា USD"
+                                  >
+                                    💵 USD {detectedGrandTotalUsd > 0 ? `($${detectedGrandTotalUsd})` : ''}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => convertAllFinanceCurrency('KHR')}
+                                    style={{
+                                      padding: '2px 8px',
+                                      borderRadius: 4,
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      background: grandFinanceTotals.KHR > 0 ? '#0f766e' : '#ffffff',
+                                      color: grandFinanceTotals.KHR > 0 ? '#ffffff' : '#334155',
+                                      border: '1px solid #0f766e',
+                                      cursor: 'pointer'
+                                    }}
+                                    title="បម្លែងទំនិញទាំងអស់ជា KHR តាមអត្រាប្តូរប្រាក់"
+                                  >
+                                    ៛ KHR {detectedGrandTotalKhr > 0 ? `(${detectedGrandTotalKhr.toLocaleString()}៛)` : ''}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Seller & Invoice Metadata */}
+                            {(detectedSeller || detectedInvoiceNo) && (
+                              <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap', fontSize: 11, color: '#475569' }}>
+                                {detectedSeller && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>🏪 {detectedSeller}</span>}
+                                {detectedInvoiceNo && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>📄 {detectedInvoiceNo}</span>}
+                              </div>
+                            )}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                               {rawFinances.map((f, fIdx) => (
                                 <div key={fIdx} style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 8px', minWidth: 0, boxSizing: 'border-box' }}>
@@ -2393,6 +2479,59 @@ export default function UploadSection({
                               សរុប {grandFinanceTotalLabel}
                             </span>
                           </div>
+
+                          {/* Dual Currency & Exchange Rate Bar */}
+                          {(detectedExchangeRate > 0 || detectedGrandTotalKhr > 0) && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 8px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
+                                💱 {detectedExchangeRate > 0 ? `អត្រា 1$ = ${detectedExchangeRate.toLocaleString()}៛` : 'រូបិយប័ណ្ណពីរ'}៖
+                              </span>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => convertAllFinanceCurrency('USD')}
+                                  style={{
+                                    padding: '2px 8px',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    background: grandFinanceTotals.USD > 0 ? '#0f766e' : '#ffffff',
+                                    color: grandFinanceTotals.USD > 0 ? '#ffffff' : '#334155',
+                                    border: '1px solid #0f766e',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="បម្លែងទំនិញទាំងអស់ជា USD"
+                                >
+                                  💵 USD {detectedGrandTotalUsd > 0 ? `($${detectedGrandTotalUsd})` : ''}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => convertAllFinanceCurrency('KHR')}
+                                  style={{
+                                    padding: '2px 8px',
+                                    borderRadius: 4,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    background: grandFinanceTotals.KHR > 0 ? '#0f766e' : '#ffffff',
+                                    color: grandFinanceTotals.KHR > 0 ? '#ffffff' : '#334155',
+                                    border: '1px solid #0f766e',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="បម្លែងទំនិញទាំងអស់ជា KHR តាមអត្រាប្តូរប្រាក់"
+                                >
+                                  ៛ KHR {detectedGrandTotalKhr > 0 ? `(${detectedGrandTotalKhr.toLocaleString()}៛)` : ''}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Seller & Invoice Metadata */}
+                          {(detectedSeller || detectedInvoiceNo) && (
+                            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', fontSize: 11, color: '#475569' }}>
+                              {detectedSeller && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>🏪 {detectedSeller}</span>}
+                              {detectedInvoiceNo && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>📄 {detectedInvoiceNo}</span>}
+                            </div>
+                          )}
 
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {rawFinances.map((f, fIdx) => (

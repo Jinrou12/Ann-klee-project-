@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCw, CheckCircle2, AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, Trash2, Sparkles } from 'lucide-react';
 import { matchStudentName, getPhoneticStudentSuggestions, getRealReasonSuggestions } from '../utils/studentMaster';
-import { parseDurationShorthand, getDurationSuggestions, normalizeCurrency, getCurrencySymbol } from '../utils/khmerNumerals';
+import { parseDurationShorthand, getDurationSuggestions, normalizeCurrency, getCurrencySymbol, sumByCurrency, formatCurrencyTotals } from '../utils/khmerNumerals';
 import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
 import CurrencyToggle from './CurrencyToggle';
 import OcrNameReviewHint from './OcrNameReviewHint';
@@ -126,6 +126,17 @@ export default function ReviewModal({
 
   const studentMatch = matchStudentName(leaveItem.name, studentMaster);
 
+  const rawFinances = queueItem?.processedData?.financeItems || initialExtracted.financeItems || [];
+  const hasMultipleFinances = Array.isArray(rawFinances) && rawFinances.length > 1;
+  const grandFinanceTotals = sumByCurrency(hasMultipleFinances ? rawFinances : [financeItem]);
+  const grandFinanceTotalLabel = formatCurrencyTotals(grandFinanceTotals, false);
+
+  const detectedExchangeRate = Number(queueItem?.processedData?.exchangeRate) || 0;
+  const detectedGrandTotalKhr = Number(queueItem?.processedData?.grandTotalKhr) || 0;
+  const detectedGrandTotalUsd = Number(queueItem?.processedData?.grandTotalUsd) || 0;
+  const detectedSeller = queueItem?.processedData?.seller || '';
+  const detectedInvoiceNo = queueItem?.processedData?.invoiceNo || '';
+
   const applyLeavePatch = (patch) => {
     const updated = { ...leaveItem, ...patch };
     setLeaveItem(updated);
@@ -140,15 +151,50 @@ export default function ReviewModal({
     }
   };
 
-  const applyFinancePatch = (patch) => {
-    const updated = { ...financeItem, ...patch };
-    setFinanceItem(updated);
+  const applyFinancePatch = (patch, index = 0) => {
+    const rawList = Array.isArray(queueItem?.processedData?.financeItems) && queueItem.processedData.financeItems.length > 0
+      ? [...queueItem.processedData.financeItems]
+      : [{ ...financeItem }];
+    rawList[index] = { ...(rawList[index] || financeItem), ...patch };
+    if (index === 0) {
+      setFinanceItem(rawList[0]);
+    }
     if (onUpdateItem) {
       onUpdateItem({
         processedData: {
           ...queueItem.processedData,
           detectedType: 'finance',
-          financeItems: [updated]
+          financeItems: rawList
+        }
+      });
+    }
+  };
+
+  const convertAllFinanceCurrency = (targetCurrency) => {
+    const rawList = Array.isArray(queueItem?.processedData?.financeItems) && queueItem.processedData.financeItems.length > 0
+      ? [...queueItem.processedData.financeItems]
+      : [{ ...financeItem }];
+    const rate = detectedExchangeRate || 4055;
+    const updatedList = rawList.map(it => {
+      const cur = it.currency || 'USD';
+      if (cur === targetCurrency) return it;
+      if (targetCurrency === 'KHR') {
+        const newPrice = Math.round((Number(it.unitPrice) || 0) * rate);
+        const newTotal = Math.round((Number(it.total) || 0) * rate);
+        return { ...it, currency: 'KHR', unitPrice: newPrice, total: newTotal };
+      } else {
+        const newPrice = Math.round(((Number(it.unitPrice) || 0) / rate) * 100) / 100;
+        const newTotal = Math.round(((Number(it.total) || 0) / rate) * 100) / 100;
+        return { ...it, currency: 'USD', unitPrice: newPrice, total: newTotal };
+      }
+    });
+    setFinanceItem(updatedList[0]);
+    if (onUpdateItem) {
+      onUpdateItem({
+        processedData: {
+          ...queueItem.processedData,
+          detectedType: 'finance',
+          financeItems: updatedList
         }
       });
     }
@@ -1183,26 +1229,175 @@ export default function ReviewModal({
                 </div>
               </>
             ) : (
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
-                  ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
-                </label>
-                <input
-                  type="text"
-                  value={financeItem.desc || ''}
-                  onChange={e => applyFinancePatch({ desc: e.target.value })}
-                  placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
-                  style={{
-                    width: '100%',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    padding: '8px 12px',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: 6,
-                    background: '#ffffff'
-                  }}
-                />
-              </div>
+              hasMultipleFinances ? (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
+                      📦 មុខទំនិញក្នុងប៉ុង ({rawFinances.length} មុខ)៖
+                    </label>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#0f766e', background: '#f0fdfa', padding: '2px 8px', borderRadius: 6, border: '1px solid #ccfbf1' }}>
+                      សរុប {grandFinanceTotalLabel}
+                    </span>
+                  </div>
+
+                  {/* Dual Currency & Exchange Rate Bar */}
+                  {(detectedExchangeRate > 0 || detectedGrandTotalKhr > 0) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 8px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
+                        💱 {detectedExchangeRate > 0 ? `អត្រា 1$ = ${detectedExchangeRate.toLocaleString()}៛` : 'រូបិយប័ណ្ណពីរ'}៖
+                      </span>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          type="button"
+                          onClick={() => convertAllFinanceCurrency('USD')}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: grandFinanceTotals.USD > 0 ? '#0f766e' : '#ffffff',
+                            color: grandFinanceTotals.USD > 0 ? '#ffffff' : '#334155',
+                            border: '1px solid #0f766e',
+                            cursor: 'pointer'
+                          }}
+                          title="បម្លែងទំនិញទាំងអស់ជា USD"
+                        >
+                          💵 USD {detectedGrandTotalUsd > 0 ? `($${detectedGrandTotalUsd})` : ''}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => convertAllFinanceCurrency('KHR')}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: grandFinanceTotals.KHR > 0 ? '#0f766e' : '#ffffff',
+                            color: grandFinanceTotals.KHR > 0 ? '#ffffff' : '#334155',
+                            border: '1px solid #0f766e',
+                            cursor: 'pointer'
+                          }}
+                          title="បម្លែងទំនិញទាំងអស់ជា KHR តាមអត្រាប្តូរប្រាក់"
+                        >
+                          ៛ KHR {detectedGrandTotalKhr > 0 ? `(${detectedGrandTotalKhr.toLocaleString()}៛)` : ''}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Seller & Invoice Metadata */}
+                  {(detectedSeller || detectedInvoiceNo) && (
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', fontSize: 11, color: '#475569' }}>
+                      {detectedSeller && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>🏪 {detectedSeller}</span>}
+                      {detectedInvoiceNo && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>📄 {detectedInvoiceNo}</span>}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {rawFinances.map((f, fIdx) => (
+                      <div key={fIdx} style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 8px', minWidth: 0, boxSizing: 'border-box' }}>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, minWidth: 0 }}>
+                          <span style={{ background: '#0f766e', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>
+                            #{fIdx + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={f.desc || ''}
+                            onChange={e => applyFinancePatch({ desc: e.target.value }, fIdx)}
+                            placeholder="ឈ្មោះទំនិញ..."
+                            style={{ flex: 1, minWidth: 0, width: '100%', boxSizing: 'border-box', fontSize: 13, fontWeight: 600, padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                          />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6 }}>
+                          <input
+                            type="text"
+                            value={f.qty || ''}
+                            onChange={e => applyFinancePatch({ qty: e.target.value }, fIdx)}
+                            placeholder="ចំនួន (ឧ. 5)"
+                            style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                            <input
+                              type="number"
+                              value={f.total ?? 0}
+                              onChange={e => applyFinancePatch({ total: Number(e.target.value) }, fIdx)}
+                              placeholder={`តម្លៃ (${getCurrencySymbol(f.currency)})`}
+                              style={{ flex: 1, width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, fontWeight: 700, color: '#b45309', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                            />
+                            <CurrencyToggle
+                              value={f.currency}
+                              onChange={cur => applyFinancePatch({ currency: cur }, fIdx)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {/* Dual Currency & Exchange Rate Bar for Single Item */}
+                  {(detectedExchangeRate > 0 || detectedGrandTotalKhr > 0) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 8px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
+                        💱 {detectedExchangeRate > 0 ? `អត្រា 1$ = ${detectedExchangeRate.toLocaleString()}៛` : 'រូបិយប័ណ្ណពីរ'}៖
+                      </span>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          type="button"
+                          onClick={() => convertAllFinanceCurrency('USD')}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: financeItem.currency === 'USD' ? '#0f766e' : '#ffffff',
+                            color: financeItem.currency === 'USD' ? '#ffffff' : '#334155',
+                            border: '1px solid #0f766e',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          💵 USD
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => convertAllFinanceCurrency('KHR')}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: financeItem.currency === 'KHR' ? '#0f766e' : '#ffffff',
+                            color: financeItem.currency === 'KHR' ? '#ffffff' : '#334155',
+                            border: '1px solid #0f766e',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ៛ KHR
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
+                    ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
+                  </label>
+                  <input
+                    type="text"
+                    value={financeItem.desc || ''}
+                    onChange={e => applyFinancePatch({ desc: e.target.value })}
+                    placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
+                    style={{
+                      width: '100%',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      padding: '8px 12px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 6,
+                      background: '#ffffff'
+                    }}
+                  />
+                </div>
+              )
             )}
           </div>
 
@@ -2041,73 +2236,219 @@ export default function ReviewModal({
                     </div>
                   </div>
 
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                      បរិយាយ / ឈ្មោះឥវ៉ាន់៖
-                    </label>
-                    <input
-                      type="text"
-                      value={financeItem.desc}
-                      onChange={e => applyFinancePatch({ desc: e.target.value })}
-                      placeholder="ឧ. សាំងក្រអូប -802, ក្តារឈើ..."
-                      style={{ width: '100%', fontSize: 13 }}
-                    />
-                  </div>
+                  {hasMultipleFinances ? (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #e2e8f0' }}>
+                        <label style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>
+                          📦 មុខទំនិញក្នុងប៉ុង ({rawFinances.length} មុខ)៖
+                        </label>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#0f766e', background: '#f0fdfa', padding: '3px 10px', borderRadius: 6, border: '1px solid #ccfbf1' }}>
+                          សរុប {grandFinanceTotalLabel}
+                        </span>
+                      </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                        ចំនួន៖
-                      </label>
-                      <input
-                        type="text"
-                        value={financeItem.qty}
-                        onChange={e => applyFinancePatch({ qty: e.target.value })}
-                        placeholder="ឧ. 1 ម៉ាស៊ីន, 3 លីត្រ..."
-                        style={{ width: '100%', fontSize: 13 }}
-                      />
+                      {/* Dual Currency & Exchange Rate Bar */}
+                      {(detectedExchangeRate > 0 || detectedGrandTotalKhr > 0) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, padding: '6px 10px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
+                            💱 {detectedExchangeRate > 0 ? `អត្រា 1$ = ${detectedExchangeRate.toLocaleString()}៛` : 'រូបិយប័ណ្ណពីរ'}៖
+                          </span>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => convertAllFinanceCurrency('USD')}
+                              style={{
+                                padding: '3px 10px',
+                                borderRadius: 4,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background: grandFinanceTotals.USD > 0 ? '#0f766e' : '#ffffff',
+                                color: grandFinanceTotals.USD > 0 ? '#ffffff' : '#334155',
+                                border: '1px solid #0f766e',
+                                cursor: 'pointer'
+                              }}
+                              title="បម្លែងទំនិញទាំងអស់ជា USD"
+                            >
+                              💵 USD {detectedGrandTotalUsd > 0 ? `($${detectedGrandTotalUsd})` : ''}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => convertAllFinanceCurrency('KHR')}
+                              style={{
+                                padding: '3px 10px',
+                                borderRadius: 4,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background: grandFinanceTotals.KHR > 0 ? '#0f766e' : '#ffffff',
+                                color: grandFinanceTotals.KHR > 0 ? '#ffffff' : '#334155',
+                                border: '1px solid #0f766e',
+                                cursor: 'pointer'
+                              }}
+                              title="បម្លែងទំនិញទាំងអស់ជា KHR តាមអត្រាប្តូរប្រាក់"
+                            >
+                              ៛ KHR {detectedGrandTotalKhr > 0 ? `(${detectedGrandTotalKhr.toLocaleString()}៛)` : ''}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Seller & Invoice Metadata */}
+                      {(detectedSeller || detectedInvoiceNo) && (
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', fontSize: 12, color: '#475569' }}>
+                          {detectedSeller && <span style={{ background: '#f1f5f9', padding: '2px 8px', borderRadius: 4, border: '1px solid #e2e8f0' }}>🏪 {detectedSeller}</span>}
+                          {detectedInvoiceNo && <span style={{ background: '#f1f5f9', padding: '2px 8px', borderRadius: 4, border: '1px solid #e2e8f0' }}>📄 {detectedInvoiceNo}</span>}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto', paddingRight: 4 }}>
+                        {rawFinances.map((f, fIdx) => (
+                          <div key={fIdx} style={{ display: 'grid', gridTemplateColumns: '28px minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto', gap: 8, alignItems: 'center', background: '#ffffff', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1' }}>
+                            <span style={{ background: '#0f766e', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 4, textAlign: 'center', padding: '2px 0' }}>
+                              #{fIdx + 1}
+                            </span>
+                            <input
+                              type="text"
+                              value={f.desc || ''}
+                              onChange={e => applyFinancePatch({ desc: e.target.value }, fIdx)}
+                              placeholder="ឈ្មោះទំនិញ..."
+                              style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 13, fontWeight: 600, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                            />
+                            <input
+                              type="text"
+                              value={f.qty || ''}
+                              onChange={e => applyFinancePatch({ qty: e.target.value }, fIdx)}
+                              placeholder="ចំនួន (ឧ. 5)"
+                              style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                            />
+                            <input
+                              type="number"
+                              value={f.total ?? 0}
+                              onChange={e => applyFinancePatch({ total: Number(e.target.value) }, fIdx)}
+                              placeholder={`តម្លៃ (${getCurrencySymbol(f.currency)})`}
+                              style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, fontWeight: 700, color: '#b45309', padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                            />
+                            <CurrencyToggle
+                              value={f.currency}
+                              onChange={cur => applyFinancePatch({ currency: cur }, fIdx)}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
+                  ) : (
                     <div>
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                        <span>តម្លៃរាយ ({getCurrencySymbol(financeItem.currency)})៖</span>
-                        <CurrencyToggle
-                          value={financeItem.currency}
-                          onChange={cur => applyFinancePatch({ currency: cur })}
+                      {/* Dual Currency & Exchange Rate Bar for Single Item */}
+                      {(detectedExchangeRate > 0 || detectedGrandTotalKhr > 0) && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, padding: '6px 10px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
+                            💱 {detectedExchangeRate > 0 ? `អត្រា 1$ = ${detectedExchangeRate.toLocaleString()}៛` : 'រូបិយប័ណ្ណពីរ'}៖
+                          </span>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => convertAllFinanceCurrency('USD')}
+                              style={{
+                                padding: '3px 10px',
+                                borderRadius: 4,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background: financeItem.currency === 'USD' ? '#0f766e' : '#ffffff',
+                                color: financeItem.currency === 'USD' ? '#ffffff' : '#334155',
+                                border: '1px solid #0f766e',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              💵 USD
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => convertAllFinanceCurrency('KHR')}
+                              style={{
+                                padding: '3px 10px',
+                                borderRadius: 4,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background: financeItem.currency === 'KHR' ? '#0f766e' : '#ffffff',
+                                color: financeItem.currency === 'KHR' ? '#ffffff' : '#334155',
+                                border: '1px solid #0f766e',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              ៛ KHR
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{ marginBottom: 12 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                          បរិយាយ / ឈ្មោះឥវ៉ាន់៖
+                        </label>
+                        <input
+                          type="text"
+                          value={financeItem.desc}
+                          onChange={e => applyFinancePatch({ desc: e.target.value })}
+                          placeholder="ឧ. សាំងក្រអូប -802, ក្តារឈើ..."
+                          style={{ width: '100%', fontSize: 13 }}
                         />
-                      </label>
-                      <input
-                        type="number"
-                        value={financeItem.unitPrice}
-                        onChange={e => applyFinancePatch({ unitPrice: e.target.value })}
-                        style={{ width: '100%', fontSize: 13 }}
-                      />
-                    </div>
-                  </div>
+                      </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                        តម្លៃសរុប ({getCurrencySymbol(financeItem.currency)})៖
-                      </label>
-                      <input
-                        type="number"
-                        value={financeItem.total}
-                        onChange={e => applyFinancePatch({ total: e.target.value })}
-                        style={{ width: '100%', fontSize: 13, fontWeight: 700 }}
-                      />
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                            ចំនួន៖
+                          </label>
+                          <input
+                            type="text"
+                            value={financeItem.qty}
+                            onChange={e => applyFinancePatch({ qty: e.target.value })}
+                            placeholder="ឧ. 1 ម៉ាស៊ីន, 3 លីត្រ..."
+                            style={{ width: '100%', fontSize: 13 }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                            <span>តម្លៃរាយ ({getCurrencySymbol(financeItem.currency)})៖</span>
+                            <CurrencyToggle
+                              value={financeItem.currency}
+                              onChange={cur => applyFinancePatch({ currency: cur })}
+                            />
+                          </label>
+                          <input
+                            type="number"
+                            value={financeItem.unitPrice}
+                            onChange={e => applyFinancePatch({ unitPrice: e.target.value })}
+                            style={{ width: '100%', fontSize: 13 }}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                            តម្លៃសរុប ({getCurrencySymbol(financeItem.currency)})៖
+                          </label>
+                          <input
+                            type="number"
+                            value={financeItem.total}
+                            onChange={e => applyFinancePatch({ total: e.target.value })}
+                            style={{ width: '100%', fontSize: 13, fontWeight: 700 }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                            ផ្សេងៗ៖
+                          </label>
+                          <input
+                            type="text"
+                            value={financeItem.note}
+                            onChange={e => applyFinancePatch({ note: e.target.value })}
+                            style={{ width: '100%', fontSize: 13 }}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                        ផ្សេងៗ៖
-                      </label>
-                      <input
-                        type="text"
-                        value={financeItem.note}
-                        onChange={e => applyFinancePatch({ note: e.target.value })}
-                        style={{ width: '100%', fontSize: 13 }}
-                      />
-                    </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
