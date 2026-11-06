@@ -102,12 +102,18 @@ export async function cropLeaveSlipSignatureNameZone(dataUrl) {
 /**
  * Honest Blank Leave Item when Offline or Network Failed (Strictly Leave Type — NEVER Finance)
  */
-export function createBlankLeaveResult(errorMessage = '') {
+export function createBlankLeaveResult(errorMessage = '', { isTrulyOffline } = {}) {
+  const trulyOffline = typeof isTrulyOffline === 'boolean'
+    ? isTrulyOffline
+    : (typeof navigator !== 'undefined' && navigator.onLine === false);
   return {
     detectedType: 'leave',
     confidence: 0,
     isOfflineNoScan: true,
-    scanError: errorMessage || 'មិនទាន់បានស្កេនក្រដាសសុំច្បាប់ (ត្រូវការសេវាអ៊ីនធឺណិត)',
+    isTrulyOffline: trulyOffline,
+    scanError: errorMessage || (trulyOffline
+      ? 'មិនទាន់បានស្កេនក្រដាសសុំច្បាប់ (ត្រូវការសេវាអ៊ីនធឺណិត)'
+      : 'មិនទាន់អាចស្កេនក្រដាសសុំច្បាប់ដោយ AI បានបណ្ដោះអាសន្ន'),
     leaveItems: [
       {
         name: '',
@@ -356,7 +362,10 @@ export async function runLeaveSlipOcrPipeline({
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return {
       processingMode: 'offline_no_internet',
-      extractionResult: createBlankLeaveResult('គ្មានសេវាអ៊ីនធឺណិត (Offline) — សូមភ្ជាប់អ៊ីនធឺណិតដើម្បីស្កេនក្រដាសសុំច្បាប់')
+      extractionResult: createBlankLeaveResult(
+        'គ្មានសេវាអ៊ីនធឺណិត (Offline) — សូមភ្ជាប់អ៊ីនធឺណិតដើម្បីស្កេនក្រដាសសុំច្បាប់',
+        { isTrulyOffline: true }
+      )
     };
   }
 

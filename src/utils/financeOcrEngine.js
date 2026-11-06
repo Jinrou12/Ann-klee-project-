@@ -219,12 +219,18 @@ export async function cropReceiptTableZone(dataUrl) {
 /**
  * Honest Blank Finance Item when Offline or Network Failed (Strictly Finance Type — NEVER Leave)
  */
-export function createBlankFinanceResult(errorMessage = '') {
+export function createBlankFinanceResult(errorMessage = '', { isTrulyOffline } = {}) {
+  const trulyOffline = typeof isTrulyOffline === 'boolean'
+    ? isTrulyOffline
+    : (typeof navigator !== 'undefined' && navigator.onLine === false);
   return {
     detectedType: 'finance',
     confidence: 0,
     isOfflineNoScan: true,
-    scanError: errorMessage || 'មិនទាន់បានស្កេនប៉ុងចំណាយ (ត្រូវការសេវាអ៊ីនធឺណិត)',
+    isTrulyOffline: trulyOffline,
+    scanError: errorMessage || (trulyOffline
+      ? 'មិនទាន់បានស្កេនប៉ុងចំណាយ (ត្រូវការសេវាអ៊ីនធឺណិត)'
+      : 'មិនទាន់អាចស្កេនប៉ុងចំណាយដោយ AI បានបណ្ដោះអាសន្ន'),
     leaveItems: [],
     financeItems: [
       {
@@ -313,7 +319,10 @@ export async function runFinanceReceiptOcrPipeline({
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return {
       processingMode: 'offline_no_internet',
-      extractionResult: createBlankFinanceResult('គ្មានសេវាអ៊ីនធឺណិត (Offline) — សូមភ្ជាប់អ៊ីនធឺណិតដើម្បីស្កេនប៉ុងចំណាយ')
+      extractionResult: createBlankFinanceResult(
+        'គ្មានសេវាអ៊ីនធឺណិត (Offline) — សូមភ្ជាប់អ៊ីនធឺណិតដើម្បីស្កេនប៉ុងចំណាយ',
+        { isTrulyOffline: true }
+      )
     };
   }
 

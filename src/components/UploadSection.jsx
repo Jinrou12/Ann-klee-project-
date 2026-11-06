@@ -725,20 +725,27 @@ export default function UploadSection({
                             </span>
 
                             {resultData.isOfflineNoScan ? (
-                              <span style={{
-                                fontSize: 10,
-                                padding: '2px 6px',
-                                borderRadius: 6,
-                                background: '#fee2e2',
-                                color: '#b91c1c',
-                                border: '1px solid #fecaca',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 3,
-                                fontWeight: 600
-                              }}>
+                              <span
+                                title={resultData.scanError || ''}
+                                style={{
+                                  fontSize: 10,
+                                  padding: '2px 6px',
+                                  borderRadius: 6,
+                                  background: '#fee2e2',
+                                  color: '#b91c1c',
+                                  border: '1px solid #fecaca',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                  fontWeight: 600
+                                }}
+                              >
                                 <AlertTriangle size={11} color="#dc2626" />
-                                <span>Offline</span>
+                                <span>
+                                  {(resultData.isTrulyOffline || (typeof navigator !== 'undefined' && !navigator.onLine))
+                                    ? 'Offline'
+                                    : 'ស្កេនមិនទាន់ចេញ'}
+                                </span>
                               </span>
                             ) : isUnrecognized ? (
                               <span style={{
@@ -843,6 +850,21 @@ export default function UploadSection({
                             <span>លុប</span>
                           </button>
                         </div>
+
+                        {resultData.isOfflineNoScan && resultData.scanError && !isUnrecognized && (
+                          <div style={{
+                            background: '#fef2f2',
+                            border: '1px solid #fecaca',
+                            borderRadius: 7,
+                            padding: '6px 9px',
+                            fontSize: 11,
+                            color: '#991b1b',
+                            lineHeight: 1.45,
+                            fontWeight: 600
+                          }}>
+                            ⚠️ {resultData.scanError}
+                          </div>
+                        )}
 
                         {isUnrecognized && (
                           <div style={{
@@ -1730,7 +1752,11 @@ export default function UploadSection({
                           fontWeight: 600
                         }}>
                           <AlertTriangle size={13} color="#dc2626" />
-                          <span>{resultData.scanError || 'មិនទាន់បានស្កេន (Offline)'}</span>
+                          <span>
+                            {resultData.scanError || ((resultData.isTrulyOffline || (typeof navigator !== 'undefined' && !navigator.onLine))
+                              ? 'មិនទាន់បានស្កេន (Offline)'
+                              : 'មិនទាន់អាចស្កេនដោយ AI បានបណ្ដោះអាសន្ន')}
+                          </span>
                         </div>
                       ) : item.status === 'error' ? (
                         <div style={{

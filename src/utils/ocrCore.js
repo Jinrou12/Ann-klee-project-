@@ -1,33 +1,86 @@
 // Pure Document-Agnostic Image, Fingerprint & Network-Resilient Gemini Transport Layer
 // Zero Leave-Slip rules and Zero Finance-Receipt rules live here.
-import { DEFAULT_GEMINI_KEYS, getStoredApiKey } from './storage';
+import {
+  DEFAULT_GEMINI_KEYS,
+  getGeminiKeyPool,
+  parseApiKeyList,
+  ensureCloudApiKeyPoolLoaded
+} from './storage';
 
 const sessionBadKeys = new Set();
-const sessionRateLimitedKeys = new Map(); // key -> timestampMs
+const sessionRateLimitedKeys = new Map(); // `${model}:${key}` -> timestampMs
+const RATE_LIMIT_STORAGE_KEY = 'ann_klee_rate_limited_keys_v1';
 const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+
+// Hydrate recent 60s rate-limit marks from sessionStorage so quick refreshes skip exhausted keys immediately
+try {
+  if (typeof sessionStorage !== 'undefined') {
+    const raw = sessionStorage.getItem(RATE_LIMIT_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const now = Date.now();
+      Object.entries(parsed || {}).forEach(([k, ts]) => {
+        if (typeof ts === 'number' && (now - ts) < RATE_LIMIT_COOLDOWN_MS) {
+          sessionRateLimitedKeys.set(k, ts);
+        }
+      });
+    }
+  }
+} catch {
+  // Ignore sessionStorage errors in private/restricted contexts
+}
+
+function markKeyRateLimited(model, key) {
+  const now = Date.now();
+  const compositeKey = `${model}:${key}`;
+  sessionRateLimitedKeys.set(compositeKey, now);
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const obj = {};
+      sessionRateLimitedKeys.forEach((ts, k) => {
+        if ((now - ts) < RATE_LIMIT_COOLDOWN_MS) {
+          obj[k] = ts;
+        }
+      });
+      sessionStorage.setItem(RATE_LIMIT_STORAGE_KEY, JSON.stringify(obj));
+    }
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 export const GEMINI_VISION_MODELS = [
   'gemini-3-flash-preview',
   'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.8-flash'
+  'gemini-3.5-flash'
 ];
 
-export function isKeyUsable(key) {
+export function isKeyUsable(key, model = '') {
   if (!key || sessionBadKeys.has(key)) return false;
-  const limitedAt = sessionRateLimitedKeys.get(key);
-  if (limitedAt && (Date.now() - limitedAt) < RATE_LIMIT_COOLDOWN_MS) {
-    return false;
+  if (model) {
+    const limitedAt = sessionRateLimitedKeys.get(`${model}:${key}`);
+    if (limitedAt && (Date.now() - limitedAt) < RATE_LIMIT_COOLDOWN_MS) {
+      return false;
+    }
   }
   return true;
 }
 
 export function getCandidateApiKeys(explicitApiKey = '') {
-  const primary = explicitApiKey || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0] || '';
-  return [
-    primary,
-    ...DEFAULT_GEMINI_KEYS.filter(k => k && k !== primary)
-  ].filter(Boolean);
+  const pool = getGeminiKeyPool();
+  const explicitList = parseApiKeyList(explicitApiKey);
+  const customFirst = explicitList.filter(k => !pool.includes(k));
+  const merged = Array.from(new Set([
+    ...customFirst,
+    ...pool,
+    ...explicitList,
+    ...DEFAULT_GEMINI_KEYS
+  ])).filter(k => k && !sessionBadKeys.has(k));
+
+  const primaryModel = GEMINI_VISION_MODELS[0];
+  const readyKeys = merged.filter(k => isKeyUsable(k, primaryModel));
+  const coolingKeys = merged.filter(k => !isKeyUsable(k, primaryModel));
+  return [...readyKeys, ...coolingKeys];
 }
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -36,14 +89,14 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * Translate technical network / fetch / AbortController errors into clear, polite Khmer messages.
  */
 export function formatKhmerScanError(err) {
-  if (!err) {
-    return 'មិនអាចភ្ជាប់ទៅប្រព័ន្ធស្កេនបានទេ — សូមពិនិត្យសេវាអ៊ីនធឺណិត រួចសាកល្បងម្ដងទៀត';
-  }
-  const msg = String(err.message || err || '').toLowerCase();
-  const isAbort = err.name === 'AbortError' || msg.includes('aborted') || msg.includes('timeout');
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return 'គ្មានសេវាអ៊ីនធឺណិត (Offline) — សូមភ្ជាប់ Wi-Fi ឬទិន្នន័យចល័ត រួចសាកល្បងម្ដងទៀត';
   }
+  if (!err) {
+    return 'ប្រព័ន្ធស្កេន AI រវល់បណ្ដោះអាសន្ន — សូមរង់ចាំបន្តិច រួចសាកល្បងម្ដងទៀត';
+  }
+  const msg = String(err.message || err || '').toLowerCase();
+  const isAbort = err.name === 'AbortError' || msg.includes('aborted') || msg.includes('timeout');
   if (isAbort) {
     return 'អ៊ីនធឺណិតយឺតពេក ឬដាច់រអាក់រអួល (ផុតម៉ោងរង់ចាំ) — សូមពិនិត្យសេវាអ៊ីនធឺណិត រួចសាកល្បងម្ដងទៀត';
   }
@@ -51,7 +104,7 @@ export function formatKhmerScanError(err) {
     return 'ការតភ្ជាប់អ៊ីនធឺណិតដាច់រអាក់រអួល — សូមពិនិត្យសេវាអ៊ីនធឺណិត រួចសាកល្បងម្ដងទៀត';
   }
   if (msg.includes('429') || msg.includes('quota') || msg.includes('rate')) {
-    return 'ប្រព័ន្ធ AI កំពុងមមាញឹកខ្លាំង — សូមរង់ចាំបន្តិច រួចសាកល្បងម្ដងទៀត';
+    return 'ប្រព័ន្ធ AI កំពុងមមាញឹកខ្លាំង (អស់កូតាបណ្ដោះអាសន្ន) — សូមរង់ចាំបន្តិច រួចសាកល្បងម្ដងទៀត';
   }
   if (msg.includes('401') || msg.includes('403') || msg.includes('api key')) {
     return 'AI Key មិនត្រឹមត្រូវ ឬផុតកំណត់ — សូមពិនិត្យការកំណត់ AI Key';
@@ -60,7 +113,7 @@ export function formatKhmerScanError(err) {
   if (/[\u1780-\u17FF]/.test(String(err.message || ''))) {
     return String(err.message);
   }
-  return 'មិនអាចស្កេនបានដោយសារបញ្ហាបណ្ដាញអ៊ីនធឺណិត — សូមសាកល្បងម្ដងទៀត';
+  return 'មិនអាចស្កេនដោយ AI បានបណ្ដោះអាសន្ន — សូមសាកល្បងម្ដងទៀត';
 }
 
 /**
@@ -105,7 +158,13 @@ export async function callGeminiJsonWithResilience({
   timeoutMs = 26000,
   maxTimeoutAttempts = 2
 }) {
-  const keysToTry = getCandidateApiKeys(apiKey);
+  let keysToTry = getCandidateApiKeys(apiKey);
+  if (keysToTry.length <= 1 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+    const hydratedPool = await ensureCloudApiKeyPoolLoaded();
+    if (hydratedPool.length > 0) {
+      keysToTry = getCandidateApiKeys(apiKey);
+    }
+  }
   if (keysToTry.length === 0) {
     throw new Error('មិនទាន់មាន AI Key — សូមបញ្ចូល AI Key ដើម្បីដំណើរការស្កេន');
   }
@@ -115,7 +174,7 @@ export async function callGeminiJsonWithResilience({
 
   for (const model of GEMINI_VISION_MODELS) {
     const supportsThinking = !model.includes('lite');
-    const supportsThinkingLevel = Boolean(thinkingLevel) && model.startsWith('gemini-3-');
+    const supportsThinkingLevel = Boolean(thinkingLevel) && model === 'gemini-3-flash-preview';
     const generationConfig = supportsThinking
       ? {
           temperature: 0.0,
@@ -133,7 +192,7 @@ export async function callGeminiJsonWithResilience({
 
     for (let kIdx = 0; kIdx < keysToTry.length; kIdx++) {
       const activeKey = keysToTry[kIdx];
-      if (!isKeyUsable(activeKey)) continue;
+      if (!isKeyUsable(activeKey, model)) continue;
 
       const attemptStart = Date.now();
       try {
@@ -160,18 +219,22 @@ export async function callGeminiJsonWithResilience({
         if (!response.ok) {
           const errText = await response.text().catch(() => '');
           if (response.status === 429) {
-            sessionRateLimitedKeys.set(activeKey, Date.now());
+            markKeyRateLimited(model, activeKey);
+            lastError = new Error('429 Quota Exceeded');
             continue;
           }
           if (response.status === 400 || response.status === 401 || response.status === 403) {
             // Note: 400 with INVALID_ARGUMENT on thinkingConfig could be model-specific, check message
-            if (response.status === 400 && errText.includes('thinking')) {
+            if (response.status === 400 && errText.toLowerCase().includes('thinking')) {
+              lastError = new Error('400 thinkingConfig unsupported');
               break;
             }
             sessionBadKeys.add(activeKey);
+            lastError = new Error(`${response.status} API Key error`);
             continue;
           }
           if (response.status === 404 || response.status === 503 || response.status >= 500) {
+            lastError = new Error(`Gemini API Error (${response.status})`);
             break;
           }
           throw new Error(`Gemini API Error (${response.status})`);

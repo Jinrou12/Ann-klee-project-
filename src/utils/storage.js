@@ -2,16 +2,25 @@
 import { DEFAULT_STUDENT_MASTER, matchStudentName } from './studentMaster';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
+// Helper to parse comma/newline/whitespace-separated API key strings or arrays into clean unique keys
+export function parseApiKeyList(raw) {
+  if (!raw) return [];
+  const items = Array.isArray(raw) ? raw : String(raw).split(/[,\n\r\s]+/);
+  const cleaned = items
+    .map(k => String(k || '').trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean);
+  return Array.from(new Set(cleaned));
+}
+
 // Default Gemini API Key Pool safely loaded from environment variables
 const envKeys = import.meta.env?.VITE_GEMINI_KEYS;
-export const DEFAULT_GEMINI_KEYS = envKeys
-  ? envKeys.split(',').map(k => k.trim()).filter(Boolean)
-  : [];
+export const DEFAULT_GEMINI_KEYS = parseApiKeyList(envKeys);
 
 const STORAGE_KEYS = {
   APP_STATE: 'ann_klee_app_state_v1',
   STUDENT_MASTER: 'ann_klee_student_master_v1',
   API_KEY: 'ann_klee_gemini_api_key_v1',
+  API_KEY_POOL: 'ann_klee_gemini_key_pool_v1',
   OFFLINE_QUEUE: 'ann_klee_offline_queue_v1',
   TRAINING_DATASET: 'ann_klee_training_dataset_v1',
 };
@@ -199,37 +208,112 @@ export function saveAppState(state) {
 }
 
 /**
- * API Key Management
+ * API Key & Multi-Key Pool Management (Local + Cloud Synced)
  */
-export function getStoredApiKey() {
+export function getGeminiKeyPool() {
   try {
-    const saved = localStorage.getItem(STORAGE_KEYS.API_KEY);
-    if (saved && saved.trim()) return saved.trim();
+    const savedPool = parseApiKeyList(localStorage.getItem(STORAGE_KEYS.API_KEY_POOL));
+    const savedSingle = parseApiKeyList(localStorage.getItem(STORAGE_KEYS.API_KEY));
 
-    // Check if cached in app_state meta
+    let stateKeys = [];
     const rawState = localStorage.getItem(STORAGE_KEYS.APP_STATE);
     if (rawState) {
       const parsed = JSON.parse(rawState);
-      if (parsed.meta?.geminiKey) return parsed.meta.geminiKey;
+      stateKeys = [
+        ...parseApiKeyList(parsed.meta?.geminiKeys),
+        ...parseApiKeyList(parsed.meta?.geminiKey)
+      ];
     }
 
-    return DEFAULT_GEMINI_KEYS[0] || '';
+    const basePool = Array.from(new Set([
+      ...savedPool,
+      ...stateKeys,
+      ...DEFAULT_GEMINI_KEYS
+    ]));
+
+    // Only prepend savedSingle ahead of basePool if it's a brand-new custom key not already in basePool
+    const customFirst = savedSingle.filter(k => !basePool.includes(k));
+    return Array.from(new Set([
+      ...customFirst,
+      ...basePool,
+      ...savedSingle
+    ]));
   } catch (err) {
-    console.error('Error reading API key from localStorage:', err);
-    return DEFAULT_GEMINI_KEYS[0] || '';
+    console.error('Error reading Gemini key pool from localStorage:', err);
+    return DEFAULT_GEMINI_KEYS;
   }
 }
 
-export function getGeminiKeyPool() {
-  return DEFAULT_GEMINI_KEYS;
+export function setStoredApiKeyPool(keysOrString) {
+  try {
+    const list = parseApiKeyList(keysOrString);
+    if (list.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.API_KEY_POOL, list.join(','));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.API_KEY_POOL);
+    }
+  } catch (err) {
+    console.error('Error saving Gemini key pool:', err);
+  }
+}
+
+export function getStoredApiKey() {
+  const pool = getGeminiKeyPool();
+  return pool[0] || '';
 }
 
 export function setStoredApiKey(key) {
-  if (key) {
-    localStorage.setItem(STORAGE_KEYS.API_KEY, key.trim());
+  const list = parseApiKeyList(key);
+  if (list.length > 0) {
+    localStorage.setItem(STORAGE_KEYS.API_KEY, list[0]);
+    if (list.length > 1) {
+      setStoredApiKeyPool(list);
+    }
   } else {
     localStorage.removeItem(STORAGE_KEYS.API_KEY);
   }
+}
+
+let inflightKeyPoolPromise = null;
+
+/**
+ * Cold-start guard for Vercel / fresh browsers:
+ * Ensures the multi-key pool from Supabase (`app_state.meta.geminiKeys`) is hydrated
+ * before running OCR when local keys have not yet arrived.
+ */
+export async function ensureCloudApiKeyPoolLoaded() {
+  const existing = getGeminiKeyPool();
+  if (existing.length > 1) return existing;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return existing;
+  if (!supabase) return existing;
+
+  if (!inflightKeyPoolPromise) {
+    inflightKeyPoolPromise = Promise.race([
+      fetchCloudAppState().catch(() => null),
+      new Promise(resolve => setTimeout(() => resolve(null), 4000))
+    ]).then(cloudData => {
+      inflightKeyPoolPromise = null;
+      if (cloudData?.meta) {
+        const cloudPool = Array.from(new Set([
+          ...parseApiKeyList(cloudData.meta.geminiKeys),
+          ...parseApiKeyList(cloudData.meta.geminiKey),
+          ...DEFAULT_GEMINI_KEYS
+        ]));
+        if (cloudPool.length > 0) {
+          setStoredApiKeyPool(cloudPool);
+          if (!localStorage.getItem(STORAGE_KEYS.API_KEY)) {
+            setStoredApiKey(cloudPool[0]);
+          }
+        }
+      }
+      return getGeminiKeyPool();
+    }).catch(() => {
+      inflightKeyPoolPromise = null;
+      return getGeminiKeyPool();
+    });
+  }
+
+  return inflightKeyPoolPromise;
 }
 
 /**

@@ -618,20 +618,27 @@ export default function ReviewModal({
                   </span>
 
                   {initialExtracted.isOfflineNoScan ? (
-                    <span style={{
-                      fontSize: 10,
-                      padding: '2px 6px',
-                      borderRadius: 6,
-                      background: '#fee2e2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 3,
-                      fontWeight: 600
-                    }}>
+                    <span
+                      title={initialExtracted.scanError || ''}
+                      style={{
+                        fontSize: 10,
+                        padding: '2px 6px',
+                        borderRadius: 6,
+                        background: '#fee2e2',
+                        color: '#b91c1c',
+                        border: '1px solid #fecaca',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        fontWeight: 600
+                      }}
+                    >
                       <AlertTriangle size={11} color="#dc2626" />
-                      <span>Offline</span>
+                      <span>
+                        {(initialExtracted.isTrulyOffline || (typeof navigator !== 'undefined' && !navigator.onLine))
+                          ? 'Offline'
+                          : 'ស្កេនមិនទាន់ចេញ'}
+                      </span>
                     </span>
                   ) : (
                     <span style={{

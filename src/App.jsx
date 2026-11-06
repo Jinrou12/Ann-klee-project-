@@ -22,8 +22,12 @@ import {
   saveAppState,
   exportBackup,
   importBackup,
+  DEFAULT_GEMINI_KEYS,
   getStoredApiKey,
   setStoredApiKey,
+  getGeminiKeyPool,
+  setStoredApiKeyPool,
+  parseApiKeyList,
   getOfflineQueue,
   saveOfflineQueue,
   getStoredTrainingDataset,
@@ -86,16 +90,27 @@ export default function App() {
     fetchCloudAppState().then(cloudData => {
       if (!isMounted) return;
       if (cloudData && cloudData.leaves && cloudData.finance) {
-        if (cloudData.meta?.geminiKey) {
-          setApiKey(cloudData.meta.geminiKey);
-          setStoredApiKey(cloudData.meta.geminiKey);
+        const existingCloudPool = parseApiKeyList(cloudData.meta?.geminiKeys);
+        const mergedKeyPool = Array.from(new Set([
+          ...existingCloudPool,
+          ...DEFAULT_GEMINI_KEYS,
+          ...parseApiKeyList(cloudData.meta?.geminiKey),
+          ...parseApiKeyList(apiKey)
+        ]));
+        if (mergedKeyPool.length > 0) {
+          setStoredApiKeyPool(mergedKeyPool);
+          setApiKey(mergedKeyPool[0]);
+          setStoredApiKey(mergedKeyPool[0]);
         }
         const cloudMeta = {
           ...appState.meta,
           ...(cloudData.meta || {}),
-          geminiKey: cloudData.meta?.geminiKey || appState.meta?.geminiKey || apiKey || ''
+          geminiKey: mergedKeyPool[0] || cloudData.meta?.geminiKey || appState.meta?.geminiKey || apiKey || '',
+          geminiKeys: mergedKeyPool.length > 0
+            ? mergedKeyPool.join(',')
+            : (cloudData.meta?.geminiKeys || appState.meta?.geminiKeys || '')
         };
-        let needsCloudUpdate = false;
+        let needsCloudUpdate = mergedKeyPool.length > existingCloudPool.length;
         if (!cloudMeta.directorTitle || cloudMeta.directorTitle === 'ព្រះនាយក' || cloudMeta.directorTitle === 'ព្រះចៅអធិការ') {
           cloudMeta.directorTitle = 'នាយកសាលា';
           needsCloudUpdate = true;
@@ -112,15 +127,25 @@ export default function App() {
         isHydratedRef.current = true;
         setCloudStatus('connected');
         if (needsCloudUpdate) {
-          syncAppStateToCloud(mergedState).catch(e => console.warn('Sync updated director title error:', e));
+          syncAppStateToCloud(mergedState).catch(e => console.warn('Sync updated cloud meta error:', e));
         }
       } else if (cloudData) {
+        const seedPool = Array.from(new Set([
+          ...parseApiKeyList(cloudData.meta?.geminiKeys),
+          ...DEFAULT_GEMINI_KEYS,
+          ...parseApiKeyList(cloudData.meta?.geminiKey),
+          ...parseApiKeyList(apiKey)
+        ]));
+        if (seedPool.length > 0) {
+          setStoredApiKeyPool(seedPool);
+        }
         // Table exists but is completely empty: seed with initial state
         syncAppStateToCloud({
           ...appState,
           meta: {
             ...appState.meta,
-            geminiKey: cloudData.meta?.geminiKey || apiKey || ''
+            geminiKey: seedPool[0] || cloudData.meta?.geminiKey || apiKey || '',
+            geminiKeys: seedPool.join(',')
           }
         }).then(ok => {
           if (isMounted) {
@@ -142,14 +167,27 @@ export default function App() {
 
     const unsubscribe = subscribeToCloudAppState((remoteState) => {
       if (remoteState && remoteState.leaves && remoteState.finance) {
-        if (remoteState.meta?.geminiKey) {
-          setApiKey(remoteState.meta.geminiKey);
-          setStoredApiKey(remoteState.meta.geminiKey);
+        const remotePool = Array.from(new Set([
+          ...parseApiKeyList(remoteState.meta?.geminiKeys),
+          ...DEFAULT_GEMINI_KEYS,
+          ...parseApiKeyList(remoteState.meta?.geminiKey)
+        ]));
+        if (remotePool.length > 0) {
+          setStoredApiKeyPool(remotePool);
+          setApiKey(remotePool[0]);
+          setStoredApiKey(remotePool[0]);
         }
         // Mark as incoming remote update to prevent echo loop!
         isRemoteUpdateRef.current = true;
         setAppState(prev => {
-          const mergedMeta = { ...prev.meta, ...(remoteState.meta || {}) };
+          const mergedMeta = {
+            ...prev.meta,
+            ...(remoteState.meta || {}),
+            geminiKey: remotePool[0] || remoteState.meta?.geminiKey || prev.meta?.geminiKey || '',
+            geminiKeys: remotePool.length > 0
+              ? remotePool.join(',')
+              : (remoteState.meta?.geminiKeys || prev.meta?.geminiKeys || '')
+          };
           if (!mergedMeta.directorTitle || mergedMeta.directorTitle === 'ព្រះនាយក' || mergedMeta.directorTitle === 'ព្រះចៅអធិការ') {
             mergedMeta.directorTitle = 'នាយកសាលា';
           }
@@ -197,11 +235,13 @@ export default function App() {
     // 2. Genuine user edit on this device: debounce sync to Cloud
     setCloudStatus('syncing');
     const timer = setTimeout(() => {
+      const fullPool = getGeminiKeyPool();
       const stateToSync = {
         ...appState,
         meta: {
           ...appState.meta,
-          geminiKey: apiKey || appState.meta?.geminiKey || ''
+          geminiKey: apiKey || fullPool[0] || appState.meta?.geminiKey || '',
+          geminiKeys: fullPool.length > 0 ? fullPool.join(',') : (appState.meta?.geminiKeys || '')
         }
       };
       syncAppStateToCloud(stateToSync).then(ok => {
@@ -984,7 +1024,7 @@ export default function App() {
         onAddYear={mutateSelectYear}
         studentCount={appState.studentMaster.length}
         trainingCount={trainingCount}
-        hasApiKey={Boolean(apiKey)}
+        hasApiKey={Boolean(apiKey || getGeminiKeyPool().length > 0)}
         cloudStatus={cloudStatus}
         onExportTrainingDataset={exportTrainingDataset}
         onOpenStudentMaster={() => setIsStudentModalOpen(true)}

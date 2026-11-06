@@ -8,6 +8,7 @@ import { matchStudentName } from './studentMaster';
 import {
   DEFAULT_GEMINI_KEYS,
   getStoredApiKey,
+  ensureCloudApiKeyPoolLoaded,
   getStoredTrainingDataset,
   fetchTrainingFromCloud,
   isBareGenericCameraFilename,
@@ -15,6 +16,7 @@ import {
 } from './storage';
 import {
   callGeminiJsonWithResilience,
+  getCandidateApiKeys,
   formatKhmerScanError,
   fileToBase64,
   loadImageElement,
@@ -221,8 +223,13 @@ export async function autoOrientDocumentImage(dataUrl, docTypeHint = 'auto', api
   if (!dataUrl) return noChange('none');
   if (docTypeHint === 'finance') return noChange('none', 'finance');
 
-  const key = apiKey || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0];
   const online = typeof navigator === 'undefined' ? true : navigator.onLine;
+  let candidateKeys = getCandidateApiKeys(apiKey);
+  if (online && candidateKeys.length <= 1) {
+    await ensureCloudApiKeyPoolLoaded();
+    candidateKeys = getCandidateApiKeys(apiKey);
+  }
+  const key = candidateKeys[0] || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0] || '';
 
   if (online && key) {
     try {
@@ -342,7 +349,13 @@ export async function processUploadedImage(
 ) {
   onStageChange?.('orient');
 
-  const effectiveApiKey = apiKey || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0] || '';
+  const online = typeof navigator === 'undefined' ? true : navigator.onLine;
+  let candidateKeys = getCandidateApiKeys(apiKey);
+  if (online && candidateKeys.length <= 1) {
+    await ensureCloudApiKeyPoolLoaded();
+    candidateKeys = getCandidateApiKeys(apiKey);
+  }
+  const effectiveApiKey = candidateKeys[0] || getStoredApiKey() || DEFAULT_GEMINI_KEYS[0] || '';
   let rawDataUrl = preOrientedDataUrl;
   let targetEngine = (resolvedDocType === 'leave' || resolvedDocType === 'finance')
     ? resolvedDocType
