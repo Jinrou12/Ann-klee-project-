@@ -81,5 +81,5 @@
 * **គោលការណ៍ Rolling Snapshot**: ផ្នែកនេះត្រូវតែប្រើប្រព័ន្ធ **In-Place Overwrite** រក្សាត្រឹមតែ ៣-៤ បន្ទាត់សង្ខេបចុងក្រោយ (ហាម append logs នាំឱ្យឯកសាររីកធំ)។
 * **កាលបរិច្ឆេទ**: 2026-11-06
 * **គម្រោង**: Ann Klee Project (ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស និងចំណូលចំណាយ)
-* **ស្ថានភាព**: បានដោះស្រាយ និងកែសម្រួល Optical OCR Disambiguation សម្រាប់ឈ្មោះទំនិញខ្មែរគ្រប់ជួរ (ត vs ស = តារ៉ូវីសធំ, រ vs ភ = វីសរាយ, តួអា vs ត្វារ = វៀកនីតួអាលេខ) ទាំងក្នុង Gemini Vision Prompt និង Post-processing Normalizer ទាំងលើ Mobile & PC (/pm)។
-* **ការងារបន្ទាប់**: ជូនដំណឹងដល់បងឱ្យសាកល្បង Upload/Scan ប៉ុងនេះឡើងវិញនៅលើ Local/Mobile។
+* **ស្ថានភាព**: បានធ្វើបច្ចុប្បន្នភាព Supabase Cloud Training Sample (IMG_6679.jpeg) ទៅជា Ground Truth ត្រឹមត្រូវ ១០០%, បន្ថែម Metadata & Normalization លើ AI Flywheel Memory ក្នុង ocrService.js និង financeOcrEngine.js (/pm)។
+* **ការងារបន្ទាប់**: Deploy ទៅកាន់ Vercel និងជូនដំណឹងបងឱ្យសាកល្បងលើ Mobile ឡើងវិញ។

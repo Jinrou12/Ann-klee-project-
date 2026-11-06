@@ -52,11 +52,17 @@ export function normalizeFinanceItems(items) {
       if (/^វ[ីើ]ស[ភរ]ាយ/i.test(desc) || desc.includes('វីសភាយ')) {
         desc = desc.replace(/វីសភាយ/g, 'វីសរាយ');
       }
-      if (/^សាប៊ូ.*[វរ]៉?[េែ]សំ/i.test(desc) || /^សារ៉ូ.*រ៉េសំ/i.test(desc) || desc.includes('សាប៊ូវ៉េសំ') || desc.includes('សាប៊ូវេសំ') || desc.includes('សារ៉ូវីស') || desc.includes('តារ៉ៃវីស')) {
+      if (/^សាប៊ូ.*[វរ]៉?[េែ]សំ/i.test(desc) || /^សារ៉ូ.*រ៉េសំ/i.test(desc) || desc.includes('សាប៊ូវ៉េសំ') || desc.includes('សាប៊ូវេសំ') || desc.includes('សារ៉ូវីស') || desc.includes('តារ៉ៃវីស') || desc.includes('សាប៊ូវីស')) {
         desc = 'តារ៉ូវីសធំ';
       }
-      if (/^វៀកនី.*លេខ-T8000/i.test(desc) && (desc.includes('ត្វារ') || desc.includes('ក្វារ'))) {
-        desc = desc.replace(/ត្វារ|ក្វារ/g, 'តួអា');
+      if (desc.includes('ផាលី') || desc.includes('ផាលីខ្មៅ') || desc.includes('ផាលីខ្មែរ')) {
+        desc = desc.replace(/ផាលី(ខ្មៅ|ខ្មែរ)?/, '៨លីខ្មៅ- TY(1.22MX2.22M)');
+      }
+      if (desc.includes('ត្រីទ្វាទ') || desc.includes('ត្រីទ្វា')) {
+        desc = 'ព្រីរន្ធ8បាតខៀវABC';
+      }
+      if (/^(វៀ|ជៀ)កនី.*លេខ-T8000/i.test(desc) || desc.includes('ជៀកនី') || desc.includes('ត្វារលេខ') || desc.includes('តួរអាលេខ')) {
+        desc = desc.replace(/^(វៀ|ជៀ)កនី/, 'វៀកនី').replace(/ត្វារ|ក្វារ|តួរអា/g, 'តួអា');
       }
       if (desc.startsWith('សេវាថ្លៃដឹកដល់ផ្ទះ')) {
         desc = desc.replace(/^សេវា/, 'សេវ៉ា');

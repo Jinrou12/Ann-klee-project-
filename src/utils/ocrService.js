@@ -498,7 +498,16 @@ export async function processUploadedImage(
           }] : [],
           financeItems: !isLeave
             ? normalizeFinanceItems(Array.isArray(gt.items) ? gt.items : (Array.isArray(gt) ? gt : [gt]))
-            : []
+            : [],
+          seller: !isLeave ? (gt.seller || '') : '',
+          invoiceNo: !isLeave ? (gt.invoiceNo || '') : '',
+          invoiceDate: !isLeave ? (gt.invoiceDate || '') : '',
+          customer: !isLeave ? (gt.customer || '') : '',
+          exchangeRate: !isLeave ? (Number(gt.exchangeRate) || 0) : 0,
+          grandTotalKhr: !isLeave ? (Number(gt.grandTotalKhr) || 0) : 0,
+          grandTotalUsd: !isLeave ? (Number(gt.grandTotalUsd) || 0) : 0,
+          subtotal: !isLeave ? (Number(gt.subtotal) || 0) : 0,
+          subtotalCurrency: !isLeave ? (gt.subtotalCurrency || 'USD') : ''
         }
       };
     }
