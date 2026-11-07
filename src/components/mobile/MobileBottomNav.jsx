@@ -66,7 +66,10 @@ export default function MobileBottomNav({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-around',
-        padding: '6px 6px env(safe-area-inset-bottom, 8px)'
+        paddingTop: 6,
+        paddingLeft: 'max(6px, env(safe-area-inset-left, 6px))',
+        paddingRight: 'max(6px, env(safe-area-inset-right, 6px))',
+        paddingBottom: 'calc(18px + env(safe-area-inset-bottom, 0px))'
       }}
     >
       {tabs.map(tab => {
