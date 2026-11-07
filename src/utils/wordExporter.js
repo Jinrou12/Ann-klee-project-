@@ -10,6 +10,7 @@ import {
   isFinanceDeficit
 } from './khmerNumerals.js';
 import { getMonthEndReportDates } from './khmerCalendar.js';
+import { buildFinanceSummaryModel } from './financeSummaryBuilder.js';
 import { buildZipArchive, escapeXml, triggerBlobDownload, loadOfficialLogoBytes } from './openXmlZip.js';
 
 const FONT_MOUL = 'Khmer OS Muol Light';
@@ -31,7 +32,9 @@ function wParagraph(text, {
 } = {}) {
   const halfPts = Math.round(sizePt * 2);
   const bXml = bold ? '<w:b/><w:bCs/>' : '';
-  const uXml = underline ? '<w:u w:val="single"/>' : '';
+  const uXml = underline
+    ? `<w:u w:val="${underline === 'double' ? 'double' : 'single'}"/>`
+    : '';
   const colorXml = color && color !== '000000' ? `<w:color w:val="${color}"/>` : '';
 
   return `<w:p>
@@ -336,7 +339,9 @@ export async function exportLeaveToWord(records = [], monthLabel = 'កក្ក
     useKhmerNumerals: useKhmer
   });
 
-  const colWidths = [600, 2200, 900, 3200, 1150, 1350, 1000]; // Total = 10,400 dxa
+  const colWidths = options.compactReasonColumn
+    ? [600, 2250, 850, 2650, 1750, 1300, 1000] // Total = 10,400 dxa (compact reason box for Semester/Year)
+    : [600, 2200, 900, 3200, 1150, 1350, 1000]; // Total = 10,400 dxa
   const headers = ['ល.រ', 'គោត្តនាម-និងនាម', 'ថ្នាក់', 'មូលហេតុ', 'ចំនួនឈប់', 'កាលបរិច្ឆេទ', 'ផ្សេងៗ'];
 
   const headerRowXml = `<w:tr>
@@ -564,4 +569,153 @@ export async function exportFinanceToWord(financeData = { income: [], expense: [
   ].join('');
 
   downloadDocxDocument(bodyXml, `របាយការណ៍ចំណូលចំណាយ_${String(monthLabel).replace(/\s+/g, '_')}.docx`, logoBytes);
+}
+
+/**
+ * 4. Export Official Summary Financial Report (របាយការណ៍ចំណូលចំណាយសង្ខេប) to Word (.docx)
+ * matching the official 1-page 5-column summary DOCX templates (July & September 2026)
+ */
+export async function exportFinanceSummaryReportToWord(
+  financeData = { income: [], expense: [] },
+  monthLabel = 'កក្កដា ២០២៦',
+  metadata = {},
+  options = {}
+) {
+  const logoBytes = options.logoBytes || (await loadOfficialLogoBytes());
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const monthKey = options.monthKey || metadata.currentMonth || '2026-07';
+  const useKhmer = options.useKhmerNumerals !== false;
+
+  const summaryModel = buildFinanceSummaryModel(financeData, {
+    monthKey,
+    monthName: options.monthName || '',
+    yearDisplay: options.yearDisplay || '',
+    periodMode: options.periodMode || 'month',
+    useKhmerNumerals: useKhmer,
+    customSummaryTitle: options.customSummaryTitle || '',
+    isDeficitOverride: options.isDeficitOverride ?? null
+  });
+
+  const reportDates = getMonthEndReportDates(monthKey, {
+    watName: metadata.wat,
+    customLunarTemplate: metadata.lunarDateHeader,
+    useKhmerNumerals: useKhmer
+  });
+
+  // 5 columns proportional to official template (818 : 6690 : 2268 : 2779 : 2571 -> total 10,400 dxa)
+  const colWidths = [560, 4600, 1560, 1920, 1760];
+  const mergedLabelWidth = colWidths[0] + colWidths[1] + colWidths[2]; // 6,720 dxa
+  const headers = ['ល.រ', 'បរិយាយ', 'ចំនួន', 'ចំនួនថវិកា', 'ផ្សេងៗ'];
+  const { isDeficit } = summaryModel;
+  const deficitColor = isDeficit ? 'B91C1C' : '000000';
+
+  const headerRowXml = `<w:tr>
+    ${headers.map((h, i) => wCell(
+      wParagraph(h, { font: FONT_MOUL, sizePt: 11.5, align: 'center', spaceBefore: 30, spaceAfter: 30 }),
+      { widthDxa: colWidths[i] }
+    )).join('')}
+  </w:tr>`;
+
+  const buildDataRowXml = (row) => {
+    const cells = [
+      { text: row.no, align: 'center' },
+      { text: row.desc, align: 'left' },
+      { text: row.qty, align: 'center' },
+      { text: row.amountText, align: 'right' },
+      { text: row.note || '', align: 'center' }
+    ];
+    return `<w:tr>${cells.map((c, i) => wCell(
+      wParagraph(c.text, { font: FONT_SIEMREAP, sizePt: 11.5, align: c.align, spaceBefore: 30, spaceAfter: 30 }),
+      { widthDxa: colWidths[i] }
+    )).join('')}</w:tr>`;
+  };
+
+  const subtotalIncRowXml = `<w:tr>
+    ${wCell(
+      wParagraph(summaryModel.totalIncomeLabel, { font: FONT_SIEMREAP, sizePt: 11.5, bold: true, align: 'center', spaceBefore: 30, spaceAfter: 30 }),
+      { widthDxa: mergedLabelWidth, gridSpan: 3 }
+    )}
+    ${wCell(
+      wParagraph(summaryModel.totalIncomeText, { font: FONT_MOUL, sizePt: 11.5, underline: 'single', align: 'right', spaceBefore: 30, spaceAfter: 30 }),
+      { widthDxa: colWidths[3] }
+    )}
+    ${wCell(
+      wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
+      { widthDxa: colWidths[4] }
+    )}
+  </w:tr>`;
+
+  const subtotalExpRowXml = `<w:tr>
+    ${wCell(
+      wParagraph(summaryModel.totalExpenseLabel, { font: FONT_SIEMREAP, sizePt: 11.5, bold: true, align: 'center', color: deficitColor, spaceBefore: 30, spaceAfter: 30 }),
+      { widthDxa: mergedLabelWidth, gridSpan: 3 }
+    )}
+    ${wCell(
+      wParagraph(summaryModel.totalExpenseText, { font: FONT_MOUL, sizePt: 11.5, underline: 'single', align: 'right', color: deficitColor, spaceBefore: 30, spaceAfter: 30 }),
+      { widthDxa: colWidths[3] }
+    )}
+    ${wCell(
+      wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
+      { widthDxa: colWidths[4] }
+    )}
+  </w:tr>`;
+
+  const balanceRowXml = `<w:tr>
+    ${wCell(
+      wParagraph(summaryModel.balanceLabel, { font: FONT_MOUL, sizePt: 11.5, align: 'center', color: deficitColor, spaceBefore: 40, spaceAfter: 40 }),
+      { widthDxa: mergedLabelWidth, gridSpan: 3 }
+    )}
+    ${wCell(
+      wParagraph(summaryModel.balanceText, { font: FONT_MOUL, sizePt: 11.5, underline: 'double', align: 'right', color: deficitColor, spaceBefore: 40, spaceAfter: 40 }),
+      { widthDxa: colWidths[3] }
+    )}
+    ${wCell(
+      wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
+      { widthDxa: colWidths[4] }
+    )}
+  </w:tr>`;
+
+  const allTableRowsXml = [
+    headerRowXml,
+    ...summaryModel.incomeRows.map(buildDataRowXml),
+    subtotalIncRowXml,
+    ...summaryModel.expenseRows.map(buildDataRowXml),
+    subtotalExpRowXml,
+    balanceRowXml
+  ];
+
+  const bodyXml = [
+    buildWordOfficialHeader(metadata, false, hasLogo),
+    wParagraph('របាយការណ៍', { font: FONT_MOUL, sizePt: 12.5, align: 'center', spaceBefore: 120, spaceAfter: 30 }),
+    wParagraph('ស្ដីពី', { font: FONT_MOUL, sizePt: 11.5, align: 'center', spaceAfter: 30 }),
+    wParagraph(summaryModel.reportTitle, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceAfter: 160 }),
+    wTable(colWidths, allTableRowsXml, { bordered: true }),
+    wParagraph('', { sizePt: 10, spaceAfter: 140 }),
+    buildWordOfficialSignatures(metadata, reportDates, true)
+  ].join('');
+
+  downloadDocxDocument(
+    bodyXml,
+    `របាយការណ៍ចំណូលចំណាយសង្ខេប_${String(monthLabel).replace(/\s+/g, '_')}.docx`,
+    logoBytes
+  );
+}
+
+/**
+ * Dual-file Word exporter for PC Finance:
+ * File 1: Full Detailed Finance Report (.docx)
+ * File 2: Summary Finance Report (.docx)
+ */
+export async function exportFinanceDualWord(
+  financeData = { income: [], expense: [] },
+  monthLabel = 'កក្កដា ២០២៦',
+  metadata = {},
+  options = {}
+) {
+  const logoBytes = options.logoBytes || (await loadOfficialLogoBytes());
+  const sharedOptions = { ...options, logoBytes };
+  await exportFinanceToWord(financeData, monthLabel, metadata, sharedOptions);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const summarySourceData = options.summaryFinanceData || financeData;
+  await exportFinanceSummaryReportToWord(summarySourceData, monthLabel, metadata, sharedOptions);
 }

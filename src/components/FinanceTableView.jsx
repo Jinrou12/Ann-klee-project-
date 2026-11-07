@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Printer, FileSpreadsheet, FileText, DollarSign, ArrowDownRight, ArrowUpRight, Download, Loader2 } from 'lucide-react';
 import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals } from '../utils/khmerNumerals';
-import { exportFinanceToExcel } from '../utils/excelExporter';
-import { exportFinanceToWord } from '../utils/wordExporter';
-import { exportElementToPdf } from '../utils/pdfExporter';
+import { exportFinanceDualExcel } from '../utils/excelExporter';
+import { exportFinanceDualWord } from '../utils/wordExporter';
+import { exportDualElementsToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 import A4SheetScaler from './A4SheetScaler';
 import OfficialFinanceDocument from './OfficialFinanceDocument';
+import OfficialFinanceSummaryDocument from './OfficialFinanceSummaryDocument';
 
 export default function FinanceTableView({
   financeData,
@@ -103,19 +104,33 @@ export default function FinanceTableView({
   };
 
   const handleExportExcel = () => {
-    exportFinanceToExcel(financeData, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    exportFinanceDualExcel(financeData, `${monthName} ${yearDisplay}`, metadata, {
+      monthKey,
+      monthName,
+      yearDisplay,
+      periodMode: 'month',
+      useKhmerNumerals
+    });
   };
 
   const handleExportWord = () => {
-    exportFinanceToWord(financeData, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    exportFinanceDualWord(financeData, `${monthName} ${yearDisplay}`, metadata, {
+      monthKey,
+      monthName,
+      yearDisplay,
+      periodMode: 'month',
+      useKhmerNumerals
+    });
   };
 
   const handleDownloadPdf = async () => {
     try {
       setIsExportingPdf(true);
-      await exportElementToPdf(
+      await exportDualElementsToPdf(
         '#printable-finance-document',
-        `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`
+        `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`,
+        '#printable-finance-summary-document',
+        `របាយការណ៍ចំណូលចំណាយសង្ខេប_${monthName}_${yearDisplay}`
       );
     } catch (err) {
       alert('មិនអាចទាញយក PDF បានទេ៖ ' + (err.message || 'Error'));
@@ -234,6 +249,28 @@ export default function FinanceTableView({
           </button>
 
           <button
+            onClick={handleDownloadPdf}
+            disabled={isExportingPdf}
+            style={{
+              background: '#b91c1c',
+              color: '#ffffff',
+              padding: '7px 14px',
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              border: 'none',
+              cursor: isExportingPdf ? 'wait' : 'pointer',
+              opacity: isExportingPdf ? 0.75 : 1
+            }}
+          >
+            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
+          </button>
+
+          <button
             onClick={onPrint}
             style={{
               background: '#0f172a',
@@ -272,6 +309,32 @@ export default function FinanceTableView({
           handleDeleteRow={handleDeleteRow}
         />
       </A4SheetScaler>
+
+      {/* Offscreen Summary Document for Dual PDF Export (Hidden on Screen & Native Print) */}
+      <div
+        className="no-print"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: -9999,
+          width: 794,
+          minWidth: 794,
+          maxWidth: 794,
+          pointerEvents: 'none'
+        }}
+        aria-hidden="true"
+      >
+        <OfficialFinanceSummaryDocument
+          id="printable-finance-summary-document"
+          financeData={financeData}
+          metadata={metadata}
+          monthName={monthName}
+          yearDisplay={yearDisplay}
+          useKhmerNumerals={useKhmerNumerals}
+          monthKey={monthKey}
+          periodMode="month"
+        />
+      </div>
     </div>
   );
 }

@@ -437,7 +437,8 @@ export function recomputeLinkedFinance(rawFinance = {}, allLeaves = {}, allIdCar
   const activeMonthKeys = Array.from(new Set([
     ...Object.keys(baseFinance),
     ...extraMonthKeys.filter(Boolean),
-    ...Object.keys(allLeaves || {}).filter(k => Array.isArray(allLeaves[k]) && allLeaves[k].length > 0)
+    ...Object.keys(allLeaves || {}).filter(k => Array.isArray(allLeaves[k]) && allLeaves[k].length > 0),
+    ...Object.keys(allIdCards || {}).filter(k => Array.isArray(allIdCards[k]) && allIdCards[k].length > 0)
   ]))
     .filter(k => k && k !== '2025-01' && k !== '2027-01')
     .sort();
@@ -570,7 +571,7 @@ export function recomputeLinkedFinance(rawFinance = {}, allLeaves = {}, allIdCar
 
     if (monthIdCards.length > 0) {
       const idcCount = monthIdCards.length;
-      const idcTotal = monthIdCards.reduce((sum, r) => sum + ((Number(r.qty) || 1) * (Number(r.price) || 0)), 0);
+      const idcTotal = monthIdCards.reduce((sum, r) => sum + (Number(r.price) || 0), 0);
       const qtyLabel = `${numToKhmerStr(idcCount)}អង្គ`;
 
       if (idcIdx >= 0) {
@@ -586,7 +587,15 @@ export function recomputeLinkedFinance(rawFinance = {}, allLeaves = {}, allIdCar
         };
       } else {
         const currentLeaveIdx = income.findIndex(it => it && (String(it.desc || '').includes('ដាក់ច្បាប់') || it.autoChannel === 'leave'));
-        const insertAt = currentLeaveIdx >= 0 ? currentLeaveIdx + 1 : Math.min(2, income.length);
+        const currentCarryIdx = income.findIndex(it => it && (
+          String(it.desc || '').includes('ប្រាក់សល់ពី') ||
+          String(it.desc || '').includes('ប្រាក់តម្កល់') ||
+          String(it.desc || '').includes('ប្រាក់តម្កាល') ||
+          it.autoChannel === 'carryover'
+        ));
+        const insertAt = currentLeaveIdx >= 0
+          ? currentLeaveIdx + 1
+          : (currentCarryIdx >= 0 ? currentCarryIdx + 1 : Math.min(2, income.length));
         income.splice(insertAt, 0, {
           id: `inc-${mKey}-idcard`,
           autoChannel: 'idcard',

@@ -835,11 +835,7 @@ export function recommendStudentsByPhoneticQuery(query, studentList = DEFAULT_ST
   const list = Array.isArray(studentList) && studentList.length > 0 ? studentList : DEFAULT_STUDENT_MASTER;
   const rawQuery = String(query || '').trim();
   if (!rawQuery) {
-    return list.slice(0, limit).map(student => ({
-      student,
-      score: 50,
-      matchReason: 'បញ្ជីសមណសិស្ស'
-    }));
+    return [];
   }
 
   const compactQuery = rawQuery.replace(/[\s\u200B]/g, '');

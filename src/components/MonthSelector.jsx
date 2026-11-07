@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus } from 'lucide-react';
+import { Calendar, Plus, Smartphone, Monitor } from 'lucide-react';
 import { KHMER_SOLAR_MONTHS } from '../utils/khmerCalendar';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 import { SEMESTER_1_MONTH_NUMS, SEMESTER_2_MONTH_NUMS, isAcademicMonthKey } from '../utils/summaryAnalytics';
@@ -9,7 +9,10 @@ export default function MonthSelector({
   availableMonths,
   onSelectMonth,
   onAddNewMonth,
-  useKhmerNumerals
+  useKhmerNumerals,
+  isMobile = false,
+  mobilePreviewA4 = false,
+  onToggleMobilePreviewA4
 }) {
   const activeYearFromMonth = (currentMonth || '2026-07').split('-')[0] || '2026';
   const [showAddMonth, setShowAddMonth] = useState(false);
@@ -53,74 +56,181 @@ export default function MonthSelector({
       marginBottom: 16,
       boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
     }}>
-      {/* Month picker: [+] [ខែ ▾] */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#b45309', fontWeight: 600, fontSize: 14 }}>
-          <Calendar size={18} />
-          <span>ខែប្រចាំការ៖</span>
+      {/* Single-Row Top Bar: Month picker [+] [ខែ ▾] on Left + Sliding Toggle Switch (📱 ⇄ 🖥️) on Right */}
+      <div style={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'nowrap',
+        gap: 6
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: isMobile ? 6 : 8,
+          flexWrap: 'nowrap',
+          flex: 1,
+          minWidth: 0
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: isMobile ? 4 : 6,
+            color: '#b45309',
+            fontWeight: 600,
+            fontSize: isMobile ? 13 : 14,
+            whiteSpace: 'nowrap',
+            flexShrink: 0
+          }}>
+            <Calendar size={isMobile ? 16 : 18} />
+            <span>ខែប្រចាំការ៖</span>
+          </div>
+
+          {/* [+] Compact Add Month Button */}
+          <button
+            type="button"
+            onClick={() => setShowAddMonth(!showAddMonth)}
+            title="បង្កើតខែថ្មី"
+            style={{
+              background: showAddMonth ? '#b45309' : '#f1f5f9',
+              border: '1px solid #cbd5e1',
+              color: showAddMonth ? '#ffffff' : '#334155',
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+              flexShrink: 0
+            }}
+          >
+            <Plus size={16} />
+          </button>
+
+          {/* [ខែ ▾] Month Dropdown grouped by 2 Semesters (excluding March & April) */}
+          <select
+            value={currentMonth}
+            onChange={e => onSelectMonth(e.target.value)}
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: '#0f172a',
+              borderColor: '#cbd5e1',
+              background: '#f8fafc',
+              padding: isMobile ? '5px 8px' : '6px 14px',
+              borderRadius: 8,
+              cursor: 'pointer',
+              maxWidth: isMobile ? 115 : 'none',
+              minWidth: 0
+            }}
+          >
+            {sem1Available.length > 0 && (
+              <optgroup label="ឆមាសទី ១ (ឧសភា - កញ្ញា)">
+                {sem1Available.map(mKey => (
+                  <option key={mKey} value={mKey}>
+                    {formatMonthLabel(mKey)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {sem2Available.length > 0 && (
+              <optgroup label="ឆមាសទី ២ (តុលា - កុម្ភៈ)">
+                {sem2Available.map(mKey => (
+                  <option key={mKey} value={mKey}>
+                    {formatMonthLabel(mKey)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {sem1Available.length === 0 && sem2Available.length === 0 && cleanAvailableMonths.map(mKey => (
+              <option key={mKey} value={mKey}>
+                {formatMonthLabel(mKey)}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* [+] Compact Add Month Button */}
-        <button
-          type="button"
-          onClick={() => setShowAddMonth(!showAddMonth)}
-          title="បង្កើតខែថ្មី"
-          style={{
-            background: showAddMonth ? '#b45309' : '#f1f5f9',
-            border: '1px solid #cbd5e1',
-            color: showAddMonth ? '#ffffff' : '#334155',
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            transition: 'all 0.15s'
-          }}
-        >
-          <Plus size={16} />
-        </button>
+        {/* Mobile-Only Sliding Toggle Switch (📱 Mobile Card ⇄ 🖥️ PC A4 Preview) */}
+        {isMobile && onToggleMobilePreviewA4 && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={mobilePreviewA4}
+            onClick={onToggleMobilePreviewA4}
+            title={mobilePreviewA4 ? 'ប្ដូរមកទម្រង់កាតទូរសព្ទ (Mobile)' : 'ប្ដូរទៅមើលទម្រង់ក្រដាសកុំព្យូទ័រ (PC A4)'}
+            style={{
+              position: 'relative',
+              width: 64,
+              height: 34,
+              borderRadius: 999,
+              border: mobilePreviewA4 ? '1.5px solid #0284c7' : '1.5px solid #cbd5e1',
+              background: mobilePreviewA4
+                ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)'
+                : '#f1f5f9',
+              padding: 3,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+              boxShadow: mobilePreviewA4
+                ? '0 2px 6px rgba(2, 132, 199, 0.28)'
+                : 'inset 0 1px 3px rgba(15, 23, 42, 0.08)',
+              flexShrink: 0
+            }}
+          >
+            {/* Background Ghost Icons on Track */}
+            <span style={{
+              width: 26,
+              height: 26,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: mobilePreviewA4 ? 'rgba(255,255,255,0.65)' : 'transparent',
+              transition: 'color 0.2s'
+            }}>
+              <Smartphone size={14} strokeWidth={2.2} />
+            </span>
+            <span style={{
+              width: 26,
+              height: 26,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: mobilePreviewA4 ? 'transparent' : '#64748b',
+              transition: 'color 0.2s'
+            }}>
+              <Monitor size={14} strokeWidth={2.2} />
+            </span>
 
-        {/* [ខែ ▾] Month Dropdown grouped by 2 Semesters (excluding March & April) */}
-        <select
-          value={currentMonth}
-          onChange={e => onSelectMonth(e.target.value)}
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            color: '#0f172a',
-            borderColor: '#cbd5e1',
-            background: '#f8fafc',
-            padding: '6px 14px',
-            borderRadius: 8,
-            cursor: 'pointer'
-          }}
-        >
-          {sem1Available.length > 0 && (
-            <optgroup label="ឆមាសទី ១ (ឧសភា - កញ្ញា)">
-              {sem1Available.map(mKey => (
-                <option key={mKey} value={mKey}>
-                  {formatMonthLabel(mKey)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {sem2Available.length > 0 && (
-            <optgroup label="ឆមាសទី ២ (តុលា - កុម្ភៈ)">
-              {sem2Available.map(mKey => (
-                <option key={mKey} value={mKey}>
-                  {formatMonthLabel(mKey)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {sem1Available.length === 0 && sem2Available.length === 0 && cleanAvailableMonths.map(mKey => (
-            <option key={mKey} value={mKey}>
-              {formatMonthLabel(mKey)}
-            </option>
-          ))}
-        </select>
+            {/* Sliding Circular Thumb showing active 📱 or 🖥️ icon */}
+            <span style={{
+              position: 'absolute',
+              top: 3,
+              left: 3,
+              width: 26,
+              height: 26,
+              borderRadius: '50%',
+              background: '#ffffff',
+              color: mobilePreviewA4 ? '#0284c7' : '#b45309',
+              boxShadow: '0 2px 5px rgba(15, 23, 42, 0.22)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transform: mobilePreviewA4 ? 'translateX(30px)' : 'translateX(0px)',
+              transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s'
+            }}>
+              {mobilePreviewA4 ? (
+                <Monitor size={15} strokeWidth={2.5} />
+              ) : (
+                <Smartphone size={15} strokeWidth={2.5} />
+              )}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* New Month Popover Form (Grouped by Semester 1 & Semester 2, excluding March & April) */}

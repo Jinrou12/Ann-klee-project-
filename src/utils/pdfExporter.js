@@ -47,7 +47,10 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
   element.style.boxShadow = 'none';
 
   // Test single-page-fit layout first and measure exact height vs A4 printable ratio (273mm / 186mm)
-  element.classList.add('pdf-single-page-fit');
+  const isSpaciousSinglePage = element.dataset?.spaciousSinglePage === 'true';
+  if (!isSpaciousSinglePage) {
+    element.classList.add('pdf-single-page-fit');
+  }
   const dataRowCount = element.querySelectorAll('tbody tr').length;
   const elemWidth = element.offsetWidth || 703;
   const fitHeight = element.scrollHeight || element.offsetHeight || 0;
@@ -55,14 +58,16 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
 
   // Case A: Moderate rows (<= 16 table rows and fits within 1 A4 page height) -> 1 single A4 sheet
   // Case B: Many rows (> 16 rows or exceeds 1 A4 page height) -> restore normal spacing and split into 2+ A4 sheets
-  const isSinglePageCandidate = dataRowCount <= 16 && fitHeight <= maxSinglePagePx;
+  const isSinglePageCandidate = !isSpaciousSinglePage && dataRowCount <= 16 && fitHeight <= maxSinglePagePx;
   if (!isSinglePageCandidate) {
     element.classList.remove('pdf-single-page-fit');
   }
 
-  const pdfMargins = isSinglePageCandidate
-    ? [12, 12, 12, 12] // Compact margins so 12-16 rows + signatures stay together on 1 A4 sheet
-    : [18, 14, 18, 14]; // Generous official margins for multi-page documents (2+ sheets)
+  const pdfMargins = isSpaciousSinglePage
+    ? [16, 14, 16, 14]
+    : isSinglePageCandidate
+      ? [12, 12, 12, 12] // Compact margins so 12-16 rows + signatures stay together on 1 A4 sheet
+      : [18, 14, 18, 14]; // Generous official margins for multi-page documents (2+ sheets)
 
   const opt = {
     margin: pdfMargins,
@@ -106,3 +111,19 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     });
   }
 }
+
+/**
+ * Sequentially export two official A4 elements into two distinct PDF files
+ * (File 1: Full Detailed Finance Report, File 2: Official Summary Finance Report)
+ */
+export async function exportDualElementsToPdf(
+  firstElementOrSelector,
+  firstFilename,
+  secondElementOrSelector,
+  secondFilename
+) {
+  await exportElementToPdf(firstElementOrSelector, firstFilename);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  await exportElementToPdf(secondElementOrSelector, secondFilename);
+}
+

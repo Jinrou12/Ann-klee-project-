@@ -31,6 +31,7 @@ import {
   getAvailablePeriods,
   computePeriodSummary,
   formatDurationTotals,
+  formatCondensedReasons,
   formatMonthKeyLabel,
   exportSummaryToExcel,
   exportIdCardSummaryToExcel,
@@ -38,14 +39,15 @@ import {
   ACADEMIC_MONTH_NUMS
 } from '../utils/summaryAnalytics';
 import { KHMER_SOLAR_MONTHS } from '../utils/khmerCalendar';
-import { exportLeaveToExcel, exportIdCardToExcel, exportFinanceToExcel } from '../utils/excelExporter';
-import { exportLeaveToWord, exportIdCardToWord, exportFinanceToWord } from '../utils/wordExporter';
-import { exportElementToPdf } from '../utils/pdfExporter';
+import { exportLeaveToExcel, exportIdCardToExcel, exportFinanceDualExcel } from '../utils/excelExporter';
+import { exportLeaveToWord, exportIdCardToWord, exportFinanceDualWord } from '../utils/wordExporter';
+import { exportElementToPdf, exportDualElementsToPdf } from '../utils/pdfExporter';
 import PeriodDropdown from './PeriodDropdown';
 import A4SheetScaler from './A4SheetScaler';
 import OfficialLeaveDocument from './OfficialLeaveDocument';
 import OfficialIdCardDocument from './OfficialIdCardDocument';
 import OfficialFinanceDocument from './OfficialFinanceDocument';
+import OfficialFinanceSummaryDocument from './OfficialFinanceSummaryDocument';
 
 export default function SummaryTableView({
   currentMonthKey = '2026-07',
@@ -142,7 +144,8 @@ export default function SummaryTableView({
     if (q) {
       base = base.filter(s =>
         String(s.name || '').toLowerCase().includes(q) ||
-        String(s.grade || '').toLowerCase().includes(q)
+        String(s.grade || '').toLowerCase().includes(q) ||
+        (s.records || []).some(r => String(r.reason || '').toLowerCase().includes(q))
       );
     }
 
@@ -252,10 +255,23 @@ export default function SummaryTableView({
     return `ក្នុងខែ${activeMonthName}`;
   }, [periodMode, yearDisplay, activeMonthName, fmtNum]);
 
+  const isMultiMonthPeriod = periodMode === 'semester1' || periodMode === 'semester2' || periodMode === 'year';
+
   // Records formatted for OfficialLeaveDocument (PDF 2 A4 Format)
   const leaveRecordsForOfficialDoc = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (filterMode === 'has_leave') {
+      if (isMultiMonthPeriod) {
+        return displayedStudents.map(s => ({
+          id: s.id,
+          name: s.name,
+          grade: s.grade,
+          reason: formatCondensedReasons(s.records, { maxReasons: 2, useKhmerNumerals }),
+          duration: formatDurationTotals(s.durationTotals, useKhmerNumerals),
+          date: `${fmtNum(s.leaveCount)} លើក`,
+          note: ''
+        }));
+      }
       return (summary.allLeaveRecords || []).filter(r => {
         if (gradeFilter !== 'all' && String(r.grade || '').trim() !== gradeFilter) return false;
         if (q) {
@@ -283,7 +299,9 @@ export default function SummaryTableView({
       name: s.name,
       grade: s.grade,
       reason: s.leaveCount > 0
-        ? Array.from(new Set(s.records.map(r => r.reason).filter(Boolean))).join(', ')
+        ? (isMultiMonthPeriod
+          ? formatCondensedReasons(s.records, { maxReasons: 2, useKhmerNumerals })
+          : Array.from(new Set(s.records.map(r => r.reason).filter(Boolean))).join(', '))
         : 'មករៀនទៀងទាត់ (គ្មានច្បាប់)',
       duration: s.leaveCount > 0
         ? formatDurationTotals(s.durationTotals, useKhmerNumerals)
@@ -291,7 +309,7 @@ export default function SummaryTableView({
       date: s.leaveCount > 0 ? `${fmtNum(s.leaveCount)} លើក` : '—',
       note: ''
     }));
-  }, [summary.allLeaveRecords, filterMode, gradeFilter, searchTerm, displayedStudents, useKhmerNumerals]);
+  }, [summary.allLeaveRecords, filterMode, gradeFilter, searchTerm, displayedStudents, useKhmerNumerals, isMultiMonthPeriod, fmtNum]);
 
   const leaveCustomPeriodTitle = useMemo(() => {
     if (filterMode === 'no_leave') {
@@ -332,6 +350,14 @@ export default function SummaryTableView({
     return { income: inc, expense: exp };
   }, [displayedFinanceItems, financeCategoryFilter]);
 
+  const fullPeriodFinanceDataForSummary = useMemo(
+    () => ({
+      income: summary.financeSummary.incomeItems || [],
+      expense: summary.financeSummary.expenseItems || []
+    }),
+    [summary.financeSummary]
+  );
+
   const financeCustomPeriodTitle = useMemo(() => {
     const typeLabel = financeCategoryFilter === 'income'
       ? 'តារាងចំណូល'
@@ -361,11 +387,16 @@ export default function SummaryTableView({
 
   const handleExportExcel = () => {
     if (sectionMode === 'finance') {
-      exportFinanceToExcel(financeDataForOfficialDoc, periodTitleLabel, metadata, {
+      exportFinanceDualExcel(financeDataForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
+        monthName: activeMonthName,
+        yearDisplay,
+        periodMode,
         useKhmerNumerals,
         customPeriodTitle: financeCustomPeriodTitle,
-        categoryFilter: financeCategoryFilter
+        categoryFilter: financeCategoryFilter,
+        isDeficitOverride: isOverallDeficit,
+        summaryFinanceData: fullPeriodFinanceDataForSummary
       });
     } else if (sectionMode === 'idcards') {
       exportIdCardToExcel(displayedIdCardRecords, periodTitleLabel, metadata, {
@@ -379,18 +410,24 @@ export default function SummaryTableView({
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: leaveCustomPeriodTitle,
-        customSummaryText: leaveCustomSummaryText
+        customSummaryText: leaveCustomSummaryText,
+        compactReasonColumn: isMultiMonthPeriod
       });
     }
   };
 
   const handleExportWord = () => {
     if (sectionMode === 'finance') {
-      exportFinanceToWord(financeDataForOfficialDoc, periodTitleLabel, metadata, {
+      exportFinanceDualWord(financeDataForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
+        monthName: activeMonthName,
+        yearDisplay,
+        periodMode,
         useKhmerNumerals,
         customPeriodTitle: financeCustomPeriodTitle,
-        categoryFilter: financeCategoryFilter
+        categoryFilter: financeCategoryFilter,
+        isDeficitOverride: isOverallDeficit,
+        summaryFinanceData: fullPeriodFinanceDataForSummary
       });
     } else if (sectionMode === 'idcards') {
       exportIdCardToWord(displayedIdCardRecords, periodTitleLabel, metadata, {
@@ -404,7 +441,8 @@ export default function SummaryTableView({
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: leaveCustomPeriodTitle,
-        customSummaryText: leaveCustomSummaryText
+        customSummaryText: leaveCustomSummaryText,
+        compactReasonColumn: isMultiMonthPeriod
       });
     }
   };
@@ -414,9 +452,11 @@ export default function SummaryTableView({
       setIsExportingPdf(true);
       const safePeriodSlug = String(periodTitleLabel || activeMonthName).replace(/\s+/g, '_');
       if (sectionMode === 'finance') {
-        await exportElementToPdf(
+        await exportDualElementsToPdf(
           '#printable-summary-finance-document',
-          `របាយការណ៍ហិរញ្ញវត្ថុ_${safePeriodSlug}`
+          `របាយការណ៍ហិរញ្ញវត្ថុ_${safePeriodSlug}`,
+          '#printable-summary-finance-brief-document',
+          `របាយការណ៍ចំណូលចំណាយសង្ខេប_${safePeriodSlug}`
         );
       } else if (sectionMode === 'idcards') {
         await exportElementToPdf(
@@ -1022,6 +1062,7 @@ export default function SummaryTableView({
                     studentMaster={studentMaster}
                     customPeriodTitle={leaveCustomPeriodTitle}
                     customSummaryText={leaveCustomSummaryText}
+                    compactReasonColumn={isMultiMonthPeriod}
                   />
                 </A4SheetScaler>
               </div>
@@ -1053,6 +1094,7 @@ export default function SummaryTableView({
                     studentMaster={studentMaster}
                     customPeriodTitle={leaveCustomPeriodTitle}
                     customSummaryText={leaveCustomSummaryText}
+                    compactReasonColumn={isMultiMonthPeriod}
                   />
                 </div>
 
@@ -2128,6 +2170,33 @@ export default function SummaryTableView({
             </div>
               </>
             )}
+
+            {/* Offscreen Summary Document for Dual PDF Export in PC Summary Finance Section */}
+            <div
+              className="no-print"
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: -9999,
+                width: 794,
+                minWidth: 794,
+                maxWidth: 794,
+                pointerEvents: 'none'
+              }}
+              aria-hidden="true"
+            >
+              <OfficialFinanceSummaryDocument
+                id="printable-summary-finance-brief-document"
+                financeData={fullPeriodFinanceDataForSummary}
+                metadata={metadata}
+                monthName={activeMonthName}
+                yearDisplay={yearDisplay}
+                useKhmerNumerals={useKhmerNumerals}
+                monthKey={effectiveReportMonthKey}
+                periodMode={periodMode}
+                isDeficitOverride={isOverallDeficit}
+              />
+            </div>
           </div>
         </>
       )}

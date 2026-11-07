@@ -3,10 +3,11 @@ import {
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, FileText, Eye, 
   Calendar, Clock, AlertCircle, UserCheck, Search, Download, Loader2, Printer 
 } from 'lucide-react';
-import { toKhmerDigits, parseDurationShorthand } from '../../utils/khmerNumerals';
+import { toKhmerDigits, parseDurationShorthand, formatKhmerCurrency } from '../../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../../utils/excelExporter';
 import { exportLeaveToWord } from '../../utils/wordExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
+import A4SheetScaler from '../A4SheetScaler';
 import OfficialLeaveDocument from '../OfficialLeaveDocument';
 
 export default function LeaveMobileView({
@@ -17,7 +18,8 @@ export default function LeaveMobileView({
   studentMaster = [],
   onUpdateRecords,
   onPrint,
-  onSwitchToDesktop
+  onSwitchToDesktop,
+  mobilePreviewA4 = false
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -140,139 +142,68 @@ export default function LeaveMobileView({
 
   return (
     <div className="mobile-leave-container" style={{ paddingBottom: 80 }}>
-      {/* 1. Mobile Top Overview & Quick Actions */}
+      {/* 1. Mobile Top Quick Actions (+ បន្ថែមច្បាប់ & Download PDF side-by-side) */}
       <div style={{
-        background: 'linear-gradient(135deg, #ffffff 0%, #fffbeb 100%)',
-        border: '1px solid #fde68a',
-        borderRadius: 14,
-        padding: '14px 16px',
-        marginBottom: 14,
-        boxShadow: '0 2px 8px rgba(180, 83, 9, 0.08)'
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 8,
+        marginBottom: 12
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              របាយការណ៍សុំច្បាប់ប្រចាំខែ
-            </span>
-            <h2 className="font-moul" style={{ fontSize: 16, margin: '2px 0 0', color: '#78350f' }}>
-              ខែ{monthName} ឆ្នាំ{yearDisplay}
-            </h2>
-          </div>
-          <div style={{
+        <button
+          onClick={() => setShowAddModal(true)}
+          style={{
             background: '#b45309',
             color: '#ffffff',
-            padding: '4px 12px',
-            borderRadius: 20,
+            border: 'none',
+            borderRadius: 10,
+            padding: '10px 12px',
+            fontSize: 13,
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            cursor: 'pointer',
+            width: '100%',
+            boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
+          }}
+        >
+          <Plus size={16} />
+          <span>បន្ថែមច្បាប់</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={isExportingPdf}
+          style={{
+            width: '100%',
+            background: '#b91c1c',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: 10,
+            padding: '10px 12px',
             fontSize: 13,
             fontWeight: 700,
-            boxShadow: '0 2px 4px rgba(180, 83, 9, 0.25)'
-          }}>
-            {useKhmerNumerals ? toKhmerDigits(records.length) : records.length} អង្គ
-          </div>
-        </div>
-
-        {/* Action Row */}
-        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button
-            onClick={() => setShowAddModal(true)}
-            style={{
-              background: '#b45309',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '10px 14px',
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              cursor: 'pointer',
-              width: '100%',
-              boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
-            }}
-          >
-            <Plus size={16} />
-            <span>បន្ថែមច្បាប់</span>
-          </button>
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={handleExportExcel}
-              style={{
-                flex: 1,
-                background: '#15803d',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '9px 10px',
-                fontSize: 12,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                cursor: 'pointer'
-              }}
-            >
-              <FileSpreadsheet size={15} />
-              <span>Export Excel</span>
-            </button>
-
-            <button
-              onClick={handleExportWord}
-              style={{
-                flex: 1,
-                background: '#1d4ed8',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '9px 10px',
-                fontSize: 12,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                cursor: 'pointer'
-              }}
-            >
-              <FileText size={15} />
-              <span>Download Word</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Toggle to Full A4 Desktop Mode */}
-        {onSwitchToDesktop && (
-          <div style={{ marginTop: 8, textAlign: 'center' }}>
-            <button
-              onClick={onSwitchToDesktop}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: '#854d0e',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '4px 8px'
-              }}
-            >
-              <Eye size={13} />
-              <span>មើលផ្ទាំងក្រដាស A4 ផ្លូវការ (Desktop View)</span>
-            </button>
-          </div>
-        )}
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            cursor: isExportingPdf ? 'wait' : 'pointer',
+            opacity: isExportingPdf ? 0.75 : 1,
+            boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+          }}
+        >
+          {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+        </button>
       </div>
 
       {/* 2. Search & Filter Bar */}
       <div style={{
         display: 'flex',
         gap: 8,
-        marginBottom: 12
+        marginBottom: 10
       }}>
         <div style={{
           flex: 1,
@@ -318,8 +249,52 @@ export default function LeaveMobileView({
         </select>
       </div>
 
-      {/* 3. Cards List */}
-      {filteredRecords.length === 0 ? (
+      {/* 2.5. Summary Count & Total Leave Fee Strip below Search Bar */}
+      <div style={{
+        background: 'linear-gradient(135deg, #ffffff 0%, #fffbeb 100%)',
+        border: '1.5px solid #fde68a',
+        borderRadius: 10,
+        padding: '8px 12px',
+        marginBottom: 12,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        boxShadow: '0 1px 4px rgba(180, 83, 9, 0.06)'
+      }}>
+        <span style={{
+          background: '#b45309',
+          color: '#ffffff',
+          padding: '4px 12px',
+          borderRadius: 16,
+          fontSize: 12.5,
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+          boxShadow: '0 1px 3px rgba(180, 83, 9, 0.2)'
+        }}>
+          សរុប {useKhmerNumerals ? toKhmerDigits(filteredRecords.length) : filteredRecords.length} អង្គ
+        </span>
+        <span style={{ fontSize: 14.5, fontWeight: 800, color: '#15803d', whiteSpace: 'nowrap' }}>
+          {formatKhmerCurrency(filteredRecords.length * 2000, useKhmerNumerals)}
+        </span>
+      </div>
+
+      {/* 3. Cards List or Official A4 Preview */}
+      {mobilePreviewA4 ? (
+        <div style={{ background: '#ffffff', padding: 8, borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          <A4SheetScaler>
+            <OfficialLeaveDocument
+              id="preview-mobile-leave-document"
+              records={filteredRecords}
+              metadata={metadata}
+              monthName={monthName}
+              yearDisplay={yearDisplay}
+              useKhmerNumerals={useKhmerNumerals}
+              monthKey={monthKey}
+              studentMaster={studentMaster}
+            />
+          </A4SheetScaler>
+        </div>
+      ) : filteredRecords.length === 0 ? (
         <div style={{
           textAlign: 'center',
           padding: '40px 20px',
@@ -529,10 +504,10 @@ export default function LeaveMobileView({
                 key={record.id}
                 style={{
                   background: '#ffffff',
-                  border: '1px solid #e2e8f0',
+                  border: '1.5px solid #fcd34d',
                   borderRadius: 12,
                   padding: 12,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                  boxShadow: '0 2px 6px rgba(180, 83, 9, 0.06)',
                   position: 'relative'
                 }}
               >
@@ -542,8 +517,9 @@ export default function LeaveMobileView({
                     <span style={{
                       fontSize: 12,
                       fontWeight: 700,
-                      color: '#64748b',
-                      background: '#f1f5f9',
+                      color: '#b45309',
+                      background: '#fef3c7',
+                      border: '1px solid #fde68a',
                       width: 24,
                       height: 24,
                       borderRadius: '50%',
@@ -580,8 +556,8 @@ export default function LeaveMobileView({
 
                 {/* Reason Banner */}
                 <div style={{
-                  background: '#f8fafc',
-                  borderLeft: '3px solid #b45309',
+                  background: '#fffbeb',
+                  borderLeft: '3px solid #d97706',
                   padding: '6px 10px',
                   borderRadius: '0 6px 6px 0',
                   fontSize: 13,
@@ -599,7 +575,7 @@ export default function LeaveMobileView({
                   fontSize: 12,
                   color: '#64748b',
                   paddingTop: 6,
-                  borderTop: '1px solid #f1f5f9'
+                  borderTop: '1px solid #fef3c7'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

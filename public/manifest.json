@@ -1,0 +1,40 @@
+{
+  "id": "/",
+  "name": "ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង - ប្រព័ន្ធគ្រប់គ្រងច្បាប់ និងចំណូលចំណាយ",
+  "short_name": "ហ៊ុន ណេង App",
+  "description": "ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស ទិញកាត ID និងចំណូលចំណាយ - ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8fafc",
+  "theme_color": "#78350f",
+  "lang": "km",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
+

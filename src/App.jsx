@@ -24,6 +24,7 @@ import {
   loadAppState,
   saveAppState,
   INITIAL_ID_CARD_DATA,
+  sanitizeLeaveState,
   recomputeLinkedFinance,
   exportBackup,
   importBackup,
@@ -69,6 +70,7 @@ export default function App() {
 
   // Active view states
   const [activeTab, setActiveTab] = useState('leave'); // 'leave' | 'finance' | 'upload'
+  const [mobilePreviewA4, setMobilePreviewA4] = useState(false); // false = Mobile Card (📱), true = Official A4 Preview (🖥️)
   const [isProcessing, setIsProcessing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState('idle'); // 'idle' | 'connected' | 'syncing' | 'error'
 
@@ -121,9 +123,20 @@ export default function App() {
           needsCloudUpdate = true;
         }
         const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(appState.idCards || {}), ...(cloudData.idCards || {}) };
+        const normalizedCloudLeaves = sanitizeLeaveState(cloudData.leaves);
+        const recomputedCloudFinance = recomputeLinkedFinance(
+          cloudData.finance,
+          normalizedCloudLeaves,
+          mergedIdCards
+        );
+        if (JSON.stringify(recomputedCloudFinance) !== JSON.stringify(cloudData.finance)) {
+          needsCloudUpdate = true;
+        }
         const mergedState = {
           ...appState,
           ...cloudData,
+          leaves: normalizedCloudLeaves,
+          finance: recomputedCloudFinance,
           idCards: mergedIdCards,
           meta: cloudMeta
         };
@@ -198,10 +211,19 @@ export default function App() {
           if (!mergedMeta.directorTitle || mergedMeta.directorTitle === 'ព្រះនាយក' || mergedMeta.directorTitle === 'ព្រះចៅអធិការ') {
             mergedMeta.directorTitle = 'នាយកសាលា';
           }
+          const mergedRemoteIdCards = { ...INITIAL_ID_CARD_DATA, ...(prev.idCards || {}), ...(remoteState.idCards || {}) };
+          const normalizedRemoteLeaves = sanitizeLeaveState(remoteState.leaves);
+          const syncedRemoteFinance = recomputeLinkedFinance(
+            remoteState.finance,
+            normalizedRemoteLeaves,
+            mergedRemoteIdCards
+          );
           const merged = {
             ...prev,
             ...remoteState,
-            idCards: { ...INITIAL_ID_CARD_DATA, ...(prev.idCards || {}), ...(remoteState.idCards || {}) },
+            leaves: normalizedRemoteLeaves,
+            finance: syncedRemoteFinance,
+            idCards: mergedRemoteIdCards,
             meta: mergedMeta
           };
           saveAppState(merged); // Sync to device memory
@@ -278,17 +300,16 @@ export default function App() {
     currentMonthKey
   ])).sort().reverse();
 
-  // Compute Year Stats List for the Left School Logo Drawer (2027, 2026, 2025 + any custom year)
+  // Compute Year Stats List for the Left School Logo Drawer (2027, 2026 + any custom year, excluding 2025)
   const allYearKeys = Array.from(new Set([
     '2027',
     '2026',
-    '2025',
     ...(appState.meta.availableYears || []),
     ...Object.keys(appState.leaves).map(k => k.split('-')[0]).filter(Boolean),
     ...Object.keys(appState.finance).map(k => k.split('-')[0]).filter(Boolean),
     ...Object.keys(appState.idCards || {}).map(k => k.split('-')[0]).filter(Boolean),
     activeYear
-  ])).sort().reverse();
+  ])).filter(yr => yr !== '2025').sort().reverse();
 
   const yearStatsList = allYearKeys.map(yr => {
     const monthKeysInYear = Array.from(new Set([
@@ -471,23 +492,34 @@ export default function App() {
     setAppState(prev => {
       const existingMonthsInYear = Array.from(new Set([
         ...Object.keys(prev.leaves || {}).filter(k => k.startsWith(`${cleanYr}-`) && isAcademicMonthKey(k)),
-        ...Object.keys(prev.finance || {}).filter(k => k.startsWith(`${cleanYr}-`) && isAcademicMonthKey(k))
+        ...Object.keys(prev.finance || {}).filter(k => k.startsWith(`${cleanYr}-`) && isAcademicMonthKey(k)),
+        ...Object.keys(prev.idCards || {}).filter(k => k.startsWith(`${cleanYr}-`) && isAcademicMonthKey(k))
       ])).sort().reverse();
 
       const nextMonthKey = existingMonthsInYear[0] || `${cleanYr}-05`;
       const prevYears = Array.isArray(prev.meta?.availableYears) ? prev.meta.availableYears : [];
       const updatedYears = Array.from(new Set([...prevYears, cleanYr]));
 
+      const nextLeaves = {
+        ...prev.leaves,
+        [nextMonthKey]: prev.leaves[nextMonthKey] || []
+      };
+      const rawNextFinance = {
+        ...prev.finance,
+        [nextMonthKey]: prev.finance[nextMonthKey] || { income: [], expense: [] }
+      };
+      const nextIdCards = prev.idCards || INITIAL_ID_CARD_DATA;
+      const syncedFinance = recomputeLinkedFinance(
+        rawNextFinance,
+        nextLeaves,
+        nextIdCards,
+        [nextMonthKey]
+      );
+
       return {
         ...prev,
-        leaves: {
-          ...prev.leaves,
-          [nextMonthKey]: prev.leaves[nextMonthKey] || []
-        },
-        finance: {
-          ...prev.finance,
-          [nextMonthKey]: prev.finance[nextMonthKey] || { income: [], expense: [] }
-        },
+        leaves: nextLeaves,
+        finance: syncedFinance,
         meta: {
           ...prev.meta,
           currentMonth: nextMonthKey,
@@ -1140,6 +1172,9 @@ export default function App() {
           onAddNewMonth={mutateAddNewMonth}
           useKhmerNumerals={appState.meta.useKhmerNumerals}
           onToggleNumerals={mutateToggleNumerals}
+          isMobile={isMobile}
+          mobilePreviewA4={mobilePreviewA4}
+          onToggleMobilePreviewA4={() => setMobilePreviewA4(prev => !prev)}
         />
 
         {/* View Switcher Banner for Mobile users who manually forced PC view */}
@@ -1200,6 +1235,7 @@ export default function App() {
               onUpdateRecords={mutateLeaves}
               onPrint={handlePrint}
               onSwitchToDesktop={() => setViewMode('desktop')}
+              mobilePreviewA4={mobilePreviewA4}
             />
           ) : (
             <LeaveTableView
@@ -1227,6 +1263,7 @@ export default function App() {
               studentMaster={appState.studentMaster}
               onUpdateRecords={mutateIdCards}
               onAddRecordToMonth={mutateAddIdCardToMonth}
+              mobilePreviewA4={mobilePreviewA4}
             />
           ) : (
             <IdCardTableView
@@ -1255,6 +1292,7 @@ export default function App() {
               onUpdateFinance={mutateFinance}
               onPrint={handlePrint}
               onSwitchToDesktop={() => setViewMode('desktop')}
+              mobilePreviewA4={mobilePreviewA4}
             />
           ) : (
             <FinanceTableView
@@ -1305,6 +1343,7 @@ export default function App() {
               useKhmerNumerals={appState.meta.useKhmerNumerals}
               onSelectMonth={mutateMonth}
               onSelectYear={mutateSelectYear}
+              mobilePreviewA4={mobilePreviewA4}
             />
           ) : (
             <SummaryTableView

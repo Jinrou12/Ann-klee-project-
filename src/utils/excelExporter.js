@@ -10,6 +10,7 @@ import {
   isFinanceDeficit
 } from './khmerNumerals.js';
 import { getMonthEndReportDates } from './khmerCalendar.js';
+import { buildFinanceSummaryModel } from './financeSummaryBuilder.js';
 import { buildZipArchive, escapeXml, triggerBlobDownload, loadOfficialLogoBytes } from './openXmlZip.js';
 
 /**
@@ -34,7 +35,7 @@ import { buildZipArchive, escapeXml, triggerBlobDownload, loadOfficialLogoBytes 
 function buildExcelStylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="7">
+  <fonts count="11">
     <font>
       <sz val="11"/>
       <color rgb="FF000000"/>
@@ -73,6 +74,30 @@ function buildExcelStylesXml() {
       <sz val="11"/>
       <color rgb="FFB91C1C"/>
       <name val="Khmer OS Siemreap"/>
+    </font>
+    <font>
+      <u val="single"/>
+      <sz val="11"/>
+      <color rgb="FF000000"/>
+      <name val="Khmer OS Muol Light"/>
+    </font>
+    <font>
+      <u val="single"/>
+      <sz val="11"/>
+      <color rgb="FFB91C1C"/>
+      <name val="Khmer OS Muol Light"/>
+    </font>
+    <font>
+      <u val="double"/>
+      <sz val="11"/>
+      <color rgb="FF000000"/>
+      <name val="Khmer OS Muol Light"/>
+    </font>
+    <font>
+      <u val="double"/>
+      <sz val="11"/>
+      <color rgb="FFB91C1C"/>
+      <name val="Khmer OS Muol Light"/>
     </font>
   </fonts>
   <fills count="6">
@@ -118,7 +143,7 @@ function buildExcelStylesXml() {
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="16">
+  <cellXfs count="22">
     <!-- 0: Default -->
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment vertical="center"/>
@@ -181,6 +206,30 @@ function buildExcelStylesXml() {
     </xf>
     <!-- 15: Balance Deficit -->
     <xf numFmtId="0" fontId="6" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="right" vertical="center"/>
+    </xf>
+    <!-- 16: Summary Table Header (Moul Center Border) -->
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center" wrapText="1"/>
+    </xf>
+    <!-- 17: Summary Subtotal Label (Siemreap Bold Center Border) -->
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
+    </xf>
+    <!-- 18: Summary Subtotal Value (Moul Single Underline Right Border) -->
+    <xf numFmtId="0" fontId="7" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="right" vertical="center"/>
+    </xf>
+    <!-- 19: Summary Subtotal Value Deficit (Moul Red Single Underline Right Border) -->
+    <xf numFmtId="0" fontId="8" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="right" vertical="center"/>
+    </xf>
+    <!-- 20: Summary Balance Value (Moul Double Underline Right Border) -->
+    <xf numFmtId="0" fontId="9" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="right" vertical="center"/>
+    </xf>
+    <!-- 21: Summary Balance Value Deficit (Moul Red Double Underline Right Border) -->
+    <xf numFmtId="0" fontId="10" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
       <alignment horizontal="right" vertical="center"/>
     </xf>
   </cellXfs>
@@ -493,13 +542,15 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
           cleanDate = parts[0].trim();
         }
       }
+      const cleanReasonText = String(r.reason || '').replace(/\s+/g, ' ').trim();
+      const rowHeight = (options.compactReasonColumn && cleanReasonText.length > 26) ? 36 : 25;
       rows.push({
-        height: 25,
+        height: rowHeight,
         cells: [
           { v: fmt(idx + 1), s: 5 },
           { v: r.name || '', s: 6 },
           { v: useKhmer ? toKhmerDigits(r.grade || '') : (r.grade || ''), s: 5 },
-          { v: String(r.reason || '').replace(/\s+/g, ' ').trim(), s: 6 },
+          { v: cleanReasonText, s: 6 },
           { v: r.duration || '', s: 5 },
           { v: useKhmer ? toKhmerDigits(cleanDate) : cleanDate, s: 5 },
           { v: r.note || '', s: 5 }
@@ -523,7 +574,9 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
 
   downloadStyledXlsx({
     sheetName: 'ច្បាប់សមណសិស្ស',
-    colWidths: [8, 25, 11, 32, 15, 18, 16],
+    colWidths: options.compactReasonColumn
+      ? [8, 25, 11, 25, 20, 15, 14]
+      : [8, 25, 11, 32, 15, 18, 16],
     rows,
     merges,
     fileName: `របាយការណ៍ច្បាប់សមណសិស្ស_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
@@ -814,4 +867,167 @@ export async function exportFinanceToExcel(financeData = { income: [], expense: 
     fileName: `របាយការណ៍ចំណូលចំណាយ_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
     logoBytes
   });
+}
+
+/**
+ * 4. Export Official Summary Financial Report (របាយការណ៍ចំណូលចំណាយសង្ខេប) to Styled Excel (.xlsx)
+ * matching the 1-page 5-column summary DOCX templates (July & September 2026)
+ */
+export async function exportFinanceSummaryReportToExcel(
+  financeData = { income: [], expense: [] },
+  monthLabel = 'កក្កដា ២០២៦',
+  metadata = {},
+  options = {}
+) {
+  const logoBytes = options.logoBytes || (await loadOfficialLogoBytes());
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const numCols = 5;
+  const rows = [];
+  const merges = [];
+  const monthKey = options.monthKey || metadata.currentMonth || '2026-07';
+  const useKhmer = options.useKhmerNumerals !== false;
+
+  const summaryModel = buildFinanceSummaryModel(financeData, {
+    monthKey,
+    monthName: options.monthName || '',
+    yearDisplay: options.yearDisplay || '',
+    periodMode: options.periodMode || 'month',
+    useKhmerNumerals: useKhmer,
+    customSummaryTitle: options.customSummaryTitle || '',
+    isDeficitOverride: options.isDeficitOverride ?? null
+  });
+
+  const reportDates = getMonthEndReportDates(monthKey, {
+    watName: metadata.wat,
+    customLunarTemplate: metadata.lunarDateHeader,
+    useKhmerNumerals: useKhmer
+  });
+
+  const { isDeficit } = summaryModel;
+
+  // 1. Official Ministry & Kingdom Header
+  appendOfficialHeader(rows, merges, numCols, metadata, false, hasLogo);
+
+  // 2. Centered 3-Line Report Title
+  const rTitle1 = rows.length + 1;
+  rows.push({ height: 24, cells: [{ v: 'របាយការណ៍', s: 2 }] });
+  merges.push(`${cellRef(rTitle1, 0)}:${cellRef(rTitle1, numCols - 1)}`);
+
+  const rTitle2 = rows.length + 1;
+  rows.push({ height: 22, cells: [{ v: 'ស្ដីពី', s: 1 }] });
+  merges.push(`${cellRef(rTitle2, 0)}:${cellRef(rTitle2, numCols - 1)}`);
+
+  const rTitle3 = rows.length + 1;
+  rows.push({ height: 26, cells: [{ v: summaryModel.reportTitle, s: 2 }] });
+  merges.push(`${cellRef(rTitle3, 0)}:${cellRef(rTitle3, numCols - 1)}`);
+
+  rows.push({ height: 12, cells: [] });
+
+  // 3. Unified 5-Column Summary Table
+  const tableHeaders = ['ល.រ', 'បរិយាយ', 'ចំនួន', 'ចំនួនថវិកា', 'ផ្សេងៗ'];
+  rows.push({
+    height: 30,
+    cells: tableHeaders.map(h => ({ v: h, s: 16 }))
+  });
+
+  // Income Rows 1 & 2
+  summaryModel.incomeRows.forEach(r => {
+    rows.push({
+      height: 28,
+      cells: [
+        { v: r.no, s: 5 },
+        { v: r.desc, s: 6 },
+        { v: r.qty, s: 5 },
+        { v: r.amountText, s: 7 },
+        { v: r.note || '', s: 5 }
+      ]
+    });
+  });
+
+  // Subtotal Income Row (merged A..C)
+  const subIncRow = rows.length + 1;
+  rows.push({
+    height: 30,
+    cells: [
+      { v: summaryModel.totalIncomeLabel, s: 17 },
+      { v: '', s: 17 },
+      { v: '', s: 17 },
+      { v: summaryModel.totalIncomeText, s: 18 },
+      { v: '', s: 5 }
+    ]
+  });
+  merges.push(`${cellRef(subIncRow, 0)}:${cellRef(subIncRow, 2)}`);
+
+  // Expense Rows 1 & 2
+  summaryModel.expenseRows.forEach(r => {
+    rows.push({
+      height: 28,
+      cells: [
+        { v: r.no, s: 5 },
+        { v: r.desc, s: 6 },
+        { v: r.qty, s: 5 },
+        { v: r.amountText, s: 7 },
+        { v: r.note || '', s: 5 }
+      ]
+    });
+  });
+
+  // Subtotal Expense Row (merged A..C)
+  const subExpRow = rows.length + 1;
+  rows.push({
+    height: 30,
+    cells: [
+      { v: summaryModel.totalExpenseLabel, s: 17 },
+      { v: '', s: 17 },
+      { v: '', s: 17 },
+      { v: summaryModel.totalExpenseText, s: isDeficit ? 19 : 18 },
+      { v: '', s: 5 }
+    ]
+  });
+  merges.push(`${cellRef(subExpRow, 0)}:${cellRef(subExpRow, 2)}`);
+
+  // Final Net Balance Row (merged A..C, double-underlined Moul value)
+  const balRow = rows.length + 1;
+  rows.push({
+    height: 32,
+    cells: [
+      { v: summaryModel.balanceLabel, s: 9 },
+      { v: '', s: 9 },
+      { v: '', s: 9 },
+      { v: summaryModel.balanceText, s: isDeficit ? 21 : 20 },
+      { v: '', s: 5 }
+    ]
+  });
+  merges.push(`${cellRef(balRow, 0)}:${cellRef(balRow, 2)}`);
+
+  // 4. Official Signatures & Dates Block
+  appendOfficialSignatures(rows, merges, numCols, metadata, reportDates, true);
+
+  downloadStyledXlsx({
+    sheetName: 'សង្ខេបចំណូលចំណាយ',
+    colWidths: [8, 44, 16, 20, 18],
+    rows,
+    merges,
+    fileName: `របាយការណ៍ចំណូលចំណាយសង្ខេប_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
+    logoBytes
+  });
+}
+
+/**
+ * Dual-file Excel exporter for PC Finance:
+ * File 1: Full Detailed Finance Report (.xlsx)
+ * File 2: Summary Finance Report (.xlsx)
+ */
+export async function exportFinanceDualExcel(
+  financeData = { income: [], expense: [] },
+  monthLabel = 'កក្កដា ២០២៦',
+  metadata = {},
+  options = {}
+) {
+  const logoBytes = options.logoBytes || (await loadOfficialLogoBytes());
+  const sharedOptions = { ...options, logoBytes };
+  await exportFinanceToExcel(financeData, monthLabel, metadata, sharedOptions);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const summarySourceData = options.summaryFinanceData || financeData;
+  await exportFinanceSummaryReportToExcel(summarySourceData, monthLabel, metadata, sharedOptions);
 }

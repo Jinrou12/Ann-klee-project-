@@ -26,6 +26,7 @@ import {
   getAvailablePeriods,
   computePeriodSummary,
   formatDurationTotals,
+  formatCondensedReasons,
   formatMonthKeyLabel,
   exportSummaryToExcel,
   exportIdCardSummaryToExcel,
@@ -51,7 +52,8 @@ export default function SummaryMobileView({
   metadata = {},
   useKhmerNumerals = true,
   onSelectMonth,
-  onSelectYear
+  onSelectYear,
+  mobilePreviewA4 = false
 }) {
   // 0. Top-Level Section Switch: 'students' ⇄ 'idcards' ⇄ 'finance'
   const [sectionMode, setSectionMode] = useState('students'); // 'students' | 'idcards' | 'finance'
@@ -61,7 +63,7 @@ export default function SummaryMobileView({
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey);
   const [selectedYear, setSelectedYear] = useState(() => (currentMonthKey || '2026-07').split('-')[0] || '2026');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [viewFormatMode, setViewFormatMode] = useState('official_a4'); // 'official_a4' | 'analytics'
+  const viewFormatMode = mobilePreviewA4 ? 'official_a4' : 'analytics';
 
   useEffect(() => {
     if (currentMonthKey) {
@@ -132,7 +134,8 @@ export default function SummaryMobileView({
     if (q) {
       base = base.filter(s =>
         String(s.name || '').toLowerCase().includes(q) ||
-        String(s.grade || '').toLowerCase().includes(q)
+        String(s.grade || '').toLowerCase().includes(q) ||
+        (s.records || []).some(r => String(r.reason || '').toLowerCase().includes(q))
       );
     }
 
@@ -240,9 +243,22 @@ export default function SummaryMobileView({
     return `ក្នុងខែ${activeMonthName}`;
   }, [periodMode, yearDisplay, activeMonthName, fmtNum]);
 
+  const isMultiMonthPeriod = periodMode === 'semester1' || periodMode === 'semester2' || periodMode === 'year';
+
   const leaveRecordsForOfficialDoc = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (filterMode === 'has_leave') {
+      if (isMultiMonthPeriod) {
+        return displayedStudents.map(s => ({
+          id: s.id,
+          name: s.name,
+          grade: s.grade,
+          reason: formatCondensedReasons(s.records, { maxReasons: 2, useKhmerNumerals }),
+          duration: formatDurationTotals(s.durationTotals, useKhmerNumerals),
+          date: `${fmtNum(s.leaveCount)} លើក`,
+          note: ''
+        }));
+      }
       return (summary.allLeaveRecords || []).filter(r => {
         if (gradeFilter !== 'all' && String(r.grade || '').trim() !== gradeFilter) return false;
         if (q) {
@@ -269,7 +285,9 @@ export default function SummaryMobileView({
       name: s.name,
       grade: s.grade,
       reason: s.leaveCount > 0
-        ? Array.from(new Set(s.records.map(r => r.reason).filter(Boolean))).join(', ')
+        ? (isMultiMonthPeriod
+          ? formatCondensedReasons(s.records, { maxReasons: 2, useKhmerNumerals })
+          : Array.from(new Set(s.records.map(r => r.reason).filter(Boolean))).join(', '))
         : 'មករៀនទៀងទាត់ (គ្មានច្បាប់)',
       duration: s.leaveCount > 0
         ? formatDurationTotals(s.durationTotals, useKhmerNumerals)
@@ -277,7 +295,7 @@ export default function SummaryMobileView({
       date: s.leaveCount > 0 ? `${fmtNum(s.leaveCount)} លើក` : '—',
       note: ''
     }));
-  }, [summary.allLeaveRecords, filterMode, gradeFilter, searchTerm, displayedStudents, useKhmerNumerals]);
+  }, [summary.allLeaveRecords, filterMode, gradeFilter, searchTerm, displayedStudents, useKhmerNumerals, isMultiMonthPeriod, fmtNum]);
 
   const leaveCustomPeriodTitle = useMemo(() => {
     if (filterMode === 'no_leave') {
@@ -365,7 +383,8 @@ export default function SummaryMobileView({
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: leaveCustomPeriodTitle,
-        customSummaryText: leaveCustomSummaryText
+        customSummaryText: leaveCustomSummaryText,
+        compactReasonColumn: isMultiMonthPeriod
       });
     }
   };
@@ -390,7 +409,8 @@ export default function SummaryMobileView({
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: leaveCustomPeriodTitle,
-        customSummaryText: leaveCustomSummaryText
+        customSummaryText: leaveCustomSummaryText,
+        compactReasonColumn: isMultiMonthPeriod
       });
     }
   };
@@ -540,8 +560,8 @@ export default function SummaryMobileView({
           </button>
         </div>
 
-        {/* Row 2: Unified Period Selector (Custom Dropdown) + Excel + Smart PDF Export */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {/* Row 2: Unified Period Selector (Custom Dropdown) + Smart PDF Export */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <PeriodDropdown
             periodMode={periodMode}
             setPeriodMode={setPeriodMode}
@@ -559,121 +579,27 @@ export default function SummaryMobileView({
 
           <button
             type="button"
-            onClick={handleExportExcel}
-            style={{
-              background: '#15803d',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 9px',
-              fontSize: 11.5,
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <FileSpreadsheet size={14} />
-            <span>Excel</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportWord}
-            style={{
-              background: '#1d4ed8',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 9px',
-              fontSize: 11.5,
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <FileText size={14} />
-            <span>Word</span>
-          </button>
-
-          <button
-            type="button"
             onClick={handleDownloadPdf}
             disabled={isExportingPdf}
             style={{
+              flex: 1,
               background: '#b91c1c',
               color: '#ffffff',
               border: 'none',
               borderRadius: 8,
-              padding: '9px 11px',
-              fontSize: 12,
+              padding: '9px 12px',
+              fontSize: 12.5,
               fontWeight: 700,
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 4,
+              justifyContent: 'center',
+              gap: 6,
               whiteSpace: 'nowrap',
               opacity: isExportingPdf ? 0.7 : 1
             }}
           >
-            {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            <span>{isExportingPdf ? 'កំពុងទាញ...' : 'Download PDF'}</span>
-          </button>
-        </div>
-
-        {/* Row 3: Format Switcher (ទម្រង់ផ្លូវការ A4 ⇄ ទម្រង់កាតវិភាគ) */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          background: '#f8fafc',
-          padding: 3,
-          borderRadius: 8,
-          border: '1px solid #e2e8f0',
-          gap: 4
-        }}>
-          <button
-            type="button"
-            onClick={() => setViewFormatMode('official_a4')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 5,
-              padding: '6px 8px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 700,
-              border: 'none',
-              background: viewFormatMode === 'official_a4' ? '#ffffff' : 'transparent',
-              color: viewFormatMode === 'official_a4' ? '#b45309' : '#64748b',
-              boxShadow: viewFormatMode === 'official_a4' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'
-            }}
-          >
-            <FileText size={13} />
-            <span>ទម្រង់ផ្លូវការ (A4)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewFormatMode('analytics')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 5,
-              padding: '6px 8px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 700,
-              border: 'none',
-              background: viewFormatMode === 'analytics' ? '#ffffff' : 'transparent',
-              color: viewFormatMode === 'analytics' ? '#0f766e' : '#64748b',
-              boxShadow: viewFormatMode === 'analytics' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none'
-            }}
-          >
-            <Table2 size={13} />
-            <span>តារាងវិភាគលម្អិត</span>
+            {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+            <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
           </button>
         </div>
       </div>
@@ -842,6 +768,7 @@ export default function SummaryMobileView({
                     studentMaster={studentMaster}
                     customPeriodTitle={leaveCustomPeriodTitle}
                     customSummaryText={leaveCustomSummaryText}
+                    compactReasonColumn={isMultiMonthPeriod}
                   />
                 </A4SheetScaler>
               </div>
@@ -860,10 +787,15 @@ export default function SummaryMobileView({
                         key={s.id}
                         onClick={() => hasLeave && setExpandedStudentId(isExpanded ? null : s.id)}
                         style={{
-                          border: isExpanded ? '1.5px solid #f59e0b' : '1px solid #e2e8f0',
+                          border: isExpanded
+                            ? '2px solid #f59e0b'
+                            : (hasLeave ? '1.5px solid #fcd34d' : '1.5px solid #86efac'),
                           borderRadius: 10,
                           padding: '10px 12px',
-                          background: isExpanded ? '#fffbeb' : '#ffffff'
+                          background: isExpanded ? '#fffbeb' : '#ffffff',
+                          boxShadow: hasLeave
+                            ? '0 2px 5px rgba(180, 83, 9, 0.05)'
+                            : '0 2px 5px rgba(22, 163, 74, 0.05)'
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -872,8 +804,9 @@ export default function SummaryMobileView({
                               width: 24,
                               height: 24,
                               borderRadius: 12,
-                              background: '#f1f5f9',
-                              color: '#475569',
+                              background: hasLeave ? '#fef3c7' : '#dcfce7',
+                              color: hasLeave ? '#b45309' : '#15803d',
+                              border: hasLeave ? '1px solid #fde68a' : '1px solid #bbf7d0',
                               fontSize: 11,
                               fontWeight: 700,
                               display: 'inline-flex',
@@ -1181,9 +1114,10 @@ export default function SummaryMobileView({
                     <div
                       key={r.id || idx}
                       style={{
-                        border: '1px solid #e2e8f0',
+                        border: '1.5px solid #93c5fd',
                         borderRadius: 10,
                         padding: '10px 12px',
+                        boxShadow: '0 2px 5px rgba(2, 132, 199, 0.05)',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
@@ -1249,34 +1183,35 @@ export default function SummaryMobileView({
       {/* ================================================================== */}
       {sectionMode === 'finance' && (
         <>
-          {/* 3 Interactive Finance Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* 3 Side-by-Side Interactive Finance Cards (ចំណូល | ចំណាយ | ប្រាក់នៅសល់) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
             <button
               type="button"
               onClick={() => setFinanceCategoryFilter('income')}
               style={{
                 display: 'flex',
+                flexDirection: 'column',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                textAlign: 'center',
                 background: financeCategoryFilter === 'income' ? '#dcfce7' : '#f0fdf4',
-                border: '2px solid #16a34a',
+                border: financeCategoryFilter === 'income' ? '2px solid #16a34a' : '1.5px solid #86efac',
                 boxShadow: financeCategoryFilter === 'income' ? '0 3px 8px rgba(22,163,74,0.16)' : '0 1px 4px rgba(22,163,74,0.08)',
-                padding: '12px 14px',
+                padding: '8px 4px',
                 borderRadius: 10,
-                cursor: 'pointer'
+                cursor: 'pointer',
+                minWidth: 0
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#15803d', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>💰 ចំណូលសរុប ({fmtNum(summary.financeSummary.incomeItems.length)} មុខ)</span>
-                {financeCategoryFilter === 'income' && (
-                  <span style={{ background: '#16a34a', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 8 }}>
-                    កំពុងបង្ហាញ
-                  </span>
-                )}
-              </span>
-              <strong style={{ fontSize: 16, fontWeight: 800, color: '#14532d' }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: '#15803d', whiteSpace: 'nowrap' }}>
+                💰 ចំណូលសរុប
+              </div>
+              <strong style={{ fontSize: 12.5, fontWeight: 800, color: '#14532d', margin: '3px 0', wordBreak: 'break-word', lineHeight: 1.25 }}>
                 {formatCurrencyTotals(summary.financeSummary.incomeTotals, useKhmerNumerals)}
               </strong>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#166534' }}>
+                {fmtNum(summary.financeSummary.incomeItems.length)} មុខ
+              </div>
             </button>
 
             <button
@@ -1284,27 +1219,28 @@ export default function SummaryMobileView({
               onClick={() => setFinanceCategoryFilter('expense')}
               style={{
                 display: 'flex',
+                flexDirection: 'column',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                textAlign: 'center',
                 background: financeCategoryFilter === 'expense' ? '#fee2e2' : '#fef2f2',
-                border: '2px solid #dc2626',
+                border: financeCategoryFilter === 'expense' ? '2px solid #dc2626' : '1.5px solid #fca5a5',
                 boxShadow: financeCategoryFilter === 'expense' ? '0 3px 8px rgba(220,38,38,0.16)' : '0 1px 4px rgba(220,38,38,0.08)',
-                padding: '12px 14px',
+                padding: '8px 4px',
                 borderRadius: 10,
-                cursor: 'pointer'
+                cursor: 'pointer',
+                minWidth: 0
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span>💸 ចំណាយសរុប ({fmtNum(summary.financeSummary.expenseItems.length)} មុខ)</span>
-                {financeCategoryFilter === 'expense' && (
-                  <span style={{ background: '#dc2626', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 8 }}>
-                    កំពុងបង្ហាញ
-                  </span>
-                )}
-              </span>
-              <strong style={{ fontSize: 16, fontWeight: 800, color: '#991b1b' }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: '#b91c1c', whiteSpace: 'nowrap' }}>
+                💸 ចំណាយសរុប
+              </div>
+              <strong style={{ fontSize: 12.5, fontWeight: 800, color: '#991b1b', margin: '3px 0', wordBreak: 'break-word', lineHeight: 1.25 }}>
                 {formatExpenseTotals(summary.financeSummary.expenseTotals, isOverallDeficit, useKhmerNumerals)}
               </strong>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#991b1b' }}>
+                {fmtNum(summary.financeSummary.expenseItems.length)} មុខ
+              </div>
             </button>
 
             <button
@@ -1312,37 +1248,34 @@ export default function SummaryMobileView({
               onClick={() => setFinanceCategoryFilter('all')}
               style={{
                 display: 'flex',
+                flexDirection: 'column',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                textAlign: 'center',
                 background: financeCategoryFilter === 'all'
                   ? (isOverallDeficit ? '#fee2e2' : '#dbeafe')
                   : (isOverallDeficit ? '#fef2f2' : '#eff6ff'),
-                border: isOverallDeficit ? '2px solid #dc2626' : '2px solid #2563eb',
+                border: financeCategoryFilter === 'all'
+                  ? (isOverallDeficit ? '2px solid #dc2626' : '2px solid #2563eb')
+                  : (isOverallDeficit ? '1.5px solid #f87171' : '1.5px solid #60a5fa'),
                 boxShadow: financeCategoryFilter === 'all'
                   ? (isOverallDeficit ? '0 3px 8px rgba(220,38,38,0.16)' : '0 3px 8px rgba(37,99,235,0.16)')
                   : (isOverallDeficit ? '0 1px 4px rgba(220,38,38,0.08)' : '0 1px 4px rgba(37,99,235,0.08)'),
-                padding: '12px 14px',
+                padding: '8px 4px',
                 borderRadius: 10,
-                cursor: 'pointer'
+                cursor: 'pointer',
+                minWidth: 0
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: 700, color: isOverallDeficit ? '#b91c1c' : '#1d4ed8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>⚖️ ប្រាក់នៅសល់សរុប (មើលទាំងអស់)</span>
-                {financeCategoryFilter === 'all' && (
-                  <span style={{
-                    background: isOverallDeficit ? '#dc2626' : '#2563eb',
-                    color: '#fff',
-                    fontSize: 10,
-                    padding: '1px 6px',
-                    borderRadius: 8
-                  }}>
-                    កំពុងបង្ហាញ
-                  </span>
-                )}
-              </span>
-              <strong style={{ fontSize: 16, fontWeight: 800, color: isOverallDeficit ? '#b91c1c' : '#1e3a8a' }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: isOverallDeficit ? '#b91c1c' : '#1d4ed8', whiteSpace: 'nowrap' }}>
+                ⚖️ ប្រាក់នៅសល់
+              </div>
+              <strong style={{ fontSize: 12.5, fontWeight: 800, color: isOverallDeficit ? '#b91c1c' : '#1e3a8a', margin: '3px 0', wordBreak: 'break-word', lineHeight: 1.25 }}>
                 {formatCurrencyTotals(summary.financeSummary.netTotals, useKhmerNumerals)}
               </strong>
+              <div style={{ fontSize: 10, fontWeight: 600, color: isOverallDeficit ? '#991b1b' : '#1e40af' }}>
+                មើលទាំងអស់
+              </div>
             </button>
           </div>
 
@@ -1457,9 +1390,12 @@ export default function SummaryMobileView({
                       <div
                         key={item.id || idx}
                         style={{
-                          border: '1px solid #e2e8f0',
+                          border: isIncome ? '1.5px solid #86efac' : '1.5px solid #fca5a5',
                           borderRadius: 10,
                           padding: '10px 12px',
+                          boxShadow: isIncome
+                            ? '0 2px 5px rgba(22, 163, 74, 0.05)'
+                            : '0 2px 5px rgba(220, 38, 38, 0.05)',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
@@ -1539,6 +1475,7 @@ export default function SummaryMobileView({
           studentMaster={studentMaster}
           customPeriodTitle={leaveCustomPeriodTitle}
           customSummaryText={leaveCustomSummaryText}
+          compactReasonColumn={isMultiMonthPeriod}
         />
         <OfficialIdCardDocument
           id="printable-mobile-summary-idcard-document"

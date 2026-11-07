@@ -7,6 +7,7 @@ import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, formatMoney, sumB
 import { exportFinanceToExcel } from '../../utils/excelExporter';
 import { exportFinanceToWord } from '../../utils/wordExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
+import A4SheetScaler from '../A4SheetScaler';
 import OfficialFinanceDocument from '../OfficialFinanceDocument';
 import CurrencyToggle from '../CurrencyToggle';
 
@@ -17,7 +18,8 @@ export default function FinanceMobileView({
   useKhmerNumerals = true,
   onUpdateFinance,
   onPrint,
-  onSwitchToDesktop
+  onSwitchToDesktop,
+  mobilePreviewA4 = false
 }) {
   const [activeSubTab, setActiveSubTab] = useState('expense'); // 'expense' | 'income'
   const [editingId, setEditingId] = useState(null);
@@ -184,226 +186,184 @@ export default function FinanceMobileView({
 
   return (
     <div className="mobile-finance-container" style={{ paddingBottom: 80 }}>
-      {/* 1. Finance Overview KPI Cards */}
+      {/* 1. Finance Overview 3 Side-by-Side KPI Cards (ចំណូល | ចំណាយ | ប្រាក់នៅសល់) */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr',
-        gap: 10,
-        marginBottom: 14
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: 6,
+        marginBottom: 10
       }}>
-        {/* Balance Card */}
-        <div style={{
-          background: remainingBalance >= 0 
-            ? 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%)' 
-            : 'linear-gradient(135deg, #991b1b 0%, #b91c1c 100%)',
-          color: '#ffffff',
-          borderRadius: 14,
-          padding: '14px 16px',
-          boxShadow: '0 4px 12px rgba(30, 58, 138, 0.2)'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, opacity: 0.9, fontWeight: 600 }}>ប្រាក់សល់បច្ចុប្បន្ន (សមតុល្យ)</span>
-            <Wallet size={16} style={{ opacity: 0.8 }} />
-          </div>
-          <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4, letterSpacing: 0.5, wordBreak: 'break-word' }}>
-            {formatCurrencyTotals(balanceTotals, useKhmerNumerals)}
-          </div>
-          <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>
-            ប្រចាំខែ{monthName} ឆ្នាំ{yearDisplay}
-          </div>
-        </div>
-
-        {/* Income vs Expense Quick Counters */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <div style={{
-            background: '#ffffff',
-            border: '1px solid #bbf7d0',
-            borderRadius: 12,
-            padding: '10px 12px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#16a34a', fontSize: 11, fontWeight: 700 }}>
-              <ArrowDownRight size={14} />
-              <span>ចំណូលសរុប</span>
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d', marginTop: 4, wordBreak: 'break-word' }}>
-              {formatCurrencyTotals(incomeTotals, useKhmerNumerals)}
-            </div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>
-              {incomeList.length} ប្រតិបត្តិការ
-            </div>
-          </div>
-
-          <div style={{
-            background: '#ffffff',
-            border: '1px solid #fecaca',
-            borderRadius: 12,
-            padding: '10px 12px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#dc2626', fontSize: 11, fontWeight: 700 }}>
-              <ArrowUpRight size={14} />
-              <span>ចំណាយសរុប</span>
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#b91c1c', marginTop: 4, wordBreak: 'break-word' }}>
-              {formatExpenseTotals(expenseTotals, isFinanceDeficit(balanceTotals, remainingBalance), useKhmerNumerals)}
-            </div>
-            <div style={{ fontSize: 11, color: '#64748b' }}>
-              {expenseList.length} ប្រតិបត្តិការ
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Sub-tab switcher: Expense vs Income */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        background: '#f1f5f9',
-        padding: 3,
-        borderRadius: 10,
-        marginBottom: 12
-      }}>
-        <button
-          onClick={() => { setActiveSubTab('expense'); setEditingId(null); }}
-          style={{
-            padding: '8px 12px',
-            border: 'none',
-            borderRadius: 8,
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeSubTab === 'expense' ? '#ffffff' : 'transparent',
-            color: activeSubTab === 'expense' ? '#b91c1c' : '#64748b',
-            boxShadow: activeSubTab === 'expense' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6
-          }}
-        >
-          <ShoppingBag size={14} />
-          <span>ចំណាយ ({expenseList.length})</span>
-        </button>
-
-        <button
+        {/* Card 1: ចំណូលសរុប (Green) */}
+        <div
           onClick={() => { setActiveSubTab('income'); setEditingId(null); }}
           style={{
-            padding: '8px 12px',
-            border: 'none',
-            borderRadius: 8,
-            fontSize: 13,
-            fontWeight: 700,
+            background: activeSubTab === 'income' ? '#dcfce7' : '#f0fdf4',
+            border: activeSubTab === 'income' ? '2px solid #16a34a' : '1.5px solid #86efac',
+            borderRadius: 10,
+            padding: '8px 4px',
+            textAlign: 'center',
+            boxShadow: activeSubTab === 'income' ? '0 3px 8px rgba(22, 163, 74, 0.16)' : '0 1px 3px rgba(0,0,0,0.03)',
             cursor: 'pointer',
-            background: activeSubTab === 'income' ? '#ffffff' : 'transparent',
-            color: activeSubTab === 'income' ? '#15803d' : '#64748b',
-            boxShadow: activeSubTab === 'income' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            minWidth: 0
           }}
         >
-          <DollarSign size={14} />
-          <span>ចំណូល ({incomeList.length})</span>
-        </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, color: '#15803d', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            <ArrowDownRight size={13} strokeWidth={2.5} />
+            <span>ចំណូលសរុប</span>
+          </div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#14532d', margin: '3px 0', wordBreak: 'break-word', lineHeight: 1.25 }}>
+            {formatCurrencyTotals(incomeTotals, useKhmerNumerals)}
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#166534' }}>
+            {useKhmerNumerals ? toKhmerDigits(incomeList.length) : incomeList.length} ប្រតិបត្តិការ
+          </div>
+        </div>
+
+        {/* Card 2: ចំណាយសរុប (Red) */}
+        <div
+          onClick={() => { setActiveSubTab('expense'); setEditingId(null); }}
+          style={{
+            background: activeSubTab === 'expense' ? '#fee2e2' : '#fef2f2',
+            border: activeSubTab === 'expense' ? '2px solid #dc2626' : '1.5px solid #fca5a5',
+            borderRadius: 10,
+            padding: '8px 4px',
+            textAlign: 'center',
+            boxShadow: activeSubTab === 'expense' ? '0 3px 8px rgba(220, 38, 38, 0.16)' : '0 1px 3px rgba(0,0,0,0.03)',
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            minWidth: 0
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, color: '#b91c1c', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            <ArrowUpRight size={13} strokeWidth={2.5} />
+            <span>ចំណាយសរុប</span>
+          </div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#991b1b', margin: '3px 0', wordBreak: 'break-word', lineHeight: 1.25 }}>
+            {formatExpenseTotals(expenseTotals, isFinanceDeficit(balanceTotals, remainingBalance), useKhmerNumerals)}
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#991b1b' }}>
+            {useKhmerNumerals ? toKhmerDigits(expenseList.length) : expenseList.length} ប្រតិបត្តិការ
+          </div>
+        </div>
+
+        {/* Card 3: ប្រាក់នៅសល់ (Blue / Red on deficit) */}
+        <div
+          style={{
+            background: remainingBalance >= 0 ? '#eff6ff' : '#fef2f2',
+            border: remainingBalance >= 0 ? '1.5px solid #60a5fa' : '1.5px solid #f87171',
+            borderRadius: 10,
+            padding: '8px 4px',
+            textAlign: 'center',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            minWidth: 0
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, color: remainingBalance >= 0 ? '#1d4ed8' : '#b91c1c', fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            <Wallet size={12} strokeWidth={2.5} />
+            <span>ប្រាក់នៅសល់</span>
+          </div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: remainingBalance >= 0 ? '#1e3a8a' : '#991b1b', margin: '3px 0', wordBreak: 'break-word', lineHeight: 1.25 }}>
+            {formatCurrencyTotals(balanceTotals, useKhmerNumerals)}
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 600, color: remainingBalance >= 0 ? '#1e40af' : '#991b1b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            ខែ{monthName} {yearDisplay}
+          </div>
+        </div>
       </div>
 
-      {/* Action Row */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+      {/* 2. 3-Button Action Row (+ បន្ថែមចំណូល | + បន្ថែមចំណាយ | Download PDF) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 12 }}>
         <button
-          onClick={() => setShowAddModal(true)}
+          type="button"
+          onClick={() => {
+            setActiveSubTab('income');
+            setShowAddModal(true);
+          }}
           style={{
-            background: activeSubTab === 'income' ? '#15803d' : '#b45309',
+            background: '#15803d',
             color: '#ffffff',
             border: 'none',
             borderRadius: 8,
-            padding: '10px 14px',
-            fontSize: 13,
-            fontWeight: 600,
+            padding: '10px 6px',
+            fontSize: 12,
+            fontWeight: 700,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 6,
+            gap: 4,
             cursor: 'pointer',
             width: '100%',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+            whiteSpace: 'nowrap',
+            boxShadow: '0 2px 4px rgba(21, 128, 61, 0.2)'
           }}
         >
-          <Plus size={16} />
-          <span>{activeSubTab === 'income' ? 'បន្ថែមចំណូល' : 'បន្ថែមចំណាយ'}</span>
+          <Plus size={14} strokeWidth={2.5} />
+          <span>បន្ថែមចំណូល</span>
         </button>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={handleExportExcel}
-            style={{
-              flex: 1,
-              background: '#15803d',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 10px',
-              fontSize: 12,
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              cursor: 'pointer'
-            }}
-          >
-            <FileSpreadsheet size={15} />
-            <span>Export Excel</span>
-          </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveSubTab('expense');
+            setShowAddModal(true);
+          }}
+          style={{
+            background: '#b45309',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: 8,
+            padding: '10px 6px',
+            fontSize: 12,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+            cursor: 'pointer',
+            width: '100%',
+            whiteSpace: 'nowrap',
+            boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
+          }}
+        >
+          <Plus size={14} strokeWidth={2.5} />
+          <span>បន្ថែមចំណាយ</span>
+        </button>
 
-          <button
-            onClick={handleExportWord}
-            style={{
-              flex: 1,
-              background: '#1d4ed8',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 10px',
-              fontSize: 12,
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              cursor: 'pointer'
-            }}
-          >
-            <FileText size={15} />
-            <span>Download Word</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={isExportingPdf}
+          style={{
+            width: '100%',
+            background: '#b91c1c',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: 8,
+            padding: '10px 6px',
+            fontSize: 12,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+            cursor: isExportingPdf ? 'wait' : 'pointer',
+            opacity: isExportingPdf ? 0.75 : 1,
+            whiteSpace: 'nowrap',
+            boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+          }}
+        >
+          {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+          <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+        </button>
       </div>
-
-      {/* Toggle to Full A4 Desktop Mode */}
-      {onSwitchToDesktop && (
-        <div style={{ marginBottom: 12, textAlign: 'center' }}>
-          <button
-            onClick={onSwitchToDesktop}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#854d0e',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '4px 8px'
-            }}
-          >
-            <Eye size={13} />
-            <span>មើលផ្ទាំងរបាយការណ៍ហិរញ្ញវត្ថុ A4 (Desktop View)</span>
-          </button>
-        </div>
-      )}
 
       {/* 3. Search */}
       <div style={{ position: 'relative', marginBottom: 12 }}>
@@ -425,8 +385,22 @@ export default function FinanceMobileView({
         />
       </div>
 
-      {/* 4. List Cards */}
-      {filteredList.length === 0 ? (
+      {/* 4. List Cards or Official A4 Preview */}
+      {mobilePreviewA4 ? (
+        <div style={{ background: '#ffffff', padding: 8, borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          <A4SheetScaler>
+            <OfficialFinanceDocument
+              id="preview-mobile-finance-document"
+              financeData={financeData}
+              metadata={metadata}
+              monthName={monthName}
+              yearDisplay={yearDisplay}
+              useKhmerNumerals={useKhmerNumerals}
+              monthKey={monthKey}
+            />
+          </A4SheetScaler>
+        </div>
+      ) : filteredList.length === 0 ? (
         <div style={{
           textAlign: 'center',
           padding: '30px 20px',
@@ -596,15 +570,18 @@ export default function FinanceMobileView({
               );
             }
 
+            const isIncomeCard = activeSubTab === 'income';
             return (
               <div
                 key={item.id}
                 style={{
                   background: '#ffffff',
-                  border: '1px solid #e2e8f0',
+                  border: isIncomeCard ? '1.5px solid #86efac' : '1.5px solid #fca5a5',
                   borderRadius: 12,
                   padding: 12,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                  boxShadow: isIncomeCard
+                    ? '0 2px 6px rgba(22, 163, 74, 0.06)'
+                    : '0 2px 6px rgba(220, 38, 38, 0.06)'
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
@@ -612,8 +589,9 @@ export default function FinanceMobileView({
                     <span style={{
                       fontSize: 11,
                       fontWeight: 700,
-                      color: '#64748b',
-                      background: '#f1f5f9',
+                      color: isIncomeCard ? '#15803d' : '#b91c1c',
+                      background: isIncomeCard ? '#f0fdf4' : '#fef2f2',
+                      border: isIncomeCard ? '1px solid #bbf7d0' : '1px solid #fecaca',
                       width: 22,
                       height: 22,
                       borderRadius: '50%',

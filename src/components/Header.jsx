@@ -11,7 +11,10 @@ import {
   Plus,
   X,
   ChevronDown,
-  CheckCircle2
+  CheckCircle2,
+  Download,
+  Smartphone,
+  Share
 } from 'lucide-react';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 
@@ -36,6 +39,15 @@ export default function Header({
   const [isYearDrawerOpen, setIsYearDrawerOpen] = useState(false);
   const [newYearInput, setNewYearInput] = useState('');
   const [showAddYearForm, setShowAddYearForm] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(() => window.__deferredPwaPrompt || null);
+  const [isStandalone, setIsStandalone] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return (
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true
+    );
+  });
+  const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
 
   const useKhmerNumerals = metadata?.useKhmerNumerals !== false;
   const fmtNum = (n) => (useKhmerNumerals ? toKhmerDigits(n) : String(n));
@@ -44,14 +56,68 @@ export default function Header({
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      window.__deferredPwaPrompt = e;
+      setDeferredPrompt(e);
+    };
+
+    const handlePromptReady = () => {
+      if (window.__deferredPwaPrompt) {
+        setDeferredPrompt(window.__deferredPwaPrompt);
+      }
+    };
+
+    const handleAppInstalled = () => {
+      window.__deferredPwaPrompt = null;
+      setDeferredPrompt(null);
+      setIsStandalone(true);
+      setShowInstallGuideModal(false);
+    };
+
+    const mediaQuery = window.matchMedia('(display-mode: standalone)');
+    const handleDisplayModeChange = (e) => {
+      if (e.matches) setIsStandalone(true);
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('pwa-prompt-ready', handlePromptReady);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', handleDisplayModeChange);
+    }
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('pwa-prompt-ready', handlePromptReady);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', handleDisplayModeChange);
+      }
     };
   }, []);
+
+  const handleInstallAppClick = async () => {
+    const promptEvent = deferredPrompt || window.__deferredPwaPrompt;
+    if (promptEvent) {
+      try {
+        promptEvent.prompt();
+        const { outcome } = await promptEvent.userChoice;
+        if (outcome === 'accepted') {
+          window.__deferredPwaPrompt = null;
+          setDeferredPrompt(null);
+        }
+        return;
+      } catch {
+        // Fallback to guide modal if prompt fails
+      }
+    }
+    setShowInstallGuideModal(true);
+  };
 
   const handleChooseYear = (yr) => {
     if (onSelectYear) {
@@ -95,7 +161,7 @@ export default function Header({
           {/* Left: Clickable School Logo & Branding -> Opens Left Year Drawer */}
           <div
             onClick={() => setIsYearDrawerOpen(true)}
-            title="ចុចទីនេះដើម្បីប្ដូរឆ្នាំទិន្នន័យ (២០២៥, ២០២៦, ២០២៧...)"
+            title="ចុចទីនេះដើម្បីប្ដូរឆ្នាំទិន្នន័យ (២០២៦, ២០២៧...)"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -217,6 +283,32 @@ export default function Header({
                 {studentCount}
               </span>
             </button>
+
+            {/* Install Standalone App (PWA) Button */}
+            {!isStandalone && (
+              <button
+                type="button"
+                onClick={handleInstallAppClick}
+                title="ទាញយក និងដំឡើងកម្មវិធីដាក់លើទូរសព្ទ ឬកុំព្យូទ័រ (Install App)"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: '#ffffff',
+                  border: '1px solid rgba(255, 255, 255, 0.9)',
+                  color: '#92400e',
+                  padding: '6px 11px',
+                  borderRadius: 8,
+                  fontSize: 12.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.16)'
+                }}
+              >
+                <Download size={15} strokeWidth={2.5} color="#b45309" />
+                <span>ដំឡើង App</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -479,6 +571,165 @@ export default function Header({
                   </div>
                 </form>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* INSTALL APP (PWA) GUIDE MODAL FOR ANDROID / iOS / PC               */}
+      {/* ================================================================== */}
+      {showInstallGuideModal && (
+        <div
+          className="no-print"
+          onClick={() => setShowInstallGuideModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 1100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 420,
+              background: '#ffffff',
+              borderRadius: 18,
+              overflow: 'hidden',
+              boxShadow: '0 20px 45px rgba(15, 23, 42, 0.3)',
+              border: '1px solid #fde68a'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #78350f 0%, #b45309 65%, #d97706 100%)',
+              color: '#ffffff',
+              padding: '16px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <img
+                  src="/logo.png"
+                  alt="App Icon"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: '#ffffff',
+                    padding: 3,
+                    objectFit: 'contain',
+                    boxShadow: '0 3px 8px rgba(0,0,0,0.2)'
+                  }}
+                />
+                <div>
+                  <div className="font-moul" style={{ fontSize: 13.5 }}>
+                    ដំឡើងកម្មវិធីលើទូរសព្ទ / កុំព្យូទ័រ
+                  </div>
+                  <div style={{ fontSize: 11.5, opacity: 0.92, marginTop: 2 }}>
+                    ហ៊ុន ណេង App • បើកពេញអេក្រង់ដូច Play Store / App Store
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInstallGuideModal(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  color: '#ffffff',
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  flexShrink: 0
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Android Guide */}
+              <div style={{
+                background: '#fffbeb',
+                border: '1.5px solid #fcd34d',
+                borderRadius: 12,
+                padding: '12px 14px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, fontSize: 13.5, color: '#92400e', marginBottom: 6 }}>
+                  <Smartphone size={17} color="#d97706" />
+                  <span>១. សម្រាប់ទូរសព្ទ Android (Chrome)៖</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6 }}>
+                  • ចុចសញ្ញាចុច ៣ គ្រាប់ <strong>(⋮)</strong> នៅជ្រុងខាងលើស្ដាំដៃ<br />
+                  • ជ្រើសរើសពាក្យ <strong>&ldquo;Install app&rdquo; (ដំឡើងកម្មវិធី)</strong> ឬ <strong>&ldquo;Add to Home screen&rdquo;</strong> រួចចុច <strong>Install</strong> ជាការស្រេច។
+                </div>
+              </div>
+
+              {/* iPhone / iPad Guide */}
+              <div style={{
+                background: '#f0f9ff',
+                border: '1.5px solid #93c5fd',
+                borderRadius: 12,
+                padding: '12px 14px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, fontSize: 13.5, color: '#0369a1', marginBottom: 6 }}>
+                  <Share size={17} color="#0284c7" />
+                  <span>២. សម្រាប់ iPhone / iPad (Safari)៖</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6 }}>
+                  • ចុចប៊ូតុង <strong>Share [↑]</strong> នៅរបារខាងក្រោមនៃ Safari<br />
+                  • អូសចុះក្រោម រួចចុច <strong>&ldquo;Add to Home Screen&rdquo; [+]</strong><br />
+                  • ចុចពាក្យ <strong>&ldquo;Add&rdquo;</strong> នៅជ្រុងខាងលើស្ដាំ ជាការស្រេច។
+                </div>
+              </div>
+
+              {/* PC Chrome / Edge Guide */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1.5px solid #cbd5e1',
+                borderRadius: 12,
+                padding: '10px 14px',
+                fontSize: 12,
+                color: '#475569',
+                lineHeight: 1.55
+              }}>
+                💻 <strong>សម្រាប់កុំព្យូទ័រ (Chrome / Edge)៖</strong> ចុចរូបសញ្ញាទាញយក <strong>(📲 / ⊕)</strong> នៅចុងរបារអាសយដ្ឋាន (Address Bar ខាងលើ) រួចចុច <strong>Install</strong>។
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowInstallGuideModal(false)}
+                style={{
+                  width: '100%',
+                  marginTop: 2,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #b45309 0%, #d97706 100%)',
+                  color: '#ffffff',
+                  fontSize: 13.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 10px rgba(180, 83, 9, 0.25)'
+                }}
+              >
+                យល់ព្រម (បិទផ្ទាំងនេះ)
+              </button>
             </div>
           </div>
         </div>

@@ -1,14 +1,12 @@
 import React from 'react';
-import { FileText, DollarSign, Camera, BarChart3, Monitor, Smartphone, CreditCard } from 'lucide-react';
+import { FileText, DollarSign, Camera, BarChart3, CreditCard } from 'lucide-react';
 import { toKhmerDigits } from '../../utils/khmerNumerals';
 
 export default function MobileBottomNav({
   activeTab,
   onSelectTab,
   queueCount = 0,
-  useKhmerNumerals = true,
-  isForcedDesktop = false,
-  onToggleViewMode
+  useKhmerNumerals = true
 }) {
   const tabs = [
     {
@@ -135,32 +133,6 @@ export default function MobileBottomNav({
           </button>
         );
       })}
-
-      {/* Switch between Mobile App View and Desktop A4 Mode */}
-      {onToggleViewMode && (
-        <button
-          onClick={onToggleViewMode}
-          title={isForcedDesktop ? 'ប្ដូរមកមើលទម្រង់ Mobile វិញ' : 'ប្ដូរទៅមើលទម្រង់ PC A4'}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 3,
-            background: isForcedDesktop ? '#fef3c7' : 'transparent',
-            border: isForcedDesktop ? '1px solid #fde68a' : 'none',
-            padding: '5px 6px',
-            borderRadius: 8,
-            cursor: 'pointer',
-            color: isForcedDesktop ? '#b45309' : '#94a3b8'
-          }}
-        >
-          {isForcedDesktop ? <Smartphone size={18} /> : <Monitor size={18} />}
-          <span style={{ fontSize: 10, fontWeight: 600 }}>
-            {isForcedDesktop ? 'Mobile' : 'PC A4'}
-          </span>
-        </button>
-      )}
     </nav>
   );
 }

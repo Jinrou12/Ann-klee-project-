@@ -23,7 +23,8 @@ export default function OfficialLeaveDocument({
   handleDeleteRow = () => {},
   studentMaster = [],
   customPeriodTitle = '',
-  customSummaryText = ''
+  customSummaryText = '',
+  compactReasonColumn = false
 }) {
   // Automatically calculate the last working day of the month (excluding Saturday/Sunday)
   const reportDates = useMemo(() => getMonthEndReportDates(monthKey, {
@@ -83,18 +84,19 @@ export default function OfficialLeaveDocument({
       {/* The Exact Table */}
       <table style={{
         width: '100%',
+        tableLayout: compactReasonColumn ? 'fixed' : 'auto',
         borderCollapse: 'collapse',
         border: '1px solid #000000',
         fontSize: 13
       }}>
         <thead>
           <tr style={{ background: '#ffffff', textAlign: 'center', height: 36 }}>
-            <th style={{ border: '1px solid #000', width: '5%', padding: '6px 4px', fontWeight: 700, whiteSpace: 'nowrap' }}>ល.រ</th>
-            <th style={{ border: '1px solid #000', width: '19%', padding: '6px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>គោត្តនាម-និងនាម</th>
-            <th style={{ border: '1px solid #000', width: '7%', padding: '6px 4px', fontWeight: 700, whiteSpace: 'nowrap' }}>ថ្នាក់</th>
-            <th style={{ border: '1px solid #000', width: '34%', padding: '6px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>មូលហេតុ</th>
-            <th style={{ border: '1px solid #000', width: '11%', padding: '6px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>ចំនួនឈប់</th>
-            <th style={{ border: '1px solid #000', width: '14%', padding: '6px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>កាលបរិច្ឆេទ</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '6%' : '5%', padding: '6px 4px', fontWeight: 700, whiteSpace: 'nowrap' }}>ល.រ</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '21%' : '19%', padding: '6px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>គោត្តនាម-និងនាម</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '8%' : '7%', padding: '6px 4px', fontWeight: 700, whiteSpace: 'nowrap' }}>ថ្នាក់</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '26%' : '34%', padding: '6px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>មូលហេតុ</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '17%' : '11%', padding: '6px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>ចំនួនឈប់</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '12%' : '14%', padding: '6px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>កាលបរិច្ឆេទ</th>
             <th style={{ border: '1px solid #000', width: '10%', padding: '6px 4px', fontWeight: 700, whiteSpace: 'nowrap' }}>ផ្សេងៗ</th>
             {isEditable && (
               <th className="no-print" style={{ border: '1px solid #cbd5e1', width: 40, background: '#f8fafc' }}></th>
@@ -121,7 +123,7 @@ export default function OfficialLeaveDocument({
                   </td>
 
                   {/* Column 2: Name */}
-                  <td style={{ border: '1px solid #000', padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', padding: '4px 8px', whiteSpace: compactReasonColumn ? 'normal' : 'nowrap', wordBreak: 'break-word' }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -134,7 +136,7 @@ export default function OfficialLeaveDocument({
                     ) : (
                       <div
                         onClick={() => isEditable && setEditingRowId(r.id)}
-                        style={{ cursor: isEditable ? 'pointer' : 'default', minHeight: 20, whiteSpace: 'nowrap' }}
+                        style={{ cursor: isEditable ? 'pointer' : 'default', minHeight: 20, whiteSpace: compactReasonColumn ? 'normal' : 'nowrap' }}
                         title={isEditable ? "ចុចដើម្បីកែប្រែ" : ""}
                       >
                         {r.name || <span style={{ color: '#cbd5e1' }}>--</span>}
@@ -159,7 +161,13 @@ export default function OfficialLeaveDocument({
                   </td>
 
                   {/* Column 4: Reason */}
-                  <td style={{ border: '1px solid #000', padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                  <td style={{
+                    border: '1px solid #000',
+                    padding: '4px 8px',
+                    whiteSpace: compactReasonColumn ? 'normal' : 'nowrap',
+                    wordBreak: compactReasonColumn ? 'break-word' : 'normal',
+                    overflowWrap: compactReasonColumn ? 'anywhere' : 'normal'
+                  }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -170,7 +178,11 @@ export default function OfficialLeaveDocument({
                     ) : (
                       <div
                         onClick={() => isEditable && setEditingRowId(r.id)}
-                        style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+                        style={{
+                          cursor: isEditable ? 'pointer' : 'default',
+                          whiteSpace: compactReasonColumn ? 'normal' : 'nowrap',
+                          lineHeight: compactReasonColumn ? 1.45 : undefined
+                        }}
                         title={isEditable ? "ចុចដើម្បីកែប្រែ" : ""}
                       >
                         {String(r.reason || '').replace(/\s+/g, ' ').trim()}
@@ -179,7 +191,7 @@ export default function OfficialLeaveDocument({
                   </td>
 
                   {/* Column 5: Duration */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px 6px', whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px 6px', whiteSpace: compactReasonColumn ? 'normal' : 'nowrap' }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -197,7 +209,7 @@ export default function OfficialLeaveDocument({
                         style={{ width: '100%', textAlign: 'center', border: '1px solid #b45309', padding: '2px 4px', fontSize: 13 }}
                       />
                     ) : (
-                      <div onClick={() => isEditable && setEditingRowId(r.id)} style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+                      <div onClick={() => isEditable && setEditingRowId(r.id)} style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: compactReasonColumn ? 'normal' : 'nowrap' }}>
                         {r.duration}
                       </div>
                     )}

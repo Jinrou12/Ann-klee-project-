@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Plus, Printer, FileSpreadsheet, FileText, Download, Loader2, Search,
   CheckCircle2, Sparkles, Calendar, CreditCard
@@ -51,10 +51,12 @@ export default function IdCardTableView({
   const [quickQty, setQuickQty] = useState(1);
   const [quickPrice, setQuickPrice] = useState(2000);
   const [quickDate, setQuickDate] = useState(() => autoDateInfo.entryDateStr);
-  const [combineMode, setCombineMode] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [highlightStep2, setHighlightStep2] = useState(false);
   const [justAddedToast, setJustAddedToast] = useState('');
+  const lastTapTimeRef = useRef(0);
+  const lastTappedLabelRef = useRef('');
+  const prevItemBeforeTapRef = useRef('ខ្សែ');
 
   // Keep quickDate synced when user changes month tab at the top
   useEffect(() => {
@@ -90,10 +92,29 @@ export default function IdCardTableView({
   };
 
   const handleSelectQuickItem = (itemLabel) => {
-    const nextItem = selectOrCombineIdCardItem(quickItem, itemLabel, combineMode);
-    const nextPrice = computeIdCardTotalPrice(nextItem, quickQty, quickPrice);
-    setQuickItem(nextItem);
-    setQuickPrice(nextPrice);
+    const now = Date.now();
+    const isDoubleTap =
+      lastTappedLabelRef.current === itemLabel &&
+      now - lastTapTimeRef.current <= 450;
+
+    if (isDoubleTap && itemLabel !== 'មួយឈុត') {
+      const baseItem = prevItemBeforeTapRef.current || quickItem;
+      const nextItem = selectOrCombineIdCardItem(baseItem, itemLabel, true);
+      const nextPrice = computeIdCardTotalPrice(nextItem, quickQty, quickPrice);
+      setQuickItem(nextItem);
+      setQuickPrice(nextPrice);
+      prevItemBeforeTapRef.current = nextItem;
+      lastTapTimeRef.current = 0;
+      lastTappedLabelRef.current = '';
+    } else {
+      prevItemBeforeTapRef.current = quickItem;
+      lastTapTimeRef.current = now;
+      lastTappedLabelRef.current = itemLabel;
+      const nextItem = itemLabel;
+      const nextPrice = computeIdCardTotalPrice(nextItem, quickQty, quickPrice);
+      setQuickItem(nextItem);
+      setQuickPrice(nextPrice);
+    }
   };
 
   const handleQuickQtyChange = (val) => {
@@ -418,68 +439,41 @@ export default function IdCardTableView({
             </div>
           </div>
 
-          {/* STEP 2: Item Selection Buttons (ថង=១៥០០៛, ខ្សែ=២០០០៛, ID=១៥០០៛, មួយឈុត=៥០០០៛) */}
+          {/* STEP 2: Item Selection Buttons (Single click = 1 item, Double click 2nd item = combine) */}
           <div style={{
             background: highlightStep2 ? '#fffbeb' : '#ffffff',
             border: highlightStep2 ? '1.5px solid #f59e0b' : '1px solid #e2e8f0',
             borderRadius: 10,
-            padding: '8px 10px',
-            transition: 'all 0.2s'
+            padding: '10px',
+            transition: 'all 0.2s',
+            display: 'flex',
+            alignItems: 'center'
           }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 6
-            }}>
-              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }}>
-                ២. ជ្រើសរើសមុខទំនិញ (ចុចភ្លាម លោតតម្លៃ Auto)៖
-              </label>
-              <label style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 11,
-                fontWeight: 700,
-                color: combineMode ? '#0284c7' : '#64748b',
-                cursor: 'pointer'
-              }}>
-                <input
-                  type="checkbox"
-                  checked={combineMode}
-                  onChange={e => setCombineMode(e.target.checked)}
-                />
-                <span>ទិញច្រើនមុខរួមគ្នា</span>
-              </label>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, width: '100%' }}>
               {ID_CARD_ITEMS.map(opt => {
                 const isSelected = quickItem === opt.label ||
-                  (combineMode && quickItem.split(/\s*\+\s*/).includes(opt.label));
+                  quickItem.split(/\s*\+\s*/).includes(opt.label);
                 return (
                   <button
                     key={opt.id}
                     type="button"
                     onClick={() => handleSelectQuickItem(opt.label)}
                     style={{
-                      padding: '6px 4px',
+                      padding: '10px 4px',
                       borderRadius: 8,
                       border: `2px solid ${isSelected ? opt.badgeColor : '#e2e8f0'}`,
                       background: isSelected ? opt.badgeBg : '#f8fafc',
                       color: isSelected ? opt.badgeColor : '#334155',
                       display: 'flex',
-                      flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
+                      touchAction: 'manipulation',
+                      userSelect: 'none',
                       transition: 'all 0.12s'
                     }}
                   >
-                    <span style={{ fontSize: 12.5, fontWeight: 700 }}>{opt.label}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, opacity: 0.9 }}>
-                      {formatKhmerCurrency(opt.unitPrice, useKhmerNumerals)}
-                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</span>
                   </button>
                 );
               })}

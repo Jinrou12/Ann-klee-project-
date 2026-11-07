@@ -1,18 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Minimize2, Maximize2 } from 'lucide-react';
 
 /**
  * A4SheetScaler: Intelligent Auto-Fit Engine for A4 Documents on Mobile Devices
  * Automatically scales the authentic 794px desktop A4 paper sheet down to fit cleanly
- * on narrow mobile screens (< 820px) without any horizontal clipping or layout breaking,
- * while allowing users to toggle between "Fit Screen (សមល្មមអេក្រង់)" and "100% Scroll (ពង្រីកដើម)".
+ * on narrow mobile screens (< 820px) without any horizontal clipping or layout breaking.
  */
 export default function A4SheetScaler({ children }) {
   const containerRef = useRef(null);
   const contentRef = useRef(null);
   const [scale, setScale] = useState(1);
   const [contentHeight, setContentHeight] = useState(1123);
-  const [isFitMode, setIsFitMode] = useState(true);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -54,50 +51,8 @@ export default function A4SheetScaler({ children }) {
 
   return (
     <div ref={containerRef} className="a4-scaler-root" style={{ width: '100%', position: 'relative' }}>
-      {/* Mobile Scale Control Banner */}
-      {isScaled && (
-        <div className="no-print" style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: '#f8fafc',
-          border: '1px solid #cbd5e1',
-          borderRadius: 8,
-          padding: '6px 12px',
-          marginBottom: 10,
-          fontSize: 12
-        }}>
-          <span style={{ color: '#475569' }}>
-            {isFitMode ? (
-              <>📱 មើលពេញទំព័រ A4 (<strong>{Math.round(scale * 100)}%</strong> ស្មើអេក្រង់)</>
-            ) : (
-              <>🔍 ទំហំដើម A4 (<strong>100%</strong> អូសឆ្វេងស្តាំ)</>
-            )}
-          </span>
-          <button
-            onClick={() => setIsFitMode(!isFitMode)}
-            style={{
-              background: isFitMode ? '#b45309' : '#0f172a',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 6,
-              padding: '4px 10px',
-              fontSize: 11,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              cursor: 'pointer'
-            }}
-          >
-            {isFitMode ? <Maximize2 size={13} /> : <Minimize2 size={13} />}
-            <span>{isFitMode ? 'ពង្រីក ១០០%' : 'បង្រួមស្មើអេក្រង់'}</span>
-          </button>
-        </div>
-      )}
-
       {/* The Paper Sheet Container */}
-      {isScaled && isFitMode ? (
+      {isScaled ? (
         <div style={{
           width: '100%',
           height: Math.ceil(contentHeight * scale) + 20,
@@ -123,10 +78,10 @@ export default function A4SheetScaler({ children }) {
       ) : (
         <div style={{
           width: '100%',
-          overflowX: isScaled ? 'auto' : 'visible',
+          overflowX: 'visible',
           background: '#e2e8f0',
           borderRadius: 12,
-          padding: isScaled ? '16px 8px' : '24px 16px',
+          padding: '24px 16px',
           boxShadow: 'inset 0 2px 6px rgba(0, 0, 0, 0.06)'
         }}>
           <div style={{

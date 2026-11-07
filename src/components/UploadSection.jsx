@@ -116,7 +116,7 @@ export default function UploadSection({
     <div className="no-print">
       {/* Upload Box & Controls */}
       <div className="app-card" style={{ padding: isMobile ? '16px 12px' : 24, textAlign: 'center', background: '#ffffff', marginBottom: 20 }}>
-        {!isMobile ? (
+        {!isMobile && (
           <div className="hide-on-mobile" style={{ marginBottom: 16 }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#0f172a' }}>
               បញ្ចូលរូបថតក្រដាសសុំច្បាប់ ឬប៉ុងចំណាយ (Smart Auto-Detect Scan)
@@ -125,22 +125,13 @@ export default function UploadSection({
               បងអាចថតរូបផ្ទាល់ ឬ Upload រូបថតក្រដាសសុំច្បាប់ និងប៉ុងចំណាយ-ចំណូល — <strong>ប្រព័ន្ធ AI នឹង Auto-Detect ចែកបន្ទប់ស្វ័យប្រវត្តិតាមប្រភេទឯកសារភ្លាមៗ!</strong>
             </p>
           </div>
-        ) : (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-              ថតរូប ឬបញ្ចូលឯកសារ (Auto-detect)
-            </div>
-            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-              ស្គាល់ទាំងក្រដាសសុំច្បាប់ (PDF 2) និងប៉ុងចំណាយ (PDF 1)
-            </div>
-          </div>
         )}
 
         {/* Drag Drop Area */}
         <div style={{
           border: '2px dashed #cbd5e1',
           borderRadius: 12,
-          padding: '24px 20px',
+          padding: isMobile ? '18px 14px' : '24px 20px',
           background: '#f8fafc',
           display: 'flex',
           flexDirection: 'column',
@@ -164,7 +155,7 @@ export default function UploadSection({
               boxShadow: '0 2px 6px rgba(180,83,9,0.3)'
             }}>
               <Upload size={18} />
-              <span>ជ្រើសរើសរូបថត (ម្តងច្រើនសន្លឹក)</span>
+              <span>{isMobile ? 'ជ្រើសរើសរូបថត' : 'ជ្រើសរើសរូបថត (ម្តងច្រើនសន្លឹក)'}</span>
               <input
                 type="file"
                 multiple
@@ -189,7 +180,7 @@ export default function UploadSection({
               boxShadow: '0 2px 6px rgba(15,118,110,0.3)'
             }}>
               <Camera size={18} />
-              <span>ថតរូបភ្លាមៗ (Camera)</span>
+              <span>{isMobile ? 'ថតរូបភ្លាមៗ' : 'ថតរូបភ្លាមៗ (Camera)'}</span>
               <input
                 type="file"
                 accept="image/*"
@@ -200,37 +191,24 @@ export default function UploadSection({
             </label>
           </div>
 
-          {isMobile && (
-            <div style={{
-              fontSize: 11,
-              color: '#475569',
-              background: '#f1f5f9',
-              border: '1px solid #e2e8f0',
-              borderRadius: 8,
-              padding: '6px 10px',
-              lineHeight: 1.45,
-              maxWidth: 420
-            }}>
-              📐 <strong>ទម្រង់ថត៖</strong> (១) ថតបញ្ឈរពេញសន្លឹក ឬ (២) ថតពាក់កណ្ដាលខាងលើ (ក្បាលលិខិតនៅខាងស្ដាំ) • ផ្អៀងទូរសព្ទបន្តិច
-            </div>
+          {!isMobile && (
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>
+              ឬចុចសាកល្បង៖{' '}
+              <button
+                onClick={() => handleLoadSample('leave')}
+                style={{ background: 'none', border: 'none', color: '#b45309', textDecoration: 'underline', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              >
+                + គំរូច្បាប់សិស្ស
+              </button>
+              {' • '}
+              <button
+                onClick={() => handleLoadSample('finance')}
+                style={{ background: 'none', border: 'none', color: '#0f766e', textDecoration: 'underline', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              >
+                + គំរូប៉ុងចំណាយ
+              </button>
+            </span>
           )}
-
-          <span style={{ fontSize: 12, color: '#94a3b8' }}>
-            ឬចុចសាកល្បង៖{' '}
-            <button
-              onClick={() => handleLoadSample('leave')}
-              style={{ background: 'none', border: 'none', color: '#b45309', textDecoration: 'underline', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-            >
-              + គំរូច្បាប់សិស្ស
-            </button>
-            {' • '}
-            <button
-              onClick={() => handleLoadSample('finance')}
-              style={{ background: 'none', border: 'none', color: '#0f766e', textDecoration: 'underline', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-            >
-              + គំរូប៉ុងចំណាយ
-            </button>
-          </span>
         </div>
       </div>
 

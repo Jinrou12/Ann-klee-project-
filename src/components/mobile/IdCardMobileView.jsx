@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, FileText,
   Calendar, Search, Download, Loader2, CreditCard, CheckCircle2
@@ -17,6 +17,7 @@ import {
   formatDateBreakdownKhmer
 } from '../../utils/idCardCatalog';
 import OfficialIdCardDocument from '../OfficialIdCardDocument';
+import A4SheetScaler from '../A4SheetScaler';
 
 export default function IdCardMobileView({
   records = [],
@@ -25,7 +26,8 @@ export default function IdCardMobileView({
   useKhmerNumerals = true,
   studentMaster = [],
   onUpdateRecords,
-  onAddRecordToMonth
+  onAddRecordToMonth,
+  mobilePreviewA4 = false
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -51,16 +53,18 @@ export default function IdCardMobileView({
   const [quickQty, setQuickQty] = useState(1);
   const [quickPrice, setQuickPrice] = useState(2000);
   const [quickDate, setQuickDate] = useState(() => autoDateInfo.entryDateStr);
-  const [combineMode, setCombineMode] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [justAddedToast, setJustAddedToast] = useState('');
+  const lastTapTimeRef = useRef(0);
+  const lastTappedLabelRef = useRef('');
+  const prevItemBeforeTapRef = useRef('ខ្សែ');
 
   useEffect(() => {
     setQuickDate(autoDateInfo.entryDateStr);
   }, [autoDateInfo.entryDateStr]);
 
   const recommendations = useMemo(
-    () => recommendStudentsByPhoneticQuery(quickName, studentMaster, 12),
+    () => (quickName.trim() ? recommendStudentsByPhoneticQuery(quickName, studentMaster, 12) : []),
     [quickName, studentMaster]
   );
 
@@ -81,10 +85,29 @@ export default function IdCardMobileView({
   };
 
   const handleSelectQuickItem = (itemLabel) => {
-    const nextItem = selectOrCombineIdCardItem(quickItem, itemLabel, combineMode);
-    const nextPrice = computeIdCardTotalPrice(nextItem, quickQty, quickPrice);
-    setQuickItem(nextItem);
-    setQuickPrice(nextPrice);
+    const now = Date.now();
+    const isDoubleTap =
+      lastTappedLabelRef.current === itemLabel &&
+      now - lastTapTimeRef.current <= 450;
+
+    if (isDoubleTap && itemLabel !== 'មួយឈុត') {
+      const baseItem = prevItemBeforeTapRef.current || quickItem;
+      const nextItem = selectOrCombineIdCardItem(baseItem, itemLabel, true);
+      const nextPrice = computeIdCardTotalPrice(nextItem, quickQty, quickPrice);
+      setQuickItem(nextItem);
+      setQuickPrice(nextPrice);
+      prevItemBeforeTapRef.current = nextItem;
+      lastTapTimeRef.current = 0;
+      lastTappedLabelRef.current = '';
+    } else {
+      prevItemBeforeTapRef.current = quickItem;
+      lastTapTimeRef.current = now;
+      lastTappedLabelRef.current = itemLabel;
+      const nextItem = itemLabel;
+      const nextPrice = computeIdCardTotalPrice(nextItem, quickQty, quickPrice);
+      setQuickItem(nextItem);
+      setQuickPrice(nextPrice);
+    }
   };
 
   const handleQuickQtyChange = (val) => {
@@ -194,110 +217,33 @@ export default function IdCardMobileView({
 
   return (
     <div className="mobile-idcard-container" style={{ paddingBottom: 85 }}>
-      {/* 1. Mobile Top Overview Card */}
-      <div style={{
-        background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)',
-        border: '1.5px solid #7dd3fc',
-        borderRadius: 14,
-        padding: '14px 16px',
-        marginBottom: 14,
-        boxShadow: '0 2px 8px rgba(2, 132, 199, 0.08)'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', textTransform: 'uppercase' }}>
-              តារាងសមណសិស្សទិញកាតពាក់ក (ID)
-            </span>
-            <h2 className="font-moul" style={{ fontSize: 16, margin: '2px 0 0', color: '#0c4a6e' }}>
-              ខែ{monthName} ឆ្នាំ{yearDisplay}
-            </h2>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{
-              background: '#0284c7',
-              color: '#ffffff',
-              padding: '3px 10px',
-              borderRadius: 16,
-              fontSize: 12,
-              fontWeight: 700,
-              display: 'inline-block',
-              marginBottom: 3
-            }}>
-              សរុប {useKhmerNumerals ? toKhmerDigits(records.length) : records.length} អង្គ
-            </div>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#15803d' }}>
-              {formatKhmerCurrency(totalAmount, useKhmerNumerals)}
-            </div>
-          </div>
-        </div>
-
-        {/* Export & PDF Action Buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            style={{
-              background: '#15803d',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 10,
-              padding: '9px 6px',
-              fontSize: 11.5,
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4
-            }}
-          >
-            <FileSpreadsheet size={14} />
-            <span>Excel</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleExportWord}
-            style={{
-              background: '#1d4ed8',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 10,
-              padding: '9px 6px',
-              fontSize: 11.5,
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4
-            }}
-          >
-            <FileText size={14} />
-            <span>Word</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
-            style={{
-              background: '#b91c1c',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 10,
-              padding: '9px 6px',
-              fontSize: 11.5,
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              opacity: isExportingPdf ? 0.7 : 1
-            }}
-          >
-            {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            <span>{isExportingPdf ? 'កំពុងទាញ...' : 'PDF'}</span>
-          </button>
-        </div>
+      {/* 1. Mobile Top PDF Export Button */}
+      <div style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={isExportingPdf}
+          style={{
+            width: '100%',
+            background: '#b91c1c',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: 10,
+            padding: '10px 14px',
+            fontSize: 13,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            cursor: isExportingPdf ? 'wait' : 'pointer',
+            opacity: isExportingPdf ? 0.7 : 1,
+            boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+          }}
+        >
+          {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
+        </button>
       </div>
 
       {/* 2. Mobile Smart Quick-Entry Box (វាយឈ្មោះ -> ណែនាំ ៨០ អង្គ -> ចុចមុខទំនិញ -> Auto Price & Auto Date) */}
@@ -340,12 +286,12 @@ export default function IdCardMobileView({
             <input
               type="text"
               value={quickName}
-              onFocus={() => setShowDropdown(true)}
+              onFocus={() => setShowDropdown(Boolean(quickName.trim()))}
               onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
               onChange={e => {
                 const val = e.target.value;
                 setQuickName(val);
-                setShowDropdown(true);
+                setShowDropdown(Boolean(val.trim()));
                 const exact = studentMaster.find(s => s.name === val.trim());
                 if (exact) setQuickGrade(exact.grade || '១');
               }}
@@ -360,7 +306,7 @@ export default function IdCardMobileView({
               }}
             />
 
-            {showDropdown && recommendations.length > 0 && (
+            {showDropdown && quickName.trim().length > 0 && recommendations.length > 0 && (
               <div style={{
                 position: 'absolute',
                 top: '100%',
@@ -448,46 +394,32 @@ export default function IdCardMobileView({
           </select>
         </div>
 
-        {/* Step 2: 4 Quick Item Buttons */}
+        {/* Step 2: 4 Quick Item Buttons (Single tap = 1 item, Double tap 2nd item = combine) */}
         <div style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>
-              ២. ជ្រើសរើសមុខទំនិញ៖
-            </span>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: '#0284c7' }}>
-              <input
-                type="checkbox"
-                checked={combineMode}
-                onChange={e => setCombineMode(e.target.checked)}
-              />
-              <span>ទិញច្រើនមុខរួមគ្នា</span>
-            </label>
-          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
             {ID_CARD_ITEMS.map(opt => {
               const isSelected = quickItem === opt.label ||
-                (combineMode && quickItem.split(/\s*\+\s*/).includes(opt.label));
+                quickItem.split(/\s*\+\s*/).includes(opt.label);
               return (
                 <button
                   key={opt.id}
                   type="button"
                   onClick={() => handleSelectQuickItem(opt.label)}
                   style={{
-                    padding: '7px 4px',
+                    padding: '9px 4px',
                     borderRadius: 8,
                     border: `2px solid ${isSelected ? opt.badgeColor : '#e2e8f0'}`,
                     background: isSelected ? opt.badgeBg : '#f8fafc',
                     color: isSelected ? opt.badgeColor : '#334155',
                     display: 'flex',
-                    flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    touchAction: 'manipulation',
+                    userSelect: 'none',
+                    cursor: 'pointer'
                   }}
                 >
-                  <span style={{ fontSize: 12.5, fontWeight: 700 }}>{opt.label}</span>
-                  <span style={{ fontSize: 10, fontWeight: 600 }}>
-                    {formatKhmerCurrency(opt.unitPrice, useKhmerNumerals)}
-                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</span>
                 </button>
               );
             })}
@@ -528,34 +460,50 @@ export default function IdCardMobileView({
             value={quickDate}
             onChange={e => setQuickDate(e.target.value)}
             style={{
-              width: 96,
+              flex: 1,
+              minWidth: 105,
               padding: '8px 6px',
               borderRadius: 8,
               border: '1px solid #cbd5e1',
               textAlign: 'center',
-              fontSize: 12,
+              fontSize: 12.5,
               fontWeight: 600
             }}
           />
           <button
             type="submit"
+            title="បញ្ចូល"
+            aria-label="បញ្ចូល"
             style={{
-              flex: 1,
-              background: '#0284c7',
+              width: 42,
+              height: 38,
+              flexShrink: 0,
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
               color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 10px',
-              fontSize: 12.5,
-              fontWeight: 700,
+              border: '1px solid #0369a1',
+              borderRadius: 10,
+              padding: 0,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 4
+              cursor: 'pointer',
+              boxShadow: '0 3px 8px rgba(2, 132, 199, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25)'
             }}
           >
-            <Plus size={15} />
-            <span>បញ្ចូល</span>
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 7.5V4.8C9 3.8 9.8 3 10.8 3H18.2C19.2 3 20 3.8 20 4.8V19.2C20 20.2 19.2 21 18.2 21H10.8C9.8 21 9 20.2 9 19.2V16.5" />
+              <path d="M3.5 12H15.5" />
+              <path d="M11.5 8L15.5 12L11.5 16" />
+            </svg>
           </button>
         </div>
 
@@ -579,62 +527,78 @@ export default function IdCardMobileView({
         )}
       </form>
 
-      {/* 3. Search & Grade Filter */}
+      {/* 3. Search Bar */}
       <div style={{
-        background: '#ffffff',
-        borderRadius: 12,
-        padding: 10,
-        marginBottom: 12,
-        border: '1px solid #e2e8f0'
+        position: 'relative',
+        marginBottom: 10
       }}>
-        <div style={{ position: 'relative', marginBottom: 8 }}>
-          <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="ស្វែងរកឈ្មោះ ឬមុខទំនិញ..."
-            style={{
-              width: '100%',
-              padding: '7px 10px 7px 32px',
-              borderRadius: 8,
-              border: '1px solid #cbd5e1',
-              fontSize: 12.5
-            }}
-          />
-        </div>
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-          {[
-            { id: 'all', label: 'គ្រប់ថ្នាក់' },
-            { id: 'មត្តេយ្យ', label: 'មត្តេយ្យ' },
-            { id: '១', label: 'ថ្នាក់ទី ១' },
-            { id: '២', label: 'ថ្នាក់ទី ២' },
-            { id: '៣', label: 'ថ្នាក់ទី ៣' }
-          ].map(g => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => setFilterGrade(g.id)}
-              style={{
-                padding: '5px 10px',
-                borderRadius: 16,
-                fontSize: 11.5,
-                fontWeight: 700,
-                border: filterGrade === g.id ? '1.5px solid #0284c7' : '1px solid #e2e8f0',
-                background: filterGrade === g.id ? '#e0f2fe' : '#f8fafc',
-                color: filterGrade === g.id ? '#0369a1' : '#475569',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
+        <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="ស្វែងរកឈ្មោះ ឬមុខទំនិញ..."
+          style={{
+            width: '100%',
+            padding: '8px 10px 8px 32px',
+            borderRadius: 8,
+            border: '1px solid #cbd5e1',
+            fontSize: 13,
+            background: '#ffffff'
+          }}
+        />
       </div>
 
-      {/* 4. Mobile Cards List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {filteredRecords.length === 0 ? (
+      {/* 3.5. Summary Count & Total Amount Strip below Search Bar */}
+      <div style={{
+        background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)',
+        border: '1.5px solid #7dd3fc',
+        borderRadius: 10,
+        padding: '8px 12px',
+        marginBottom: 12,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        boxShadow: '0 1px 4px rgba(2, 132, 199, 0.06)'
+      }}>
+        <span style={{
+          background: '#0284c7',
+          color: '#ffffff',
+          padding: '4px 12px',
+          borderRadius: 16,
+          fontSize: 12.5,
+          fontWeight: 700,
+          whiteSpace: 'nowrap'
+        }}>
+          សរុប {useKhmerNumerals ? toKhmerDigits(filteredRecords.length) : filteredRecords.length} អង្គ
+        </span>
+        <span style={{ fontSize: 14.5, fontWeight: 800, color: '#15803d', whiteSpace: 'nowrap' }}>
+          {formatKhmerCurrency(
+            filteredRecords.reduce((sum, r) => sum + (Number(r.price) || 0), 0),
+            useKhmerNumerals
+          )}
+        </span>
+      </div>
+
+      {/* 4. Mobile Cards List or Official A4 Preview */}
+      {mobilePreviewA4 ? (
+        <div style={{ background: '#ffffff', padding: 8, borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          <A4SheetScaler>
+            <OfficialIdCardDocument
+              id="preview-mobile-idcard-document"
+              records={filteredRecords}
+              metadata={metadata}
+              monthName={monthName}
+              yearDisplay={yearDisplay}
+              useKhmerNumerals={useKhmerNumerals}
+              monthKey={monthKey}
+              studentMaster={studentMaster}
+            />
+          </A4SheetScaler>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {filteredRecords.length === 0 ? (
           <div style={{
             background: '#ffffff',
             borderRadius: 12,
@@ -657,10 +621,10 @@ export default function IdCardMobileView({
                 key={r.id}
                 style={{
                   background: '#ffffff',
-                  border: '1px solid #e2e8f0',
+                  border: '1.5px solid #93c5fd',
                   borderRadius: 12,
                   padding: 12,
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
+                  boxShadow: '0 2px 6px rgba(2, 132, 199, 0.06)'
                 }}
               >
                 {isEditing ? (
@@ -764,6 +728,7 @@ export default function IdCardMobileView({
                         borderRadius: '50%',
                         background: '#e0f2fe',
                         color: '#0369a1',
+                        border: '1px solid #bae6fd',
                         fontSize: 12,
                         fontWeight: 700,
                         display: 'inline-flex',
@@ -818,7 +783,8 @@ export default function IdCardMobileView({
             );
           })
         )}
-      </div>
+        </div>
+      )}
 
       {/* Off-screen Official A4 Document for High-Res PDF Export on Mobile */}
       <div style={{

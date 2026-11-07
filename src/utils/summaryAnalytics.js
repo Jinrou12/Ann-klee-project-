@@ -132,6 +132,35 @@ export function formatDurationTotals(totals, useKhmerNumerals = true) {
 }
 
 /**
+ * Condense multiple leave reasons for Semester & Full-Year summary tables:
+ * Keeps up to `maxReasons` distinct original reasons and appends `(+N ទៀត)` for remaining distinct reasons.
+ */
+export function formatCondensedReasons(records = [], { maxReasons = 2, useKhmerNumerals = true } = {}) {
+  const distinctReasons = [];
+  const seen = new Set();
+
+  (records || []).forEach(r => {
+    const raw = String(r?.reason || '').replace(/\u200B/g, '').replace(/\s+/g, ' ').trim();
+    if (!raw) return;
+    const normKey = raw.replace(/\s+/g, '');
+    if (!seen.has(normKey)) {
+      seen.add(normKey);
+      distinctReasons.push(raw);
+    }
+  });
+
+  if (distinctReasons.length === 0) return '—';
+  if (distinctReasons.length <= maxReasons) {
+    return distinctReasons.join(', ');
+  }
+
+  const shown = distinctReasons.slice(0, maxReasons).join(', ');
+  const extraCount = distinctReasons.length - maxReasons;
+  const extraLabel = useKhmerNumerals ? toKhmerDigits(extraCount) : String(extraCount);
+  return `${shown} (+${extraLabel} ទៀត)`;
+}
+
+/**
  * Format "YYYY-MM" into Khmer month & year label
  */
 export function formatMonthKeyLabel(mKey, useKhmerNumerals = true) {
