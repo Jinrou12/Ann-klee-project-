@@ -1,8 +1,32 @@
 // Monthly & Yearly Summary Analytics Engine (Shared across PC & Mobile /mp)
 import * as XLSX from 'xlsx';
-import { toKhmerDigits, toArabicDigits, formatKhmerCurrency, formatMoney, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals } from './khmerNumerals';
+import {
+  toKhmerDigits,
+  toArabicDigits,
+  formatKhmerCurrency,
+  formatMoney,
+  sumByCurrency,
+  combineCurrencyTotals,
+  formatCurrencyTotals,
+  formatExpenseTotals,
+  isFinanceDeficit
+} from './khmerNumerals';
 import { KHMER_SOLAR_MONTHS } from './khmerCalendar';
 import { matchStudentName } from './studentMaster';
+
+// ឆមាសទី ១: ឧសភា - កញ្ញា (មិនរាប់បញ្ចូលខែមីនា 03 និងខែមេសា 04 ដែលជាខែវិស្សមកាល)
+export const SEMESTER_1_MONTH_NUMS = ['05', '06', '07', '08', '09'];
+// ឆមាសទី ២: តុលា - កុម្ភៈ
+export const SEMESTER_2_MONTH_NUMS = ['10', '11', '12', '01', '02'];
+// ខែសិក្សាទាំង ១០ ខែក្នុង ១ ឆ្នាំសិក្សា (ដកខែមីនា 03 និងខែមេសា 04 ចេញ)
+export const ACADEMIC_MONTH_NUMS = [...SEMESTER_1_MONTH_NUMS, ...SEMESTER_2_MONTH_NUMS];
+export const EXCLUDED_VACATION_MONTH_NUMS = ['03', '04'];
+
+export function isAcademicMonthKey(monthKey = '') {
+  const parts = String(monthKey || '').split('-');
+  if (parts.length < 2) return true;
+  return !EXCLUDED_VACATION_MONTH_NUMS.includes(parts[1]);
+}
 
 /**
  * Parse a single leave duration string (e.g., "១ថ្ងៃ", "១ថ្ងៃកន្លះ", "១ព្រឹក", "១ល្ងាច")
@@ -12,7 +36,14 @@ export function parseSingleDuration(rawDuration) {
   const result = { days: 0, mornings: 0, afternoons: 0, other: [] };
   if (!rawDuration) return result;
 
-  const clean = toArabicDigits(String(rawDuration).replace(/\u200B/g, '').trim());
+  const clean = toArabicDigits(
+    String(rawDuration)
+      .replace(/\u200B/g, '')
+      .replace(/លា្ងច/g, 'ល្ងាច')
+      .replace(/ព្រក/g, 'ព្រឹក')
+      .replace(/^មួយ\s*/, '1')
+      .trim()
+  );
   if (!clean) return result;
 
   // 1. Check "Nថ្ងៃកន្លះ" (e.g. "1ថ្ងៃកន្លះ")
@@ -44,8 +75,8 @@ export function parseSingleDuration(rawDuration) {
     matchedAny = true;
   }
 
-  // 5. Check "Nល្ងាច"
-  const afternoonMatch = clean.match(/(\d+)?\s*ល្ងាច/);
+  // 5. Check "Nល្ងាច" or "Nរសៀល" (afternoon sessions)
+  const afternoonMatch = clean.match(/(\d+)?\s*(?:ល្ងាច|រសៀល)/);
   if (afternoonMatch) {
     result.afternoons += afternoonMatch[1] ? parseInt(afternoonMatch[1], 10) : 1;
     matchedAny = true;
@@ -113,12 +144,13 @@ export function formatMonthKeyLabel(mKey, useKhmerNumerals = true) {
 }
 
 /**
- * Extract available years and months from appState.leaves and appState.finance
+ * Extract available years and months from appState.leaves, appState.finance, and appState.idCards
  */
-export function getAvailablePeriods(allLeaves = {}, allFinance = {}, currentMonthKey = '2026-07') {
+export function getAvailablePeriods(allLeaves = {}, allFinance = {}, currentMonthKey = '2026-07', allIdCards = {}) {
   const monthSet = new Set([
     ...Object.keys(allLeaves || {}),
     ...Object.keys(allFinance || {}),
+    ...Object.keys(allIdCards || {}),
     currentMonthKey
   ].filter(Boolean));
 
@@ -132,13 +164,14 @@ export function getAvailablePeriods(allLeaves = {}, allFinance = {}, currentMont
 }
 
 /**
- * Compute complete student leave summary & finance summary for a chosen period
+ * Compute complete student leave summary, ID card purchase summary & finance summary for a chosen period
  * @param {Object} params
  * @param {'month'|'year'} params.periodMode - 'month' (single month) or 'year' (entire year)
  * @param {string} params.selectedMonth - e.g. '2026-07'
  * @param {string} params.selectedYear - e.g. '2026'
  * @param {Object} params.allLeaves - appState.leaves
  * @param {Object} params.allFinance - appState.finance
+ * @param {Object} params.allIdCards - appState.idCards
  * @param {Array} params.studentMaster - appState.studentMaster (80 official students)
  */
 export function computePeriodSummary({
@@ -147,14 +180,21 @@ export function computePeriodSummary({
   selectedYear = '2026',
   allLeaves = {},
   allFinance = {},
+  allIdCards = {},
   studentMaster = []
 }) {
-  // 1. Determine which month keys belong to the selected period
-  const targetMonthKeys = periodMode === 'year'
-    ? Object.keys({ ...allLeaves, ...allFinance })
-        .filter(k => k.startsWith(`${selectedYear}-`))
-        .sort()
-    : [selectedMonth];
+  // 1. Determine which month keys belong to the selected period (excluding March 03 & April 04)
+  let targetMonthKeys = [selectedMonth];
+  if (periodMode === 'semester1') {
+    targetMonthKeys = SEMESTER_1_MONTH_NUMS.map(m => `${selectedYear}-${m}`);
+  } else if (periodMode === 'semester2') {
+    targetMonthKeys = SEMESTER_2_MONTH_NUMS.map(m => `${selectedYear}-${m}`);
+  } else if (periodMode === 'year') {
+    const extraAcademicKeys = Object.keys({ ...allLeaves, ...allFinance, ...allIdCards })
+      .filter(k => k.startsWith(`${selectedYear}-`) && isAcademicMonthKey(k));
+    const orderedKeys = ACADEMIC_MONTH_NUMS.map(m => `${selectedYear}-${m}`);
+    targetMonthKeys = Array.from(new Set([...orderedKeys, ...extraAcademicKeys]));
+  }
 
   // 2. Initialize student map from official Student Master (80 monks)
   const studentMap = new Map();
@@ -230,12 +270,13 @@ export function computePeriodSummary({
   // 3. Aggregate all leave records across targetMonthKeys
   let totalLeaveRequests = 0;
   const overallDurationTotals = { days: 0, mornings: 0, afternoons: 0, other: [] };
+  const allLeaveRecords = [];
 
   targetMonthKeys.forEach(mKey => {
     const monthLeaves = allLeaves?.[mKey];
     if (!Array.isArray(monthLeaves)) return;
 
-    monthLeaves.forEach(rec => {
+    monthLeaves.forEach((rec, recIdx) => {
       if (!rec || (!rec.name && !rec.reason)) return;
       const entry = resolveStudentEntry(rec.name, rec.grade);
       entry.leaveCount += 1;
@@ -253,10 +294,16 @@ export function computePeriodSummary({
       overallDurationTotals.mornings += parsedDur.mornings;
       overallDurationTotals.afternoons += parsedDur.afternoons;
 
-      entry.records.push({
+      const enrichedRec = {
         ...rec,
-        monthKey: mKey
-      });
+        id: rec.id || `${mKey}-${recIdx}`,
+        name: rec.name || entry.name,
+        grade: rec.grade || entry.grade,
+        monthKey: mKey,
+        studentId: entry.id
+      };
+      entry.records.push(enrichedRec);
+      allLeaveRecords.push(enrichedRec);
     });
   });
 
@@ -286,6 +333,18 @@ export function computePeriodSummary({
   const monthlyFinanceBreakdown = [];
   const incomeItems = [];
   const expenseItems = [];
+  let hasIncludedOpeningBalance = false;
+
+  const isCarryoverOrOpeningRow = (item) => {
+    const desc = String(item?.desc || '').trim();
+    return (
+      desc.includes('ប្រាក់សល់ពីខែ') ||
+      desc.includes('ប្រាក់សល់ពី') ||
+      desc.includes('ប្រាក់តម្កល់') ||
+      desc.includes('ប្រាក់តម្កាល') ||
+      item?.autoChannel === 'carryover'
+    );
+  };
 
   targetMonthKeys.forEach(mKey => {
     const fin = allFinance?.[mKey];
@@ -300,6 +359,13 @@ export function computePeriodSummary({
     const mBalTotals = combineCurrencyTotals(mIncTotals, mExpTotals, -1);
 
     incList.forEach(item => {
+      if (periodMode !== 'month' && isCarryoverOrOpeningRow(item)) {
+        if (!hasIncludedOpeningBalance) {
+          hasIncludedOpeningBalance = true;
+          incomeItems.push({ ...item, category: 'income', monthKey: mKey });
+        }
+        return;
+      }
       incomeItems.push({ ...item, category: 'income', monthKey: mKey });
     });
     expList.forEach(item => {
@@ -307,7 +373,6 @@ export function computePeriodSummary({
     });
 
     if (mIncome > 0 || mExpense > 0 || periodMode === 'month') {
-      totalIncome += mIncome;
       totalExpense += mExpense;
       monthlyFinanceBreakdown.push({
         monthKey: mKey,
@@ -323,9 +388,77 @@ export function computePeriodSummary({
     }
   });
 
+  totalIncome = incomeItems.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const overallIncomeTotals = sumByCurrency(incomeItems);
   const overallExpenseTotals = sumByCurrency(expenseItems);
   const overallNetTotals = combineCurrencyTotals(overallIncomeTotals, overallExpenseTotals, -1);
+
+  // 6. Aggregate ID Card Purchases across targetMonthKeys
+  const allIdCardRecords = [];
+  let totalIdCardAmount = 0;
+  let totalIdCardQty = 0;
+  const monthlyIdCardBreakdown = [];
+  const buyerNameSet = new Set();
+  const itemBreakdown = {
+    'ថង': { count: 0, amount: 0 },
+    'ID': { count: 0, amount: 0 },
+    'ខ្សែ': { count: 0, amount: 0 },
+    'មួយឈុត': { count: 0, amount: 0 }
+  };
+
+  targetMonthKeys.forEach(mKey => {
+    const idList = Array.isArray(allIdCards?.[mKey]) ? allIdCards[mKey] : [];
+    let mAmount = 0;
+    let mCount = 0;
+
+    idList.forEach((rec, recIdx) => {
+      if (!rec || (!rec.name && !rec.item)) return;
+      const priceVal = Number(rec.price) || 0;
+      const qtyVal = Number(rec.qty) || 1;
+      const itemStr = String(rec.item || '').trim();
+      const enriched = {
+        ...rec,
+        id: rec.id || `idc-${mKey}-${recIdx}`,
+        monthKey: mKey,
+        price: priceVal,
+        qty: qtyVal
+      };
+      allIdCardRecords.push(enriched);
+      totalIdCardAmount += priceVal;
+      totalIdCardQty += qtyVal;
+      mAmount += priceVal;
+      mCount += 1;
+
+      const compactBuyer = String(rec.name || '').replace(/[\s\u200B]/g, '');
+      if (compactBuyer) buyerNameSet.add(compactBuyer);
+
+      if (itemStr.includes('មួយឈុត') || itemStr.includes('ឈុត')) {
+        itemBreakdown['មួយឈុត'].count += 1;
+        itemBreakdown['មួយឈុត'].amount += priceVal;
+      } else {
+        if (itemStr.includes('ថង')) {
+          itemBreakdown['ថង'].count += 1;
+          itemBreakdown['ថង'].amount += priceVal;
+        }
+        if (itemStr.toUpperCase().includes('ID') || itemStr.includes('កាត')) {
+          itemBreakdown['ID'].count += 1;
+          itemBreakdown['ID'].amount += priceVal;
+        }
+        if (itemStr.includes('ខ្សែ')) {
+          itemBreakdown['ខ្សែ'].count += 1;
+          itemBreakdown['ខ្សែ'].amount += priceVal;
+        }
+      }
+    });
+
+    if (mCount > 0 || periodMode === 'month') {
+      monthlyIdCardBreakdown.push({
+        monthKey: mKey,
+        count: mCount,
+        totalAmount: mAmount
+      });
+    }
+  });
 
   return {
     periodMode,
@@ -335,9 +468,19 @@ export function computePeriodSummary({
     withoutLeaveCount: studentsWithoutLeave.length,
     totalLeaveRequests,
     overallDurationTotals,
+    allLeaveRecords,
     studentsWithLeave,
     studentsWithoutLeave,
     allStudentsSorted,
+    idCardSummary: {
+      totalRecords: allIdCardRecords.length,
+      uniqueBuyersCount: buyerNameSet.size,
+      totalQty: totalIdCardQty,
+      totalAmount: totalIdCardAmount,
+      allRecords: allIdCardRecords,
+      itemBreakdown,
+      monthlyBreakdown: monthlyIdCardBreakdown
+    },
     financeSummary: {
       totalIncome,
       totalExpense,
@@ -351,6 +494,46 @@ export function computePeriodSummary({
       monthlyBreakdown: monthlyFinanceBreakdown
     }
   };
+}
+
+/**
+ * Export the Student ID Card Purchase Summary (Monthly, Semester, or Yearly) to Excel (.xlsx)
+ */
+export function exportIdCardSummaryToExcel({
+  rows = [],
+  periodLabel = '',
+  useKhmerNumerals = true
+}) {
+  const fmtNum = (n) => (useKhmerNumerals ? toKhmerDigits(n) : String(n));
+  const totalAmount = rows.reduce((sum, r) => sum + (Number(r.price) || 0), 0);
+
+  const data = rows.map((r, idx) => ({
+    'ល.រ': fmtNum(idx + 1),
+    'ខែ': formatMonthKeyLabel(r.monthKey, useKhmerNumerals),
+    'គោត្តនាម-និងនាម': r.name || '',
+    'ថ្នាក់': String(r.grade || '').includes('មត្តេយ្យ') ? 'មត្តេយ្យ' : `ថ្នាក់ទី ${fmtNum(r.grade || '១')}`,
+    'បរិយាយ': r.item || '',
+    'ចំនួន': fmtNum(r.qty || 1),
+    'តម្លៃ': formatKhmerCurrency(r.price || 0, useKhmerNumerals),
+    'កាលបរិច្ឆេទ': useKhmerNumerals ? toKhmerDigits(r.date || '') : (r.date || '')
+  }));
+
+  data.push({
+    'ល.រ': '',
+    'ខែ': periodLabel,
+    'គោត្តនាម-និងនាម': `សរុបរួម (${fmtNum(rows.length)} អង្គ/លើក)`,
+    'ថ្នាក់': '',
+    'បរិយាយ': '',
+    'ចំនួន': '',
+    'តម្លៃ': formatKhmerCurrency(totalAmount, useKhmerNumerals),
+    'កាលបរិច្ឆេទ': ''
+  });
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'បូកសរុបទិញកាត_ID');
+  const safeFileLabel = String(periodLabel || 'ID_Card').replace(/\s+/g, '_');
+  XLSX.writeFile(wb, `បូកសរុបសមណសិស្សទិញកាត_ID_${safeFileLabel}.xlsx`);
 }
 
 /**
@@ -408,13 +591,15 @@ export function exportFinanceSummaryToExcel({
     'តម្លៃសរុប': formatMoney(item.total || 0, item.currency, useKhmerNumerals)
   }));
 
+  const isDeficit = isFinanceDeficit(financeSummary?.netTotals, financeSummary?.netBalance);
+
   rows.push({
     'ល.រ': '',
     'ប្រភេទ': 'សរុបរួម',
     'ខែ': periodLabel,
-    'បរិយាយ': `ចំណូលសរុប៖ ${formatCurrencyTotals(financeSummary?.incomeTotals, useKhmerNumerals)} | ចំណាយសរុប៖ ${formatCurrencyTotals(financeSummary?.expenseTotals, useKhmerNumerals)}`,
+    'បរិយាយ': `ចំណូលសរុប៖ ${formatCurrencyTotals(financeSummary?.incomeTotals, useKhmerNumerals)} | ចំណាយសរុប៖ ${formatExpenseTotals(financeSummary?.expenseTotals, isDeficit, useKhmerNumerals)}`,
     'បរិមាណ': '',
-    'តម្លៃរាយ': 'នៅសល់៖',
+    'តម្លៃរាយ': isDeficit ? 'ខ្វះថវិកា៖' : 'នៅសល់៖',
     'តម្លៃសរុប': formatCurrencyTotals(financeSummary?.netTotals, useKhmerNumerals)
   });
 

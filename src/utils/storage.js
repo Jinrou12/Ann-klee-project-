@@ -1,5 +1,5 @@
 // Central State Storage and Mutator Guard (Rule 7)
-import { DEFAULT_STUDENT_MASTER, matchStudentName } from './studentMaster';
+import { DEFAULT_STUDENT_MASTER, matchStudentName, normalizeStudentGrade } from './studentMaster';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 // Helper to parse comma/newline/whitespace-separated API key strings or arrays into clean unique keys
@@ -25,27 +25,269 @@ const STORAGE_KEYS = {
   TRAINING_DATASET: 'ann_klee_training_dataset_v1',
 };
 
-// Initial default Leave Data matching PDF 2
+// Initial default Leave Data matching របាយការណ៍_សិស្សសុំច្បាប់_ឆ្នាំ២០២៦_២០២៧.xlsx (110 authentic records across May - October 2026)
 export const INITIAL_LEAVE_DATA = {
+  '2026-05': [],
+  '2026-06': [
+    { id: 'lv-06-1', name: 'ឡា រក្សា', grade: '១', reason: 'ទៅបុណ្យគោចរបិណ្ឌបាតនៅវត្ត', duration: '១ថ្ងៃ', date: '11/06/2026', note: '' },
+    { id: 'lv-06-2', name: 'គីម សុភាព', grade: '១', reason: 'ទៅបុណ្យគោចរបិណ្ឌបាតនៅវត្ត', duration: '១ថ្ងៃ', date: '14/06/2026', note: '' },
+    { id: 'lv-06-3', name: 'ហេន សិលា', grade: '២', reason: 'អាពាធ (គ្រុនឈាម)', duration: '២០ថ្ងៃ', date: '03/06/2026', note: '' },
+    { id: 'lv-06-4', name: 'យ៉េន ចាន់រ៉ា', grade: '២', reason: 'ទៅបុណ្យគោចរបិណ្ឌបាតនៅវត្ត', duration: '១ថ្ងៃ', date: '12/06/2026', note: '' },
+    { id: 'lv-06-5', name: 'ជួរ មករា', grade: '២', reason: 'ទៅបុណ្យនៅវត្ត', duration: '១ថ្ងៃ', date: '13/06/2026', note: '' },
+    { id: 'lv-06-6', name: 'ឃិន ស៊ិវម៉ិញ', grade: '២', reason: 'ទៅបុណ្យនៅវត្ត', duration: '១ថ្ងៃ', date: '15/06/2026', note: '' },
+    { id: 'lv-06-7', name: 'រ៉េត ណារ៉ុង', grade: '២', reason: 'ទៅបុណ្យគោចរបិណ្ឌបាតនៅវត្ត', duration: '១ថ្ងៃ', date: '16/06/2026', note: '' },
+    { id: 'lv-06-8', name: 'ឡាយ វីរះ', grade: '២', reason: 'ទៅបុណ្យដាពិស្ដានៅវត្ត', duration: '១ថ្ងៃ', date: '20/06/2026', note: '' },
+    { id: 'lv-06-9', name: 'អ៊ុន សារ៉េន', grade: '២', reason: 'ទៅបុណ្យដាពិស្ដានៅវត្ត', duration: '១ថ្ងៃ', date: '20/06/2026', note: '' },
+    { id: 'lv-06-10', name: 'ម៉េង ទី', grade: '២', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '26/06/2026', note: '' },
+    { id: 'lv-06-11', name: 'ម៉ែន សីហា', grade: '២', reason: 'អាពាធ(ទៅពេទ្យជួសឈាម)', duration: '១ថ្ងៃ', date: '15/06/2026', note: '' },
+    { id: 'lv-06-12', name: 'ធន ដាវីត', grade: '៣', reason: 'ទៅបុណ្យនៅវត្ត', duration: '១ថ្ងៃ', date: '04/06/2026', note: '' },
+    { id: 'lv-06-13', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ទៅបុណ្យបញ្ចុះសីមានៅវត្ដ', duration: '១ថ្ងៃ', date: '08/06/2026', note: '' },
+    { id: 'lv-06-14', name: 'ខុម បូរី', grade: '៣', reason: 'ទៅបុណ្យគោចរបិណ្ឌបាតនៅវត្ត', duration: '១ថ្ងៃ', date: '09/06/2026', note: '' },
+    { id: 'lv-06-15', name: 'ខុម ភក្ដី', grade: '៣', reason: 'ទៅបុណ្យគោចរបិណ្ឌបាតនៅវត្ត', duration: '១ថ្ងៃ', date: '10/06/2026', note: '' },
+    { id: 'lv-06-16', name: 'ឈឿន ឆេង', grade: '៣', reason: 'ទៅបុណ្យនៅវត្ត', duration: '២ថ្ងៃ', date: '11/06/2026', note: '' },
+    { id: 'lv-06-17', name: 'ជឿន សូវីត', grade: '៣', reason: 'គ្រុនផ្ដាសាយ', duration: '១ថ្ងៃ', date: '12/06/2026', note: '' },
+    { id: 'lv-06-18', name: 'ហ៊ី រ៉ាឌី', grade: '៣', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '16/06/2026', note: '' },
+    { id: 'lv-06-19', name: 'ជឿន សូវីត', grade: '៣', reason: 'គ្រុនផ្ដាសាយ', duration: '១ថ្ងៃ', date: '17/06/2026', note: '' },
+    { id: 'lv-06-20', name: 'ឌី សុខហេង', grade: 'មត្តេយ្យ', reason: 'ទៅបុណ្យនៅវត្ត', duration: '១ថ្ងៃ', date: '03/06/2026', note: '' },
+    { id: 'lv-06-21', name: 'សាន ដារ៉ា', grade: 'មត្តេយ្យ', reason: 'ទៅបុណ្យគោចរបិណ្ឌបាតនៅវត្ត', duration: '១ថ្ងៃ', date: '07/06/2026', note: '' },
+    { id: 'lv-06-22', name: 'យាន គូម៉ាន់', grade: 'មត្តេយ្យ', reason: 'ទៅបុណ្យនៅវត្ត', duration: '២ថ្ងៃ', date: '11/06/2026', note: '' },
+    { id: 'lv-06-23', name: 'វឿន វ៉ាន់', grade: 'មត្តេយ្យ', reason: 'ទៅបុណ្យនៅវត្ត', duration: '២ថ្ងៃ', date: '11/06/2026', note: '' },
+    { id: 'lv-06-24', name: 'ឃី ម៉េងលាភ', grade: 'មត្តេយ្យ', reason: 'ទៅបុណ្យនៅវត្ត', duration: '២ថ្ងៃ', date: '11/06/2026', note: '' },
+    { id: 'lv-06-25', name: 'ឌី សុខហេង', grade: 'មត្តេយ្យ', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '26/06/2026', note: '' }
+  ],
   '2026-07': [
-    { id: 'l1', name: 'រស់ ណារ៉ាន់', grade: '៣', reason: 'អាពាធ គ្រិចដៃ', duration: '១ថ្ងៃ', date: '01/07/2026', note: '' },
-    { id: 'l2', name: 'ស៊ឹង វណ្ណេត', grade: '៣', reason: 'អាពាធ ឈឺក្បាល', duration: '១ថ្ងៃ', date: '01/07/2026', note: '' },
-    { id: 'l3', name: 'រស់ ណារ៉ាន់', grade: '៣', reason: 'អាពាធ គ្រុនក្ដៅ', duration: '១ថ្ងៃ', date: '06/07/2026', note: '' },
-    { id: 'l4', name: 'គឹម សុភាព', grade: '១', reason: 'អាពាធ ឈឺរលាកក្បាល', duration: '១ថ្ងៃ', date: '03/07/2026', note: '' },
-    { id: 'l5', name: 'បាន សម្បត្តិ', grade: '៣', reason: 'អាពាធ ទៅពេទ្យ', duration: '១ថ្ងៃ', date: '06/07/2026', note: '' },
-    { id: 'l6', name: 'បាន សម្បត្តិ', grade: '៣', reason: 'អាពាធ ទៅពេទ្យ', duration: '១ថ្ងៃ', date: '07/07/2026', note: '' },
-    { id: 'l7', name: 'យិន លាភ', grade: '៣', reason: 'អាពាធ វិលមុខ', duration: '១ល្ងាច', date: '07/07/2026', note: '' },
-    { id: 'l8', name: 'សេងលី ទីសា', grade: '២', reason: 'អាពាធ គ្រុនឈាម', duration: '៥ថ្ងៃ', date: '04/07/2026', note: '' },
-    { id: 'l9', name: 'ជួង ចិត្រា', grade: '២', reason: 'ទៅបុណ្យ ខួប', duration: '១ថ្ងៃកន្លះ', date: '16/07/2026', note: '' },
-    { id: 'l10', name: 'ឡឿន រ៉ាដូ', grade: 'មត្តេយ្យ', reason: 'ទៅបុណ្យ ខួប', duration: '១ថ្ងៃកន្លះ', date: '16/07/2026', note: '' },
-    { id: 'l11', name: 'ប៊ិន ធឿនឧត្តម', grade: '២', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '13/07/2026', note: '' },
-    { id: 'l12', name: 'តួរញ្ញា', grade: '១', reason: 'ឈឺក្បាល វិលមុខ', duration: '១ថ្ងៃ', date: '20/07/2026', note: '' },
-    { id: 'l13', name: 'ណា ទិចគាង', grade: '៣', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '20/07/2026', note: '' },
+    { id: 'lv-07-1', name: 'រស់ ណារ៉ាន់', grade: '៣', reason: 'អាពាធ គ្រិចដៃ', duration: '១ថ្ងៃ', date: '01/07/2026', note: '' },
+    { id: 'lv-07-2', name: 'ស៊ីម វ៉ាន់ណេត', grade: '៣', reason: 'អាពាធ ឈឺក្បាល', duration: '១ថ្ងៃ', date: '01/07/2026', note: '' },
+    { id: 'lv-07-3', name: 'រស់ ណារ៉ាន់', grade: '៣', reason: 'អាពាធ គ្រុនក្ដៅ', duration: '១ថ្ងៃ', date: '06/07/2026', note: '' },
+    { id: 'lv-07-4', name: 'គីម សុភាព', grade: '១', reason: 'អាពាធ ឈឺប្រកេស', duration: '១ថ្ងៃ', date: '03/07/2026', note: '' },
+    { id: 'lv-07-5', name: 'បាន សម្បត្តិ', grade: '៣', reason: 'អាពាធ ទៅពេទ្យ', duration: '១ថ្ងៃ', date: '06/07/2026', note: '' },
+    { id: 'lv-07-6', name: 'បាន សម្បត្តិ', grade: '៣', reason: 'អាពាធ ទៅពេទ្យ', duration: '១ថ្ងៃ', date: '07/07/2026', note: '' },
+    { id: 'lv-07-7', name: 'យិន លាព', grade: '៣', reason: 'អាពាធ វិលមុខ', duration: '១ល្ងាច', date: '07/07/2026', note: '' },
+    { id: 'lv-07-8', name: 'សេងលី ទីសា', grade: '២', reason: 'អាពាធ គ្រុនឈាម', duration: '៥ថ្ងៃ', date: '04/07/2026', note: '' },
+    { id: 'lv-07-9', name: 'ជួង ចិត្រា', grade: '២', reason: 'ទៅបុណ្យ ខួប', duration: '១ថ្ងៃកន្លះ', date: '16/07/2026', note: '' },
+    { id: 'lv-07-10', name: 'ឌឿន រ៉ាដូ', grade: 'មត្តេយ្យ', reason: 'ទៅបុណ្យ ខួប', duration: '១ថ្ងៃកន្លះ', date: '16/07/2026', note: '' },
+    { id: 'lv-07-11', name: 'ប៉ុនធឿន ឧត្តម', grade: '២', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '13/07/2026', note: '' },
+    { id: 'lv-07-12', name: 'តួ បញ្ញា', grade: '១', reason: 'ឈឺក្បាល វិលមុខ', duration: '១ថ្ងៃ', date: '20/07/2026', note: '' },
+    { id: 'lv-07-13', name: 'ណា តិចគាង', grade: '៣', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '20/07/2026', note: '' }
+  ],
+  '2026-08': [
+    { id: 'lv-08-1', name: 'ហ៊ី រ៉ាឌី', grade: '៣', reason: 'ឈឺភ្នែក', duration: '១ល្ងាច', date: '03/08/2026', note: '' },
+    { id: 'lv-08-2', name: 'មី ស៊ីនូ', grade: '២', reason: 'អត់មានចីវរស្លៀក (ចីវរសើម)', duration: '១ថ្ងៃ', date: '04/08/2026', note: '' },
+    { id: 'lv-08-3', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ឈឺធ្មេញ', duration: '១ល្ងាច', date: '04/08/2026', note: '' },
+    { id: 'lv-08-4', name: 'បាន សម្បត្តិ', grade: '៣', reason: 'ឈឺធ្មេញ', duration: '១ល្ងាច', date: '04/08/2026', note: '' },
+    { id: 'lv-08-5', name: 'រស់ ណារ៉ាន់', grade: '៣', reason: 'ក្ដៅខ្លួន (កើតពងបែក)', duration: '២ថ្ងៃ', date: '04/08/2026', note: '' },
+    { id: 'lv-08-6', name: 'យិន លាព', grade: '៣', reason: 'ឈឺក្បាលក្ដៅខ្លួន', duration: '១រសៀល', date: '04/08/2026', note: '' },
+    { id: 'lv-08-7', name: 'ណា តិចគាង', grade: '៣', reason: 'ឈឺជើង', duration: '១ថ្ងៃ', date: '06/08/2026', note: '' },
+    { id: 'lv-08-8', name: 'ធន ដាវីត', grade: '៣', reason: 'និមន្តទៅបុណ្យ', duration: '១ថ្ងៃ', date: '07/08/2026', note: '' },
+    { id: 'lv-08-9', name: 'រស់ ណារ៉ាន់', grade: '៣', reason: 'ហើមធ្មេញ', duration: '១ថ្ងៃ', date: '07/08/2026', note: '' },
+    { id: 'lv-08-10', name: 'ជឿន សូវីត', grade: '៣', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '07/08/2026', note: '' },
+    { id: 'lv-08-11', name: 'ភាក់ សុភាព', grade: '២', reason: 'អាពាធ (វិលមុខ ឈឺប្រកេស)', duration: '១ថ្ងៃ', date: '07/08/2026', note: '' },
+    { id: 'lv-08-12', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ជុក ក្រពះ ពោះវៀន', duration: '១រសៀល', date: '07/08/2026', note: '' },
+    { id: 'lv-08-13', name: 'អេន ដាវីន', grade: '៣', reason: 'ទៅបុណ្យ', duration: '១រសៀល', date: '07/08/2026', note: '' },
+    { id: 'lv-08-14', name: 'ហ៊ី រ៉ាឌី', grade: '៣', reason: 'ចុកពោះ', duration: '១ថ្ងៃ', date: '10/08/2026', note: '' },
+    { id: 'lv-08-15', name: 'រស់ ណារ៉ាន់', grade: '៣', reason: 'ចុកពោះ', duration: '១ថ្ងៃ', date: '10/08/2026', note: '' },
+    { id: 'lv-08-16', name: 'យិន លាព', grade: '៣', reason: 'ឈឺក្បាល', duration: '១រសៀល', date: '10/08/2026', note: '' },
+    { id: 'lv-08-17', name: 'សីហា ជីវ៉ា', grade: '៣', reason: 'ឈីជើង', duration: '១រសៀល', date: '11/08/2026', note: '' },
+    { id: 'lv-08-18', name: 'រ៉េត ណារ៉ុង', grade: '២', reason: 'ជាប់ធ្វើការនៅកុដិ', duration: '១ថ្ងៃ', date: '13/08/2026', note: '' },
+    { id: 'lv-08-19', name: 'ហ៊ី រ៉ាឌី', grade: '៣', reason: 'អាពាធ', duration: '១ថ្ងៃ', date: '13/08/2026', note: '' },
+    { id: 'lv-08-20', name: 'សេងលី ទីសា', grade: '២', reason: 'សឹងខក', duration: '១ព្រឹក', date: '14/08/2026', note: '' },
+    { id: 'lv-08-21', name: 'ឡាយ ប៊ុនយ៉ុង', grade: '២', reason: 'សឹងខក', duration: '១ព្រឹក', date: '14/08/2026', note: '' },
+    { id: 'lv-08-22', name: 'ប៊ុន បេត', grade: '៣', reason: 'ឈឺក្បាល', duration: '១ថ្ងៃ', date: '18/08/2026', note: '' },
+    { id: 'lv-08-23', name: 'យិន លាព', grade: '៣', reason: 'ឈឺភ្នែក', duration: '១ថ្ងៃ', date: '18/08/2026', note: '' },
+    { id: 'lv-08-24', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ទៅពេទ្យទិញថ្នាំលេប', duration: '១ថ្ងៃ', date: '18/08/2026', note: '' },
+    { id: 'lv-08-25', name: 'សុន ម៉ែងអ៊័ង', grade: '២', reason: 'ឈឺជើង', duration: '១ថ្ងៃ', date: '18/08/2026', note: '' },
+    { id: 'lv-08-26', name: 'អេន ដាវីន', grade: '៣', reason: 'ទៅបុណ្យ', duration: '១ថ្ងៃ', date: '21/08/2026', note: '' },
+    { id: 'lv-08-27', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ឈឺធ្មេញ', duration: '១ព្រឹក', date: '25/08/2026', note: '' },
+    { id: 'lv-08-28', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ទៅពេទ្យប៉ះធ្មេញ', duration: '១ល្ងាច', date: '26/08/2026', note: '' },
+    { id: 'lv-08-29', name: 'ឃុន លាងហៃ', grade: '៣', reason: 'គ្រិចជើង', duration: '១ល្ងាច', date: '26/08/2026', note: '' },
+    { id: 'lv-08-30', name: 'សេងលី ទីសា', grade: '២', reason: 'អត់មានចីវរស្លៀក (ចីវរសើម)', duration: '១ព្រឹក', date: '31/08/2026', note: '' },
+    { id: 'lv-08-31', name: 'ម៉ែន សីហា', grade: '២', reason: 'អត់មានចីវរស្លៀក (ចីវរសើម)', duration: '១ព្រឹក', date: '31/08/2026', note: '' },
+    { id: 'lv-08-32', name: 'ឃុន លាងហៃ', grade: '៣', reason: 'ឈឺប្រកេស', duration: '១ល្ងាច', date: '26/08/2026', note: '' }
+  ],
+  '2026-09': [
+    { id: 'lv-09-1', name: 'ណុន តាវ៉ាន់', grade: '២', reason: 'អាពាធ', duration: '១ព្រឹក', date: '07/09/2026', note: '' },
+    { id: 'lv-09-2', name: 'អ៊ុន សារ៉េន', grade: '២', reason: 'អាពាធ (ចុកពោះ)', duration: '១ព្រឹក', date: '07/09/2026', note: '' },
+    { id: 'lv-09-3', name: 'ឆាន រ៉ាយុទ្ធ', grade: 'មត្តេយ្យ', reason: 'ក្ដៅខ្លួន ឈឺក្បាល', duration: '១ល្ងាច', date: '07/09/2026', note: '' },
+    { id: 'lv-09-4', name: 'ឃុន លាងហៃ', grade: '៣', reason: 'ក្ដៅខ្លួន ឈឺក្បាល', duration: '១ព្រឹក', date: '08/09/2026', note: '' },
+    { id: 'lv-09-5', name: 'អ៊ុន សារ៉េន', grade: '២', reason: 'សើមចីវរ', duration: '១ព្រឹក', date: '08/09/2026', note: '' },
+    { id: 'lv-09-6', name: 'ឃិន ស៊ិវម៉ិញ', grade: '២', reason: 'សើមចីវរ', duration: '១ព្រឹក', date: '08/09/2026', note: '' },
+    { id: 'lv-09-7', name: 'ហ៊ី រ៉ាឌី', grade: '៣', reason: 'អាពាធ (ឈឺក្បាល)', duration: '១ថ្ងៃ', date: '08/09/2026', note: '' },
+    { id: 'lv-09-8', name: 'ណា តិចគាង', grade: '៣', reason: 'ឈឺធ្នេញ', duration: '១ល្ងាច', date: '08/09/2026', note: '' },
+    { id: 'lv-09-9', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ឈឺក្រពះ', duration: '១ល្ងាច', date: '11/09/2026', note: '' },
+    { id: 'lv-09-10', name: 'ចាន់ ឆៃអ៊ង', grade: '២', reason: 'អាពាធ (ចុកពោះ)', duration: '១ព្រឹក', date: '11/09/2026', note: '' },
+    { id: 'lv-09-11', name: 'ឈុនហ៊ាង គីមហុង', grade: '២', reason: 'អាពាធ (ឈឺក្បាល)', duration: '១ថ្ងៃ', date: '11/09/2026', note: '' },
+    { id: 'lv-09-12', name: 'ឃុន លាងហៃ', grade: '៣', reason: 'ចីវរសើម', duration: '១ថ្ងៃ', date: '14/09/2026', note: '' },
+    { id: 'lv-09-13', name: 'យ៉េន ចាន់រ៉ា', grade: '២', reason: 'ក្ដៅខ្លួន ផ្ដាសាយ', duration: '១ថ្ងៃ', date: '14/09/2026', note: '' },
+    { id: 'lv-09-14', name: 'រស់ ណារ៉ាន់', grade: '៣', reason: 'ឈឺករ', duration: '១ព្រឹក', date: '14/09/2026', note: '' },
+    { id: 'lv-09-15', name: 'ម៉ែន សីហា', grade: '២', reason: 'អាពាធ (ក្ដៅខ្លួន ឈឺក្បាល)', duration: '១ព្រឹក', date: '15/09/2026', note: '' },
+    { id: 'lv-09-16', name: 'ជឿន សូវីត', grade: '៣', reason: 'អាពាធ(ឈឺក្បាល)', duration: '១ល្ងាច', date: '15/09/2026', note: '' },
+    { id: 'lv-09-17', name: 'ឡាយ វីរះ', grade: '២', reason: 'ឈឺករ', duration: '១ថ្ងៃ', date: '15/09/2026', note: '' },
+    { id: 'lv-09-18', name: 'ម៉េង ស្រ៊ីស៊ីរ៉ា', grade: '២', reason: 'អាពាធ(ឈឺក្បាល)', duration: '១ល្ងាច', date: '15/09/2026', note: '' },
+    { id: 'lv-09-19', name: 'សុន ម៉ែងអ៊័ង', grade: '២', reason: 'អាពាធ(ចុកពោះ)', duration: '១ថ្ងៃ', date: '15/09/2026', note: '' },
+    { id: 'lv-09-20', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ឈឺក្រពះ ក្អួត', duration: '១ថ្ងៃ', date: '16/09/2026', note: '' },
+    { id: 'lv-09-21', name: 'ណា តិចគាង', grade: '៣', reason: 'អាពាធ ក្ដៅខ្លួន', duration: '១ថ្ងៃ', date: '17/09/2026', note: '' },
+    { id: 'lv-09-22', name: 'អ៊ុន សារ៉េន', grade: '២', reason: 'អាពាធ ក្ដៅខ្លួនឈឺក', duration: '១ល្ងាច', date: '18/09/2026', note: '' },
+    { id: 'lv-09-23', name: 'ខុម បូរី', grade: '៣', reason: 'ចីវរសើម', duration: '១ព្រឹក', date: '21/09/2026', note: '' },
+    { id: 'lv-09-24', name: 'សុន ម៉ែងអ៊័ង', grade: '២', reason: 'អាពាធ ក្ដៅខ្លួន ឈឺក', duration: '១ព្រឹក', date: '21/09/2026', note: '' },
+    { id: 'lv-09-25', name: 'រ៉េន វ៉ានុន', grade: '២', reason: 'ផ្ដាសាយ ក្ដៅខ្លួន', duration: '១ថ្ងៃ', date: '21/09/2026', note: '' },
+    { id: 'lv-09-26', name: 'សេងលី ទីសា', grade: '២', reason: 'ឈឺក្បាល វិលមុខ', duration: '១ថ្ងៃ', date: '28/09/2026', note: '' },
+    { id: 'lv-09-27', name: 'ជឿន សូវីត', grade: '៣', reason: 'អាពាធ(ឈឺក្បាល)', duration: '១ថ្ងៃ', date: '28/09/2026', note: '' },
+    { id: 'lv-09-28', name: 'អ៊ុន សារ៉េន', grade: '២', reason: 'ឈឺពោះ', duration: '១ព្រឹក', date: '29/09/2026', note: '' },
+    { id: 'lv-09-29', name: 'ភាក់ សុភាព', grade: '២', reason: 'អាពាធ(ឈឺក្បាល)', duration: '១ព្រឹក', date: '29/09/2026', note: '' },
+    { id: 'lv-09-30', name: 'ម៉េង ស្រ៊ីស៊ីរ៉ា', grade: '២', reason: 'អាពាធ(ក្ដៅខ្លួន)', duration: '១ថ្ងៃ', date: '29/09/2026', note: '' }
+  ],
+  '2026-10': [
+    { id: 'lv-10-1', name: 'ហ៊ុំ រ៉ានុ', grade: '១', reason: 'ទៅវត្ត', duration: '១ថ្ងៃ', date: '02/10/2026', note: '' },
+    { id: 'lv-10-2', name: 'ឃុន លាងហៃ', grade: '៣', reason: 'អត់ស្រួលខ្លួន (រាគ)', duration: 'កន្លះថ្ងៃ', date: '19/10/2026', note: '' },
+    { id: 'lv-10-3', name: 'ហត់ ម៉េងហួង', grade: '៣', reason: 'ទៅពេទ្យដកឆ្នេញ', duration: '១ល្ងាច', date: '19/10/2026', note: '' },
+    { id: 'lv-10-4', name: 'ស្រឿន សុខខា', grade: '១', reason: 'ឈឺក្បាល', duration: '១ថ្ងៃ', date: '20/10/2026', note: '' },
+    { id: 'lv-10-5', name: 'ចាន់ ឆៃអ៊ង', grade: '២', reason: 'ឈឺក្បាល', duration: '១ល្ងាច', date: '21/10/2026', note: '' },
+    { id: 'lv-10-6', name: 'អ៊ុន សារ៉េន', grade: '២', reason: 'ឈឺក្បាលចុះពោះ', duration: '១ល្ងាច', date: '20/10/2026', note: '' },
+    { id: 'lv-10-7', name: 'ឆេងអាន ឈាងហេង', grade: '២', reason: 'ឈឺក្បាលវិលមុខ', duration: '១ល្ងាច', date: '20/10/2026', note: '' },
+    { id: 'lv-10-8', name: 'ឡាយ វីរះ', grade: '២', reason: 'ឈឺពោះ', duration: '១ថ្ងៃ', date: '21/10/2026', note: '' },
+    { id: 'lv-10-9', name: 'ម៉េង ស្រ៊ីស៊ីរ៉ា', grade: '២', reason: 'ចុកពោះ(រាគ)', duration: '១ថ្ងៃ', date: '21/10/2026', note: '' },
+    { id: 'lv-10-10', name: 'មី ស៊ីនូ', grade: '២', reason: 'ក្ដៅខ្លួន', duration: '១ថ្ងៃ', date: '21/10/2026', note: '' }
   ]
 };
 
-// Initial default Finance Data matching PDF 1
+const TEST_LEAVE_IDS_TO_PURGE = new Set([
+  'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9', 'l10', 'l11', 'l12', 'l13',
+  'leave-1793647998299-hppn0',
+  'leave-1793647998330-mjgh1',
+  'leave-1793647998357-0puup',
+  'leave-1793647998374-5o54u',
+  'leave-1793647998388-096gv',
+  'leave-1793647998395-zmh3k',
+  'leave-1793647998400-gzjyc',
+  'leave-1793647998402-8pdnu',
+  'leave-1793647998403-7h293',
+  'leave-1793679227852',
+  'leave-1793701695313',
+  'leave-1793701698386',
+  'leave-1793701704084',
+  'leave-1793701709079',
+  'leave-1793803197564-ov5pn',
+  'leave-1793963477076',
+  'leave-1793968585561'
+]);
+
+export function sanitizeLeaveState(rawLeaves = {}) {
+  const result = {
+    '2026-05': [],
+    '2026-06': [],
+    '2026-07': [],
+    '2026-08': [],
+    '2026-09': [],
+    '2026-10': []
+  };
+
+  Object.keys(rawLeaves || {}).forEach(month => {
+    if (month === '2025-01' || month === '2027-01') return;
+    const records = rawLeaves[month];
+    if (!Array.isArray(records)) return;
+
+    const cleaned = records
+      .filter(r => r && !TEST_LEAVE_IDS_TO_PURGE.has(r.id))
+      .map(r => {
+        let cleanDate = String(r.date || '').replace(/\u200B/g, '').trim();
+        cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
+        if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
+          const parts = cleanDate.split(/ដល់|-|\/to\//i);
+          if (parts[0] && parts[0].trim().length >= 6) {
+            cleanDate = parts[0].trim();
+          }
+        }
+        const cleanReason = String(r.reason || '').replace(/\u200B/g, '').replace(/\s+/g, ' ').trim();
+        const cleanGrade = normalizeStudentGrade(r.grade);
+        return {
+          ...r,
+          grade: cleanGrade || r.grade || '',
+          reason: cleanReason,
+          date: cleanDate
+        };
+      });
+
+    if (cleaned.length > 0 || Object.prototype.hasOwnProperty.call(result, month)) {
+      result[month] = cleaned;
+    }
+  });
+
+  // Guarantee baseline official leave records (June - October 2026) when a month has not been populated yet
+  Object.keys(INITIAL_LEAVE_DATA).forEach(mKey => {
+    const official = INITIAL_LEAVE_DATA[mKey];
+    if (Array.isArray(official) && official.length > 0) {
+      if (!Array.isArray(result[mKey]) || result[mKey].length === 0) {
+        result[mKey] = official.map(item => ({ ...item }));
+      }
+    }
+  });
+
+  return result;
+}
+
+// Initial default Finance Data matching the 5 Official DOCX Reports (May - September 2026)
 export const INITIAL_FINANCE_DATA = {
+  '2026-05': {
+    income: [
+      { id: 'inc-05-1', desc: 'បានពីវិភាគទានសមណសិស្សដាក់ពាក្យចូលរៀន', qty: '១០១អង្គ', unitPrice: 40000, total: 4040000, note: '' },
+      { id: 'inc-05-2', desc: 'ប្រាក់តម្កល់សល់ពីឆ្នាំចាស់', qty: '', unitPrice: '', total: 2000000, note: '' }
+    ],
+    expense: [
+      { id: 'exp-05-1', desc: 'ម៉ាស៊ីនព្រីនMG6230', qty: '១គ្រឿង', unitPrice: 544860, total: 544860, note: '' },
+      { id: 'exp-05-2', desc: 'ទឹកថ្នាំសខ្មៅ', qty: '៣ប្រអប់', unitPrice: 30270, total: 90810, note: '' },
+      { id: 'exp-05-3', desc: 'ថងកាតថ្លា', qty: '១០០ថង់', unitPrice: 280, total: 28000, note: '' },
+      { id: 'exp-05-4', desc: 'កាតរឹង+ខ្សែ', qty: '២០ខ្សែ', unitPrice: 650, total: 13000, note: '' },
+      { id: 'exp-05-5', desc: 'ក្រដាសរឹងA4', qty: '២០សន្លឹក', unitPrice: 500, total: 10000, note: '' },
+      { id: 'exp-05-6', desc: 'ក្រដាសរាមស', qty: '១កេស', unitPrice: 60000, total: 60000, note: '' },
+      { id: 'exp-05-7', desc: 'ហ្វឺតក្ដារ Pilot', qty: '៤ប្រអប់', unitPrice: 52074, total: 211900, note: '' },
+      { id: 'exp-05-8', desc: 'មេគីបST HD', qty: '១គ្រឿង', unitPrice: 97200, total: 97200, note: '' },
+      { id: 'exp-05-9', desc: 'ទឹកហ្វឺតក្ដារGR WI', qty: '២សុង', unitPrice: 21992, total: 44000, note: '' },
+      { id: 'exp-05-10', desc: 'មេគីប10Gangaro mini', qty: '១ដើម', unitPrice: 2228, total: 2228, note: '' },
+      { id: 'exp-05-11', desc: 'ក្រដាសរ៉ាមពណ៌30g ដិត/ស្រាលចំរុះ', qty: '១ដុំ', unitPrice: 10976, total: 10976, note: '' },
+      { id: 'exp-05-12', desc: 'គ្រូណូ Elephen210F', qty: '២គ្រឿង', unitPrice: 7500, total: 15000, note: '' },
+      { id: 'exp-05-13', desc: 'គ្រូណូ112A4 LN', qty: '១គ្រឿង', unitPrice: 5000, total: 5000, note: '' },
+      { id: 'exp-05-14', desc: 'ឃ្នាបសៀតរូបត្រី (Paper Clip)', qty: '១០ប្រអប់', unitPrice: 490, total: 4900, note: '' },
+      { id: 'exp-05-15', desc: 'មេគីប HS 45P', qty: '១គ្រឿង', unitPrice: 10400, total: 10400, note: '' },
+      { id: 'exp-05-16', desc: 'គ្រាបគីបkangSS 23/15', qty: '១ប្រអប់', unitPrice: 5300, total: 5300, note: '' },
+      { id: 'exp-05-17', desc: 'គ្រាបគីបkangSS 23/10', qty: '១ប្រអប់', unitPrice: 4900, total: 4900, note: '' },
+      { id: 'exp-05-18', desc: 'ដែកខ្ទាស់សឺមីHUA JIE (H1001)', qty: '១ប្រអប់', unitPrice: 5300, total: 5300, note: '' },
+      { id: 'exp-05-19', desc: 'មេគីបលេខ10Gangaro', qty: '១ដើម', unitPrice: 3400, total: 3400, note: '' },
+      { id: 'exp-05-20', desc: 'ដែកគោលមួកប្រអប់ជ័រ', qty: '២ប្រអប់', unitPrice: 1300, total: 2600, note: '' },
+      { id: 'exp-05-21', desc: 'ស្កុតក្រដាត់ធំ៦កង', qty: '១សុង', unitPrice: 22000, total: 22000, note: '' },
+      { id: 'exp-05-22', desc: 'មេគីបលេខ DS 45N Elephen1', qty: '១ដើម', unitPrice: 10400, total: 10400, note: '' },
+      { id: 'exp-05-23', desc: 'ស្កុតមុខពីរថ្លាក្រាស', qty: '៣កង', unitPrice: 4066, total: 12200, note: '' },
+      { id: 'exp-05-24', desc: 'ឃ្នាបខ្មៅ Black Clip 111', qty: '១២ប្រអប់', unitPrice: 1441, total: 18500, note: '' },
+      { id: 'exp-05-25', desc: 'ឃ្នាបខ្មៅ Black Clip 112', qty: '១២ប្រអប់', unitPrice: 991, total: 11900, note: '' },
+      { id: 'exp-05-26', desc: 'ឃ្នាបខ្មៅ Black Clip 113', qty: '១២ប្រអប់', unitPrice: 991, total: 11900, note: '' },
+      { id: 'exp-05-27', desc: 'ដែកគោស៊ីម៉ង់', qty: '៤កញ្ចប់', unitPrice: 700, total: 2800, note: '' },
+      { id: 'exp-05-28', desc: 'ផ្លាស្ទិកគ្រប់រឹងA4 LN 101(0.15mm)', qty: '១រ៉ាម', unitPrice: 13500, total: 13500, note: '' },
+      { id: 'exp-05-29', desc: 'ស្រោមគគីA4(9x12)', qty: '១ដុំ', unitPrice: 9000, total: 9000, note: '' },
+      { id: 'exp-05-30', desc: 'សមីក្រដាសស្ដើង', qty: '១០សមី', unitPrice: 120, total: 1200, note: '' },
+      { id: 'exp-05-31', desc: 'សមីក្រដាសរឹងA4', qty: '១០សមី', unitPrice: 450, total: 4500, note: '' },
+      { id: 'exp-05-32', desc: 'សមីក្រដាសរឹងF4', qty: '៥សមី', unitPrice: 520, total: 2600, note: '' },
+      { id: 'exp-05-33', desc: 'កាវស្ងួត GR GS04', qty: '១ដើម', unitPrice: 3500, total: 3500, note: '' },
+      { id: 'exp-05-34', desc: 'ស្កុតមុខពីរកំប៉ុងខ្មៅធំ', qty: '២កង', unitPrice: 1700, total: 3400, note: '' },
+      { id: 'exp-05-35', desc: 'គាវទឹក GiralleGR', qty: '១ដើម', unitPrice: 10000, total: 10000, note: '' },
+      { id: 'exp-05-36', desc: 'ទូដែក(១៥ថត)', qty: '១ទូ', unitPrice: 559995, total: 559995, note: '' },
+      { id: 'exp-05-37', desc: 'ម៉ូតូឌុប', qty: '២ដង', unitPrice: 5000, total: 10000, note: '' },
+      { id: 'exp-05-38', desc: 'ចំណាយ លើគ្រូស្ម័គ្រចិត្ត (ប្រាក់ម៉ោង)៦អង្គ/រូប', qty: '៩០ម៉ោង', unitPrice: 4000, total: 360000, note: '' }
+    ]
+  },
+  '2026-06': {
+    income: [
+      { id: 'inc-06-1', desc: 'ប្រាក់សល់ពីខែឧសភា', qty: '', unitPrice: '', total: 3802831, note: '' },
+      { id: 'inc-06-2', desc: 'ប្រាក់ពីសមណសិស្សដាក់ច្បាប់', qty: '២៥អង្គ', unitPrice: 2000, total: 50000, note: '' },
+      { id: 'inc-06-3', desc: 'ប្រាក់ពីសមណសិស្សជាវ IDថ្មី ខែមិថុនា', qty: '៥អង្គ', unitPrice: 5000, total: 22500, note: '' },
+      { id: 'inc-06-4', desc: 'ទទួលបានពីសប្បុរសជន', qty: '១ដង', unitPrice: 50000, total: 50000, note: '' },
+      { id: 'inc-06-5', desc: 'ព្រះធម្មសាលាវង្ស សា វីរៈ ព្រះគ្រូចៅអធិការវត្ត', qty: 'កុំព្យូទ័រ១គ្រឿង', unitPrice: '', total: 0, totalLabel: 'កុំព្យូទ័រ១គ្រឿង', note: '' }
+    ],
+    expense: [
+      { id: 'exp-06-1', desc: 'ខ្សែពាក់កក្រាស់', qty: '៥០ខ្សែ', unitPrice: 324, total: 16200, note: '' },
+      { id: 'exp-06-2', desc: 'ស្រោមកាតឈរកណ្ដាលX-805/207/B002', qty: '៥០សន្លឹក', unitPrice: 182, total: 9100, note: '' },
+      { id: 'exp-06-3', desc: 'ម៉ូតូឌុប', qty: '១ដង', unitPrice: 5000, total: 5000, note: '' },
+      { id: 'exp-06-4', desc: 'ចំណាយលើគ្រូស្ម័គ្រចិត្ត (ប្រាក់ម៉ោង)៦អង្គ/រូប', qty: '១១៣ម៉ោង', unitPrice: 4000, total: 452000, note: '' }
+    ]
+  },
   '2026-07': {
     income: [
       { id: 'inc1', desc: 'ប្រាក់សល់ពីខែមិថុនា', qty: '', unitPrice: '', total: 3443031, note: '' },
@@ -53,21 +295,424 @@ export const INITIAL_FINANCE_DATA = {
       { id: 'inc3', desc: 'ប្រាក់ពីសមណសិស្សជាវ IDថ្មី ខែកក្កដា', qty: '៧អង្គ', unitPrice: 27500, total: 27500, note: '' }
     ],
     expense: [
-      { id: 'exp1', desc: 'ម៉ាស៊ីនស្កេនកាតសិស្ស 2D Desktop Barcode Scanner', qty: '1 ម៉ាស៊ីន', unitPrice: 268670, total: 268670, note: '' },
-      { id: 'exp2', desc: 'ក្តារឈើលើខែស TY(1.22MX2.22M)', qty: '2 សន្លឹក', unitPrice: 42848, total: 85696, note: '' },
+      { id: 'exp1', desc: 'ម៉ាស៊ីនស្កែនកាតសិស្ស 2D Desktop Barcode Scanner', qty: '1ម៉ាស៊ីន', unitPrice: 268670, total: 268670, note: '' },
+      { id: 'exp2', desc: 'ក្ដាឈើ៨លីខ្សែ TY(1.22MX2.22M)', qty: '2សន្លឹក', unitPrice: 42848, total: 85696, note: '' },
       { id: 'exp3', desc: 'វីសរាយ', qty: '0.8គីឡូក្រាម', unitPrice: 20211, total: 16169, note: '' },
-      { id: 'exp4', desc: 'សាយូវ៉ាវីសធំ', qty: '4 គ្រាប់', unitPrice: 1010, total: 4042, note: '' },
+      { id: 'exp4', desc: 'សាយ៉ូវវីសធំ', qty: '4 គ្រាប់', unitPrice: 1010, total: 4042, note: '' },
       { id: 'exp5', desc: 'សាំងក្រអូប -802', qty: '3 លីត្រ', unitPrice: 8084, total: 24253, note: '' },
-      { id: 'exp6', desc: 'ឈ្វៀកនីតូអាឈលែ -T8000-1L', qty: '1 កំប៉ុង', unitPrice: 22232, total: 22232, note: '' },
-      { id: 'exp7', desc: 'សេវាថ្លៃដឹកដល់ផ្ទះ -$2.50', qty: '1 ជើង', unitPrice: 10105, total: 10105, note: '' },
-      { id: 'exp8', desc: 'ព្រីនធឺរខាតរៀវ ABC', qty: '1 គ្រាប់', unitPrice: 6669, total: 6669, note: '' },
-      { id: 'exp9', desc: 'ឈ្វៀកនីតូអាឈលែ -T8000-1L', qty: '1 កំប៉ុង', unitPrice: 22232, total: 22232, note: '' },
-      { id: 'exp10', desc: 'វីសរ៉ីករាយ', qty: '0.25គីឡូក្រាម', unitPrice: 20211, total: 5052, note: '' },
-      { id: 'exp11', desc: 'ក្តារឈើលើខែស TY(1.22MX2.22M)', qty: '1 សន្លឹក', unitPrice: 42848, total: 42848, note: '' },
-      { id: 'exp12', desc: 'សេវាថ្លៃដឹកដល់ផ្ទះ -$2.50', qty: '1 ជើង', unitPrice: 10105, total: 10105, note: '' },
-      { id: 'exp13', desc: 'ចំណាយលើគ្រូស្ម័គ្រចិត្ត(ប្រាក់ម៉ោង)៦អង្គ/រូប', qty: '94 ម៉ោង', unitPrice: 4000, total: 376000, note: '' }
+      { id: 'exp6', desc: 'វៀកនីតូអាលេខ -T8000-1L', qty: '1 កំប៉ុង', unitPrice: 22232, total: 22232, note: '' },
+      { id: 'exp7', desc: 'សេវ៉ាថ្លៃដឹកដល់ផ្ទះ -$2.50', qty: '1 ជើង', unitPrice: 10105, total: 10105, note: '' },
+      { id: 'exp8', desc: 'ព្រីរន្ធ8បាតខៀវ ABC', qty: '1 គ្រាប់', unitPrice: 6669, total: 6669, note: '' },
+      { id: 'exp9', desc: 'វៀកនីតូអាលេខ-T8000-1L', qty: '1 កំប៉ុង', unitPrice: 22232, total: 22232, note: '' },
+      { id: 'exp10', desc: 'វីសរីករាយ', qty: '0.25គីឡូក្រាម', unitPrice: 20211, total: 5052, note: '' },
+      { id: 'exp11', desc: 'ក្ដាឈើ៨លីខ្សែ TY(1.22MX2.22M)', qty: '1 សន្លឹក', unitPrice: 42848, total: 42848, note: '' },
+      { id: 'exp12', desc: 'សេវ៉ាថ្លៃដឹកដល់ផ្ទះ -$2.50', qty: '1 ជើង', unitPrice: 10105, total: 10105, note: '' },
+      { id: 'exp13', desc: 'ចំណាយលើគ្រូស្ម័គ្រចិត្ត (ប្រាក់ម៉ោង)៦អង្គ/រូប', qty: '94ម៉ោង', unitPrice: 4000, total: 376000, note: '' }
+    ]
+  },
+  '2026-08': {
+    income: [
+      { id: 'inc-08-1', desc: 'ប្រាក់សល់ពីខែកក្កដា', qty: '', unitPrice: '', total: 2602458, note: '' },
+      { id: 'inc-08-2', desc: 'ប្រាក់ពីសមណសិស្សដាក់ច្បាប់ ខែសីហា', qty: '៣០អង្គ', unitPrice: 2000, total: 60000, note: '' },
+      { id: 'inc-08-3', desc: 'ប្រាក់ពីសមណសិស្សជាវ IDថ្មី ខែសីហា', qty: '១០អង្គ', unitPrice: 46500, total: 46500, note: '' }
+    ],
+    expense: [
+      { id: 'exp-08-1', desc: 'ព្រីនរូបថត មន្ត្រីនិងគ្រូបង្រៀនអ៊ុតរឹង', qty: '៥ រូប', unitPrice: 6000, total: 30000, note: '' },
+      { id: 'exp-08-2', desc: 'ព្រីនឈ្មោះ កូល័រ', qty: '២ សន្លឹក', unitPrice: 500, total: 1000, note: '' },
+      { id: 'exp-08-3', desc: 'ម៉ូតូឌុប', qty: '១ជើង', unitPrice: 5000, total: 5000, note: '' },
+      { id: 'exp-08-4', desc: 'ចំណាយលើគ្រូស្ម័គ្រចិត្ត (ប្រាក់ម៉ោង)៦អង្គ/រូប', qty: '១០៦ម៉ោង', unitPrice: 4000, total: 424000, note: '' }
+    ]
+  },
+  '2026-09': {
+    income: [
+      { id: 'inc-09-1', desc: 'ប្រាក់សល់ពីខែសីហា', qty: '', unitPrice: '', total: 2248958, note: '' },
+      { id: 'inc-09-2', desc: 'ប្រាក់ពីសមណសិស្សដាក់ច្បាប់ ខែកញ្ញា', qty: '៣០អង្គ', unitPrice: 2000, total: 60000, note: '' },
+      { id: 'inc-09-3', desc: 'ប្រាក់ពីសមណសិស្សជាវ IDថ្មី ខែកញ្ញា', qty: '១០អង្គ', unitPrice: 46500, total: 35500, note: '' }
+    ],
+    expense: [
+      { id: 'exp-09-1', desc: 'ទឹកថ្នាំដាក់ម៉ាស៊ីនព្រីន', qty: '១ឈុត', unitPrice: 140000, total: 140000, note: '' },
+      { id: 'exp-09-2', desc: 'ទិញថងកាត ID', qty: '១០០ថង', unitPrice: 400, total: 40000, note: '' },
+      { id: 'exp-09-3', desc: 'ម៉ូតូឌុប', qty: '១ដង', unitPrice: 5000, total: 5000, note: '' },
+      { id: 'exp-09-4', desc: 'ចំណាយលើគ្រូស្ម័គ្រចិត្ត (ប្រាក់ម៉ោង)៦អង្គ/រូប', qty: '៩៦ម៉ោង', unitPrice: 4000, total: 384000, note: '' }
     ]
   }
+};
+
+const TEST_FINANCE_IDS_TO_PURGE = new Set([
+  'fin-1793656199703',
+  'income-1793966901150',
+  'fin-1793963017532',
+  'fin-1793964044496-0-9lz8',
+  'fin-1793964044496-1-vkb5',
+  'fin-1793964143143-0-qyh6',
+  'fin-1793964143143-1-a2ng',
+  'fin-1793964143143-2-bi0d',
+  'fin-1793964143143-3-m5qm',
+  'fin-1793964143143-4-c4on',
+  'fin-1793964143143-5-kf2h',
+  'fin-1793964143143-6-itzh',
+  'fin-1793964143143-7-u1ge',
+  'expense-1793966904124'
+]);
+
+export function sanitizeFinanceState(rawFinance = {}) {
+  const result = {};
+
+  // 1. Copy over non-test months & filter out known test items
+  Object.keys(rawFinance || {}).forEach(mKey => {
+    if (mKey === '2025-01' || mKey === '2027-01') return;
+    const mData = rawFinance[mKey];
+    if (!mData) return;
+
+    const cleanIncome = (Array.isArray(mData.income) ? mData.income : []).filter(item => {
+      if (!item) return false;
+      if (TEST_FINANCE_IDS_TO_PURGE.has(item.id)) return false;
+      if (String(item.desc || '').trim().toLowerCase() === 'saly') return false;
+      return true;
+    }).map(item => (
+      mKey === '2026-05' && (String(item.desc || '').trim() === 'ប្រាក់សល់ពីខែឧសភា' || String(item.desc || '').trim() === 'ប្រាក់តម្កល់ពីឆ្នាំចាស់២០២៥')
+        ? { ...item, desc: 'ប្រាក់តម្កល់សល់ពីឆ្នាំចាស់' }
+        : item
+    ));
+
+    const cleanExpense = (Array.isArray(mData.expense) ? mData.expense : []).filter(item => {
+      if (!item) return false;
+      if (TEST_FINANCE_IDS_TO_PURGE.has(item.id)) return false;
+      if (item.desc === 'ទំនិញ/សេវា' && Number(item.total) === 0) return false;
+      if (!String(item.desc || '').trim() && Number(item.total) === 0) return false;
+      return true;
+    }).map(e => ({
+      ...e,
+      qty: e.qty ? e.qty.replace(/0\.25\s+គីឡូក្រាម/, '0.25គីឡូក្រាម').replace(/0\.8\s+គីឡូក្រាម/, '0.8គីឡូក្រាម') : e.qty
+    }));
+
+    if (cleanIncome.length > 0 || cleanExpense.length > 0) {
+      result[mKey] = { income: cleanIncome, expense: cleanExpense };
+    }
+  });
+
+  // 2. Guarantee the 5 official DOCX months (2026-05 .. 2026-09) have authentic baseline data
+  Object.keys(INITIAL_FINANCE_DATA).forEach(mKey => {
+    const official = INITIAL_FINANCE_DATA[mKey];
+    const current = result[mKey];
+    if (
+      !current ||
+      !Array.isArray(current.income) ||
+      current.income.length < official.income.length ||
+      !Array.isArray(current.expense) ||
+      current.expense.length < official.expense.length
+    ) {
+      result[mKey] = {
+        income: [...official.income],
+        expense: [...official.expense]
+      };
+    }
+  });
+
+  return result;
+}
+
+const KHMER_DIGITS_MAP = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
+const KHMER_MONTH_NAMES_LIST = [
+  'មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា',
+  'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'
+];
+
+function numToKhmerStr(num) {
+  return String(num ?? '').replace(/[0-9]/g, d => KHMER_DIGITS_MAP[Number(d)]);
+}
+
+/**
+ * 3-Channel Real-Time Auto-Sync Engine (Option 1):
+ * 1. Channel 1 (Leave Paper Sales): 1 slip = 2,000 KHR (with Smart Fallback Guard for 0-leave historical DOCX months)
+ * 2. Channel 2 (ID Card Purchases): Sum of student ID card purchases in the month
+ * 3. Channel 3 (Donor Cash / In-Kind): Auto-preserves in-kind material labels (e.g., កុំព្យូទ័រ១គ្រឿង)
+ * 4. Cascading Monthly Carryover: Updates next month's `ប្រាក់សល់ពីខែមុន` automatically
+ */
+export function recomputeLinkedFinance(rawFinance = {}, allLeaves = {}, allIdCards = {}, extraMonthKeys = []) {
+  const baseFinance = sanitizeFinanceState(rawFinance);
+  const result = {};
+
+  // Collect all active finance months in chronological order
+  const activeMonthKeys = Array.from(new Set([
+    ...Object.keys(baseFinance),
+    ...extraMonthKeys.filter(Boolean),
+    ...Object.keys(allLeaves || {}).filter(k => Array.isArray(allLeaves[k]) && allLeaves[k].length > 0)
+  ]))
+    .filter(k => k && k !== '2025-01' && k !== '2027-01')
+    .sort();
+
+  let prevNetBalance = null;
+  let prevMonthKey = null;
+
+  activeMonthKeys.forEach(mKey => {
+    const [, mStr] = mKey.split('-');
+    const mIdx = Math.max(0, Math.min(11, (parseInt(mStr, 10) || 7) - 1));
+    const monthName = KHMER_MONTH_NAMES_LIST[mIdx];
+    const prevMIdx = prevMonthKey
+      ? Math.max(0, Math.min(11, (parseInt(prevMonthKey.split('-')[1], 10) || 6) - 1))
+      : (mIdx === 0 ? 11 : mIdx - 1);
+    const prevMonthName = KHMER_MONTH_NAMES_LIST[prevMIdx];
+
+    const existingMonth = baseFinance[mKey] || { income: [], expense: [] };
+    let income = Array.isArray(existingMonth.income) ? existingMonth.income.map(it => ({ ...it })) : [];
+    const expense = Array.isArray(existingMonth.expense) ? existingMonth.expense.map(it => ({ ...it })) : [];
+
+    const officialBaseline = INITIAL_FINANCE_DATA[mKey];
+    const monthLeaves = Array.isArray(allLeaves?.[mKey]) ? allLeaves[mKey] : [];
+    const monthIdCards = Array.isArray(allIdCards?.[mKey]) ? allIdCards[mKey] : [];
+
+    // --- 0. Carryover Balance Row (`ប្រាក់សល់ពីខែ...` / `ប្រាក់តម្កល់...`) ---
+    const carryIdx = income.findIndex(it => it && (
+      String(it.desc || '').includes('ប្រាក់សល់ពី') ||
+      String(it.desc || '').includes('ប្រាក់តម្កល់') ||
+      String(it.desc || '').includes('ប្រាក់តម្កាល') ||
+      it.autoChannel === 'carryover'
+    ));
+
+    // Note: In official May 2026 PDF report, May starts with ប្រាក់តម្កល់សល់ពីឆ្នាំចាស់ (2,000,000 KHR)
+    // and ends with 3,802,831 KHR, which cascades into June 2026 as ប្រាក់សល់ពីខែឧសភា (3,802,831 KHR).
+    if (mKey === '2026-05') {
+      const targetCarryDesc = 'ប្រាក់តម្កល់សល់ពីឆ្នាំចាស់';
+      if (carryIdx >= 0) {
+        income[carryIdx] = {
+          ...income[carryIdx],
+          desc: targetCarryDesc,
+          total: Number(income[carryIdx].total) || 2000000
+        };
+      } else {
+        income.push({
+          id: 'inc-05-2',
+          autoChannel: 'carryover',
+          desc: targetCarryDesc,
+          qty: '',
+          unitPrice: '',
+          total: 2000000,
+          note: ''
+        });
+      }
+    } else if (prevNetBalance !== null) {
+      if (carryIdx >= 0) {
+        income[carryIdx] = {
+          ...income[carryIdx],
+          desc: `ប្រាក់សល់ពីខែ${prevMonthName}`,
+          total: prevNetBalance
+        };
+      } else {
+        income.unshift({
+          id: `inc-${mKey}-carry`,
+          autoChannel: 'carryover',
+          desc: `ប្រាក់សល់ពីខែ${prevMonthName}`,
+          qty: '',
+          unitPrice: '',
+          total: prevNetBalance,
+          note: ''
+        });
+      }
+    }
+
+    // --- 1. Channel 1: Leave Paper Sales (`១ ក្រដាស = ២,០០០៛`) ---
+    const leaveIdx = income.findIndex(it => it && (
+      String(it.desc || '').includes('ដាក់ច្បាប់') ||
+      it.autoChannel === 'leave'
+    ));
+
+    if (monthLeaves.length > 0) {
+      const leaveCount = monthLeaves.length;
+      const leaveTotal = leaveCount * 2000;
+      const qtyLabel = `${numToKhmerStr(leaveCount)}អង្គ`;
+      if (leaveIdx >= 0) {
+        income[leaveIdx] = {
+          ...income[leaveIdx],
+          autoChannel: 'leave',
+          qty: qtyLabel,
+          unitPrice: 2000,
+          total: leaveTotal
+        };
+      } else {
+        const insertAt = carryIdx >= 0 ? carryIdx + 1 : Math.min(1, income.length);
+        income.splice(insertAt, 0, {
+          id: `inc-${mKey}-leave`,
+          autoChannel: 'leave',
+          desc: `ប្រាក់ពីសមណសិស្សដាក់ច្បាប់ ខែ${monthName}`,
+          qty: qtyLabel,
+          unitPrice: 2000,
+          total: leaveTotal,
+          note: ''
+        });
+      }
+    } else if (officialBaseline) {
+      // Smart Fallback Guard: preserve official DOCX leave row when 0 leave records are entered yet
+      const baseLeaveRow = officialBaseline.income.find(it => String(it.desc || '').includes('ដាក់ច្បាប់'));
+      if (baseLeaveRow) {
+        if (leaveIdx >= 0) {
+          income[leaveIdx] = { ...baseLeaveRow };
+        } else {
+          const insertAt = carryIdx >= 0 ? carryIdx + 1 : Math.min(1, income.length);
+          income.splice(insertAt, 0, { ...baseLeaveRow });
+        }
+      }
+    } else if (leaveIdx >= 0 && income[leaveIdx].autoChannel === 'leave') {
+      income[leaveIdx] = {
+        ...income[leaveIdx],
+        qty: '០អង្គ',
+        unitPrice: 2000,
+        total: 0
+      };
+    }
+
+    // --- 2. Channel 2: Student ID Card Purchases (`ប្រាក់ពីសមណសិស្សជាវ IDថ្មី`) ---
+    const idcIdx = income.findIndex(it => it && (
+      String(it.desc || '').includes('ជាវ ID') ||
+      String(it.desc || '').includes('ទិញ ID') ||
+      it.autoChannel === 'idcard'
+    ));
+
+    if (monthIdCards.length > 0) {
+      const idcCount = monthIdCards.length;
+      const idcTotal = monthIdCards.reduce((sum, r) => sum + ((Number(r.qty) || 1) * (Number(r.price) || 0)), 0);
+      const qtyLabel = `${numToKhmerStr(idcCount)}អង្គ`;
+
+      if (idcIdx >= 0) {
+        const currentRow = income[idcIdx];
+        const baseIdcRow = officialBaseline?.income?.find(it => String(it.desc || '').includes('ជាវ ID'));
+        const matchesBaseline = baseIdcRow && Number(baseIdcRow.total) === idcTotal && baseIdcRow.qty === qtyLabel;
+        income[idcIdx] = {
+          ...currentRow,
+          autoChannel: 'idcard',
+          qty: qtyLabel,
+          unitPrice: matchesBaseline ? baseIdcRow.unitPrice : idcTotal,
+          total: idcTotal
+        };
+      } else {
+        const currentLeaveIdx = income.findIndex(it => it && (String(it.desc || '').includes('ដាក់ច្បាប់') || it.autoChannel === 'leave'));
+        const insertAt = currentLeaveIdx >= 0 ? currentLeaveIdx + 1 : Math.min(2, income.length);
+        income.splice(insertAt, 0, {
+          id: `inc-${mKey}-idcard`,
+          autoChannel: 'idcard',
+          desc: `ប្រាក់ពីសមណសិស្សជាវ IDថ្មី ខែ${monthName}`,
+          qty: qtyLabel,
+          unitPrice: idcTotal,
+          total: idcTotal,
+          note: ''
+        });
+      }
+    } else if (officialBaseline) {
+      const baseIdcRow = officialBaseline.income.find(it => String(it.desc || '').includes('ជាវ ID'));
+      if (baseIdcRow) {
+        if (idcIdx >= 0) {
+          income[idcIdx] = { ...baseIdcRow };
+        } else {
+          income.push({ ...baseIdcRow });
+        }
+      }
+    } else if (idcIdx >= 0 && income[idcIdx].autoChannel === 'idcard') {
+      income[idcIdx] = {
+        ...income[idcIdx],
+        qty: '០អង្គ',
+        unitPrice: 0,
+        total: 0
+      };
+    }
+
+    // --- 3. Channel 3: Donor Cash or In-Kind Donations (`សប្បុរសជនចូលបច្ច័យ ឬវត្ថុ`) ---
+    income = income.map(it => {
+      if (!it) return it;
+      const desc = String(it.desc || '');
+      const isSystemRow = (
+        desc.includes('ប្រាក់សល់ពី') ||
+        desc.includes('ប្រាក់តម្កល់') ||
+        desc.includes('ប្រាក់តម្កាល') ||
+        desc.includes('ដាក់ច្បាប់') ||
+        desc.includes('ជាវ ID') ||
+        desc.includes('ទិញ ID') ||
+        it.autoChannel === 'carryover' ||
+        it.autoChannel === 'leave' ||
+        it.autoChannel === 'idcard'
+      );
+      if (isSystemRow) return it;
+
+      const numTotal = Number(it.total) || 0;
+      const numUnit = Number(it.unitPrice) || 0;
+      const qtyText = String(it.qty || '').trim();
+      if (numTotal === 0 && numUnit === 0 && qtyText && !/^[0-9០-៩\s.,]+$/.test(qtyText)) {
+        return {
+          ...it,
+          total: 0,
+          totalLabel: it.totalLabel || qtyText
+        };
+      }
+      if (numTotal > 0 && it.totalLabel && it.totalLabel === qtyText) {
+        const { totalLabel, ...rest } = it;
+        return rest;
+      }
+      return it;
+    });
+
+    result[mKey] = {
+      income,
+      expense
+    };
+
+    const monthIncomeSum = income.reduce((s, it) => s + (Number(it?.total) || 0), 0);
+    const monthExpenseSum = expense.reduce((s, it) => s + (Number(it?.total) || 0), 0);
+    prevNetBalance = monthIncomeSum - monthExpenseSum;
+    prevMonthKey = mKey;
+  });
+
+  return result;
+}
+
+// Initial default ID Card Purchase Data matching តារាងបង់ថ្លៃទិញកាត ID.xlsx
+export const INITIAL_ID_CARD_DATA = {
+  '2026-06': [
+    { id: 'idc-06-1', name: 'ហ៊ុំ រ៉ានុ', grade: '១', item: 'ថង', qty: 1, price: 2500, date: '17/06/2026', note: '' },
+    { id: 'idc-06-2', name: 'ឌឿន រ៉ាដូ', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '19/06/2026', note: '' },
+    { id: 'idc-06-3', name: 'ធឿន ប៊ុនលាភ', grade: '១', item: 'មួយឈុត', qty: 1, price: 5000, date: '19/06/2026', note: '' },
+    { id: 'idc-06-4', name: 'ពិសិដ្ធ សុបញ្ញា', grade: '២', item: 'មួយឈុត', qty: 1, price: 5000, date: '25/06/2026', note: '' },
+    { id: 'idc-06-5', name: 'ឈុនហ៊ាង គីមហុង', grade: '២', item: 'មួយឈុត', qty: 1, price: 5000, date: '29/06/2026', note: '' }
+  ],
+  '2026-07': [
+    { id: 'idc-07-1', name: 'ណាត សូជីន', grade: '១', item: 'ថង', qty: 1, price: 2500, date: '01/07/2026', note: '' },
+    { id: 'idc-07-2', name: 'ហុង វិច្ឆិកា', grade: '១', item: 'ថង', qty: 1, price: 2500, date: '01/07/2026', note: '' },
+    { id: 'idc-07-3', name: 'ស្រឿន សុខខា', grade: '១', item: 'មួយឈុត', qty: 1, price: 5000, date: '01/07/2026', note: '' },
+    { id: 'idc-07-4', name: 'ស៊ឹម ពិសិដ្ឋ', grade: '១', item: 'ថង', qty: 1, price: 2500, date: '01/07/2026', note: '' },
+    { id: 'idc-07-5', name: 'យាន គូម៉ាន់', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '01/07/2026', note: '' },
+    { id: 'idc-07-6', name: 'ពោង ជីវ័ន្ត', grade: '១', item: 'មួយឈុត', qty: 1, price: 5000, date: '03/07/2026', note: '' },
+    { id: 'idc-07-7', name: 'បាវ សុខណា', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '13/07/2026', note: '' }
+  ],
+  '2026-08': [
+    { id: 'idc-08-1', name: 'យាន គូម៉ាន់', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '05/08/2026', note: '' },
+    { id: 'idc-08-2', name: 'ភាក់ សុភាព', grade: '២', item: 'មួយឈុត', qty: 1, price: 5000, date: '05/08/2026', note: '' },
+    { id: 'idc-08-3', name: 'ឌឿន រ៉ាដូ', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '05/08/2026', note: '' },
+    { id: 'idc-08-4', name: 'ឆាន មាសឆៃ', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '05/08/2026', note: '' },
+    { id: 'idc-08-5', name: 'តួ បញ្ញា', grade: '១', item: 'មួយឈុត', qty: 1, price: 5000, date: '17/08/2026', note: '' },
+    { id: 'idc-08-6', name: 'ហ៊ុំ រ៉ានុ', grade: '១', item: 'ថង', qty: 1, price: 1500, date: '17/08/2026', note: '' },
+    { id: 'idc-08-7', name: 'ម៉េង ទិត្យ', grade: '២', item: 'មួយឈុត', qty: 1, price: 5000, date: '19/08/2026', note: '' },
+    { id: 'idc-08-8', name: 'ណាក់ វាន់នី', grade: '៣', item: 'មួយឈុត', qty: 1, price: 5000, date: '25/08/2026', note: '' },
+    { id: 'idc-08-9', name: 'ឡេង ហេងលាន', grade: '២', item: 'មួយឈុត', qty: 1, price: 5000, date: '25/08/2026', note: '' },
+    { id: 'idc-08-10', name: 'ឃី ម៉េងលាភ', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '26/08/2026', note: '' }
+  ],
+  '2026-09': [
+    { id: 'idc-09-1', name: 'ពិសិដ្ធ សុបញ្ញា', grade: '២', item: 'ថង', qty: 1, price: 1500, date: '04/09/2026', note: '' },
+    { id: 'idc-09-2', name: 'នី ផានុត', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '07/09/2026', note: '' },
+    { id: 'idc-09-3', name: 'ជួង ចិត្រា', grade: '២', item: 'ថង', qty: 1, price: 1500, date: '09/09/2026', note: '' },
+    { id: 'idc-09-4', name: 'វេង សុវណ្ណ', grade: '៣', item: 'ថង', qty: 1, price: 1500, date: '17/09/2026', note: '' },
+    { id: 'idc-09-5', name: 'ជួង ចិត្រា', grade: '២', item: 'មួយឈុត', qty: 1, price: 5000, date: '21/09/2026', note: '' },
+    { id: 'idc-09-6', name: 'ឃិន ស៊ិវម៉ិញ', grade: '២', item: 'មួយឈុត', qty: 1, price: 5000, date: '21/09/2026', note: '' },
+    { id: 'idc-09-7', name: 'ឆាន រ៉ាយុទ្ធ', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '25/09/2026', note: '' },
+    { id: 'idc-09-8', name: 'ភេត សាវរី', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '25/09/2026', note: '' },
+    { id: 'idc-09-9', name: 'សាន ដារ៉ា', grade: 'មត្តេយ្យ', item: 'មួយឈុត', qty: 1, price: 5000, date: '25/09/2026', note: '' },
+    { id: 'idc-09-10', name: 'ចាន់ ឆៃអ៊ង', grade: '២', item: 'ID', qty: 1, price: 1000, date: '25/09/2026', note: '' }
+  ],
+  '2026-10': [
+    { id: 'idc-10-1', name: 'ហ៊ាង ដារ៉ូ', grade: '១', item: 'ថង + ID', qty: 1, price: 3500, date: '15/10/2026', note: '' },
+    { id: 'idc-10-2', name: 'ស៊ឹម ពិសិដ្ឋ', grade: '១', item: 'ID', qty: 1, price: 1500, date: '15/10/2026', note: '' },
+    { id: 'idc-10-3', name: 'ណាត សូជីន', grade: '១', item: 'ថង + ID', qty: 1, price: 3500, date: '15/10/2026', note: '' }
+  ],
+  '2026-11': [
+    { id: 'idc-11-1', name: 'ស៊ឹម ពិសិដ្ឋ', grade: '១', item: 'ID', qty: 1, price: 1500, date: '05/11/2026', note: '' }
+  ]
 };
 
 export const INITIAL_METADATA = {
@@ -92,7 +737,8 @@ export function loadAppState() {
     if (!raw) {
       return {
         leaves: INITIAL_LEAVE_DATA,
-        finance: INITIAL_FINANCE_DATA,
+        finance: recomputeLinkedFinance(INITIAL_FINANCE_DATA, INITIAL_LEAVE_DATA, INITIAL_ID_CARD_DATA),
+        idCards: INITIAL_ID_CARD_DATA,
         meta: INITIAL_METADATA,
         studentMaster: DEFAULT_STUDENT_MASTER,
       };
@@ -108,18 +754,9 @@ export function loadAppState() {
       mergedMeta.directorTitle = 'នាយកសាលា';
     }
 
-    // Normalize any cached quantities in finance to avoid line-breaks
+    // Normalize and sanitize finance data (purges test entries & ensures 5 official DOCX months)
     const rawFinance = parsed.finance || INITIAL_FINANCE_DATA;
-    const normalizedFinance = { ...rawFinance };
-    Object.keys(normalizedFinance).forEach(month => {
-      const mData = normalizedFinance[month];
-      if (mData && mData.expense) {
-        mData.expense = mData.expense.map(e => ({
-          ...e,
-          qty: e.qty ? e.qty.replace(/0\.25\s+គីឡូក្រាម/, '0.25គីឡូក្រាម').replace(/0\.8\s+គីឡូក្រាម/, '0.8គីឡូក្រាម') : e.qty
-        }));
-      }
-    });
+    const normalizedFinance = sanitizeFinanceState(rawFinance);
 
     // Synchronize studentMaster: Filter out old legacy mock test names and guarantee 80 official students
     const legacyMockNames = new Set([
@@ -154,34 +791,26 @@ export function loadAppState() {
       return s;
     });
 
-    // Clean and normalize all leave dates: strip any "ដល់...", replace 2024 with 2026
+    // Clean and normalize all leave dates & purge test leave records
     const rawLeaves = parsed.leaves || INITIAL_LEAVE_DATA;
-    const normalizedLeaves = { ...rawLeaves };
-    Object.keys(normalizedLeaves).forEach(month => {
-      const records = normalizedLeaves[month];
-      if (Array.isArray(records)) {
-        normalizedLeaves[month] = records.map(r => {
-          let cleanDate = String(r.date || '').trim();
-          cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
-          if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
-            const parts = cleanDate.split(/ដល់|-|\/to\//i);
-            if (parts[0] && parts[0].trim().length >= 6) {
-              cleanDate = parts[0].trim();
-            }
-          }
-          let cleanReason = String(r.reason || '').replace(/\s+/g, ' ').trim();
-          return {
-            ...r,
-            reason: cleanReason,
-            date: cleanDate
-          };
-        });
+    const normalizedLeaves = sanitizeLeaveState(rawLeaves);
+
+    const rawIdCards = parsed.idCards || {};
+    const mergedIdCards = { ...INITIAL_ID_CARD_DATA };
+    Object.keys(rawIdCards).forEach(month => {
+      if (Array.isArray(rawIdCards[month]) && rawIdCards[month].length > 0) {
+        mergedIdCards[month] = rawIdCards[month];
+      } else if (rawIdCards[month] && !INITIAL_ID_CARD_DATA[month]) {
+        mergedIdCards[month] = rawIdCards[month];
       }
     });
 
+    const syncedFinance = recomputeLinkedFinance(normalizedFinance, normalizedLeaves, mergedIdCards);
+
     return {
       leaves: normalizedLeaves,
-      finance: normalizedFinance,
+      finance: syncedFinance,
+      idCards: mergedIdCards,
       meta: mergedMeta,
       studentMaster: loadedStudents,
     };
@@ -189,7 +818,8 @@ export function loadAppState() {
     console.error('Failed to load local app state:', e);
     return {
       leaves: INITIAL_LEAVE_DATA,
-      finance: INITIAL_FINANCE_DATA,
+      finance: recomputeLinkedFinance(INITIAL_FINANCE_DATA, INITIAL_LEAVE_DATA, INITIAL_ID_CARD_DATA),
+      idCards: INITIAL_ID_CARD_DATA,
       meta: INITIAL_METADATA,
       studentMaster: DEFAULT_STUDENT_MASTER,
     };
@@ -989,8 +1619,13 @@ export async function fetchCloudAppState() {
       return null;
     }
     if (data && data.data) {
+      const cleanLeaves = sanitizeLeaveState(data.data.leaves);
+      const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(data.data.idCards || {}) };
       return {
         ...data.data,
+        leaves: cleanLeaves,
+        idCards: mergedIdCards,
+        finance: recomputeLinkedFinance(data.data.finance, cleanLeaves, mergedIdCards),
         studentMaster: enrichStudentMasterAliases(data.data.studentMaster)
       };
     }
@@ -1033,8 +1668,13 @@ export function subscribeToCloudAppState(onRemoteUpdate) {
         { event: '*', schema: 'public', table: 'app_state', filter: 'id=eq.current' },
         (payload) => {
           if (payload.new && payload.new.data) {
+            const cleanLeaves = sanitizeLeaveState(payload.new.data.leaves);
+            const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(payload.new.data.idCards || {}) };
             onRemoteUpdate({
               ...payload.new.data,
+              leaves: cleanLeaves,
+              idCards: mergedIdCards,
+              finance: recomputeLinkedFinance(payload.new.data.finance, cleanLeaves, mergedIdCards),
               studentMaster: enrichStudentMasterAliases(payload.new.data.studentMaster)
             });
           }

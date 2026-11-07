@@ -46,9 +46,26 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
   element.style.boxSizing = 'border-box';
   element.style.boxShadow = 'none';
 
+  // Test single-page-fit layout first and measure exact height vs A4 printable ratio (273mm / 186mm)
+  element.classList.add('pdf-single-page-fit');
+  const dataRowCount = element.querySelectorAll('tbody tr').length;
+  const elemWidth = element.offsetWidth || 703;
+  const fitHeight = element.scrollHeight || element.offsetHeight || 0;
+  const maxSinglePagePx = Math.floor(elemWidth * (273 / 186)) - 12;
+
+  // Case A: Moderate rows (<= 16 table rows and fits within 1 A4 page height) -> 1 single A4 sheet
+  // Case B: Many rows (> 16 rows or exceeds 1 A4 page height) -> restore normal spacing and split into 2+ A4 sheets
+  const isSinglePageCandidate = dataRowCount <= 16 && fitHeight <= maxSinglePagePx;
+  if (!isSinglePageCandidate) {
+    element.classList.remove('pdf-single-page-fit');
+  }
+
+  const pdfMargins = isSinglePageCandidate
+    ? [12, 12, 12, 12] // Compact margins so 12-16 rows + signatures stay together on 1 A4 sheet
+    : [18, 14, 18, 14]; // Generous official margins for multi-page documents (2+ sheets)
+
   const opt = {
-    // Official Ministry standard A4 margins: Top 25mm, Left 16mm, Bottom 20mm, Right 16mm
-    margin: [25, 16, 20, 16],
+    margin: pdfMargins,
     filename: filename.endsWith('.pdf') ? filename : `${filename}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
     html2canvas: {
@@ -65,7 +82,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
       format: 'a4',
       orientation: 'portrait'
     },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.signature-block'] }
   };
 
   try {
@@ -76,6 +93,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
   } finally {
     // 3. Always restore element styles and .no-print elements back onto the live screen
     element.classList.remove('pdf-rendering-active');
+    element.classList.remove('pdf-single-page-fit');
     element.style.padding = prevInlinePadding;
     element.style.width = prevInlineWidth;
     element.style.maxWidth = prevInlineMaxWidth;

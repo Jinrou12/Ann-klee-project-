@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, DollarSign, Camera, BarChart3, Monitor, Smartphone } from 'lucide-react';
+import { FileText, DollarSign, Camera, BarChart3, Monitor, Smartphone, CreditCard } from 'lucide-react';
 import { toKhmerDigits } from '../../utils/khmerNumerals';
 
 export default function MobileBottomNav({
@@ -17,6 +17,14 @@ export default function MobileBottomNav({
       icon: FileText,
       iconColor: '#d97706',
       iconBg: '#fef3c7',
+      badge: null
+    },
+    {
+      id: 'idcard',
+      label: 'ទិញ ID កាត',
+      icon: CreditCard,
+      iconColor: '#0284c7',
+      iconBg: '#e0f2fe',
       badge: null
     },
     {

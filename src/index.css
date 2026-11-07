@@ -129,7 +129,7 @@ input:focus, select:focus, textarea:focus {
   width: 794px;
   min-height: 1123px;
   background: #ffffff;
-  padding: 25mm 16mm 20mm 16mm;
+  padding: 14mm 12mm 14mm 12mm;
   box-shadow: 0 14px 38px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.05);
   border-radius: 2px;
   color: #000000;
@@ -138,7 +138,21 @@ input:focus, select:focus, textarea:focus {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+}
+
+.signature-block {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.printable-document tr {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.printable-document thead {
+  display: table-header-group;
 }
 
 /* Temporary PDF Rendering Guard */
@@ -152,7 +166,19 @@ input:focus, select:focus, textarea:focus {
   min-width: 0 !important;
   box-sizing: border-box !important;
   min-height: auto !important;
+  display: block !important;
   background: #ffffff !important;
+}
+
+/* Single-Page Fit Mode (when rows <= 16 and content fits on 1 A4 sheet) */
+.printable-document.pdf-single-page-fit td,
+.printable-document.pdf-single-page-fit th {
+  padding-top: 2.5px !important;
+  padding-bottom: 2.5px !important;
+}
+
+.printable-document.pdf-single-page-fit .signature-block {
+  margin-top: 10px !important;
 }
 
 /* Official Print Layout (Rule 4: Exact PDF Replica) */

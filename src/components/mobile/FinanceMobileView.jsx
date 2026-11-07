@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { 
-  Plus, Trash2, Edit3, Check, X, FileSpreadsheet, Eye, 
+  Plus, Trash2, Edit3, Check, X, FileSpreadsheet, FileText, Eye, 
   DollarSign, ArrowDownRight, ArrowUpRight, Wallet, ShoppingBag, Search, Download, Loader2, Printer 
 } from 'lucide-react';
-import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, formatMoney, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals, getCurrencySymbol, normalizeCurrency } from '../../utils/khmerNumerals';
+import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, formatMoney, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals, formatExpenseTotals, isFinanceDeficit, getCurrencySymbol, normalizeCurrency } from '../../utils/khmerNumerals';
 import { exportFinanceToExcel } from '../../utils/excelExporter';
+import { exportFinanceToWord } from '../../utils/wordExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
 import OfficialFinanceDocument from '../OfficialFinanceDocument';
 import CurrencyToggle from '../CurrencyToggle';
@@ -71,7 +72,16 @@ export default function FinanceMobileView({
       return;
     }
     const targetList = activeSubTab === 'income' ? incomeList : expenseList;
-    const updated = targetList.map(item => item.id === editingId ? { ...editForm } : item);
+    const numTotal = Number(editForm.total) || 0;
+    const numUnit = parseKhmerNumber(editForm.unitPrice) || 0;
+    const qtyStr = String(editForm.qty || '').trim();
+    const finalEdit = { ...editForm, total: numTotal };
+    if (activeSubTab === 'income' && numTotal === 0 && numUnit === 0 && qtyStr && !/^[0-9០-៩\s.,]+$/.test(qtyStr)) {
+      finalEdit.totalLabel = qtyStr;
+    } else if (numTotal > 0) {
+      delete finalEdit.totalLabel;
+    }
+    const updated = targetList.map(item => item.id === editingId ? finalEdit : item);
     onUpdateFinance({
       ...financeData,
       [activeSubTab]: updated
@@ -97,10 +107,16 @@ export default function FinanceMobileView({
       return;
     }
     const targetList = activeSubTab === 'income' ? incomeList : expenseList;
+    const numTotal = Number(newItem.total) || 0;
+    const numUnit = parseKhmerNumber(newItem.unitPrice) || 0;
+    const qtyStr = String(newItem.qty || '').trim();
     const createdItem = {
       id: `${activeSubTab}-${Date.now()}`,
       ...newItem,
-      total: Number(newItem.total) || 0,
+      total: numTotal,
+      ...(activeSubTab === 'income' && numTotal === 0 && numUnit === 0 && qtyStr && !/^[0-9០-៩\s.,]+$/.test(qtyStr)
+        ? { totalLabel: qtyStr }
+        : {}),
       currency: normalizeCurrency(newItem.currency)
     };
     onUpdateFinance({
@@ -138,7 +154,11 @@ export default function FinanceMobileView({
   };
 
   const handleExportExcel = () => {
-    exportFinanceToExcel(financeData, `${monthName} ${yearDisplay}`, metadata);
+    exportFinanceToExcel(financeData, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+  };
+
+  const handleExportWord = () => {
+    exportFinanceToWord(financeData, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleDownloadPdf = async () => {
@@ -226,7 +246,7 @@ export default function FinanceMobileView({
               <span>ចំណាយសរុប</span>
             </div>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#b91c1c', marginTop: 4, wordBreak: 'break-word' }}>
-              {formatCurrencyTotals(expenseTotals, useKhmerNumerals)}
+              {formatExpenseTotals(expenseTotals, isFinanceDeficit(balanceTotals, remainingBalance), useKhmerNumerals)}
             </div>
             <div style={{ fontSize: 11, color: '#64748b' }}>
               {expenseList.length} ប្រតិបត្តិការ
@@ -314,15 +334,16 @@ export default function FinanceMobileView({
           <span>{activeSubTab === 'income' ? 'បន្ថែមចំណូល' : 'បន្ថែមចំណាយ'}</span>
         </button>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={handleExportExcel}
             style={{
+              flex: 1,
               background: '#15803d',
               color: '#ffffff',
               border: 'none',
               borderRadius: 8,
-              padding: '9px 12px',
+              padding: '9px 10px',
               fontSize: 12,
               fontWeight: 600,
               display: 'flex',
@@ -337,27 +358,25 @@ export default function FinanceMobileView({
           </button>
 
           <button
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
+            onClick={handleExportWord}
             style={{
-              background: '#b91c1c',
+              flex: 1,
+              background: '#1d4ed8',
               color: '#ffffff',
               border: 'none',
               borderRadius: 8,
-              padding: '9px 12px',
+              padding: '9px 10px',
               fontSize: 12,
               fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: 6,
-              cursor: isExportingPdf ? 'not-allowed' : 'pointer',
-              opacity: isExportingPdf ? 0.7 : 1
+              cursor: 'pointer'
             }}
-            title="ទាញយកជាឯកសារ PDF ផ្លូវការ"
           >
-            {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-            <span>{isExportingPdf ? 'កំពុងទាញ...' : 'Download PDF'}</span>
+            <FileText size={15} />
+            <span>Download Word</span>
           </button>
         </div>
       </div>
@@ -614,7 +633,9 @@ export default function FinanceMobileView({
                     fontWeight: 800,
                     color: activeSubTab === 'income' ? '#15803d' : '#b91c1c'
                   }}>
-                    {formatMoney(item.total, item.currency, useKhmerNumerals)}
+                    {item.totalLabel && (!item.total || Number(item.total) === 0)
+                      ? (useKhmerNumerals ? toKhmerDigits(item.totalLabel) : item.totalLabel)
+                      : formatMoney(item.total, item.currency, useKhmerNumerals)}
                   </div>
                 </div>
 

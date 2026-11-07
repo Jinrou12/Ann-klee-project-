@@ -21,7 +21,9 @@ export default function OfficialLeaveDocument({
   setEditingRowId = () => {},
   handleCellChange = () => {},
   handleDeleteRow = () => {},
-  studentMaster = []
+  studentMaster = [],
+  customPeriodTitle = '',
+  customSummaryText = ''
 }) {
   // Automatically calculate the last working day of the month (excluding Saturday/Sunday)
   const reportDates = useMemo(() => getMonthEndReportDates(monthKey, {
@@ -38,15 +40,20 @@ export default function OfficialLeaveDocument({
         alignItems: 'flex-start',
         marginBottom: 16
       }}>
-        {/* Left: Ministry & School (No logo in PDF 2) */}
-        <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
+        {/* Left: Ministry & School with Centered Logo on top */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.5 }}>
+          <img
+            src="/logo.png?v=nobg1"
+            alt="Logo"
+            style={{ width: 50, height: 50, objectFit: 'contain', marginBottom: 3 }}
+          />
+          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.ministry}
           </div>
-          <div className="font-moul" style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
             {String(metadata.school || '').startsWith('សាលា') ? metadata.school : `សាលា${metadata.school || ''}`}
           </div>
-          <div className="font-moul" style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.location}
           </div>
         </div>
@@ -69,7 +76,7 @@ export default function OfficialLeaveDocument({
           របាយការណ៍ ស្ដីពី
         </div>
         <div className="font-moul" style={{ fontSize: 16.5, whiteSpace: 'nowrap' }}>
-          ចំនួនសមណសិស្សសុំច្បាប់ ក្នុងខែ{monthName} ឆ្នាំ{yearDisplay}
+          {customPeriodTitle || `ចំនួនសមណសិស្សសុំច្បាប់ ក្នុងខែ${monthName} ឆ្នាំ${yearDisplay}`}
         </div>
       </div>
 
@@ -283,27 +290,30 @@ export default function OfficialLeaveDocument({
 
       {/* Summary Count Row */}
       <div style={{ marginTop: 14, fontSize: 13, fontWeight: 700 }}>
-        ចំនួនសមណសិស្សសុំច្បាប់ក្នុងខែ{monthName} សរុប {useKhmerNumerals ? toKhmerDigits(records.length) : records.length}អង្គ
+        {customSummaryText || `ចំនួនសមណសិស្សសុំច្បាប់ក្នុងខែ${monthName} សរុប ${useKhmerNumerals ? toKhmerDigits(records.length) : records.length}អង្គ`}
       </div>
 
       {/* Official Signatures & Dates Block (Exact match with PDF 2) */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginTop: 24,
-        marginBottom: 30,
-        fontSize: 13,
-        lineHeight: 1.6
-      }}>
+      <div
+        className="signature-block"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginTop: 16,
+          marginBottom: 10,
+          fontSize: 12,
+          lineHeight: 1.5
+        }}
+      >
         {/* Left Signature: School Director */}
-        <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
-          <div className="font-moul" style={{ fontSize: 13, marginBottom: 4, whiteSpace: 'nowrap' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 43%', maxWidth: '43%' }}>
+          <div className="font-moul" style={{ fontSize: 12.5, marginBottom: 3, whiteSpace: 'nowrap' }}>
             បានឃើញ និង..................
           </div>
           <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ.......................ខែ..................ឆ្នាំ{reportDates.zodiac || 'មមី'}{reportDates.sak || 'អដ្ឋស័ក'} ព.ស {reportDates.beYear || '២៥៧០'}</div>
           <div style={{ whiteSpace: 'nowrap' }}>ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ{reportDates.yearKhmer}</div>
-          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
               : metadata.directorTitle}
@@ -311,10 +321,10 @@ export default function OfficialLeaveDocument({
         </div>
 
         {/* Right Signature: Reporter (Automatically calculated last working day, excluding Sat/Sun) */}
-        <div style={{ textAlign: 'center', flex: 1, maxWidth: '48%' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 55%', maxWidth: '55%' }}>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.lunarDateText}</div>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.solarDateTextLeave}</div>
-          <div className="font-moul" style={{ fontSize: 13, marginTop: 8, paddingBottom: 45, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>
         </div>

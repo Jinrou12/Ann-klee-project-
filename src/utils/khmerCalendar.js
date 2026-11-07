@@ -1,5 +1,5 @@
 // Khmer Buddhist Era and Lunar Date Utilities
-import { toKhmerDigits } from './khmerNumerals';
+import { toKhmerDigits } from './khmerNumerals.js';
 
 export const KHMER_SOLAR_MONTHS = [
   'មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា',
@@ -161,12 +161,18 @@ export function getMonthEndReportDates(monthKey = '2026-07', options = {}) {
   }
 
   const lunarDateText = `${dayNameKhmer}${lunarBody} ឆ្នាំ${zodiac} ${sak} ព.ស ${beYear}`;
+  const leftBlankLunar = `ថ្ងៃ.......................ខែ..................ឆ្នាំ${zodiac}${sak} ព.ស ${beYear}`;
+  const leftBlankSolar = `ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ${yearKhmer}`;
 
   return {
     lastWorkingDate: lastDate,
     solarDateTextLeave,
     solarDateTextFinance,
     lunarDateText,
+    lunarHeader: lunarDateText,
+    solarHeader: solarDateTextLeave,
+    leftBlankLunar,
+    leftBlankSolar,
     dayNumKhmer,
     monthName,
     yearKhmer,

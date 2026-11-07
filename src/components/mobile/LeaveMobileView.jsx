@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { 
-  Plus, Trash2, Edit3, Check, X, FileSpreadsheet, Eye, 
+  Plus, Trash2, Edit3, Check, X, FileSpreadsheet, FileText, Eye, 
   Calendar, Clock, AlertCircle, UserCheck, Search, Download, Loader2, Printer 
 } from 'lucide-react';
 import { toKhmerDigits, parseDurationShorthand } from '../../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../../utils/excelExporter';
+import { exportLeaveToWord } from '../../utils/wordExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
 import OfficialLeaveDocument from '../OfficialLeaveDocument';
 
@@ -96,7 +97,11 @@ export default function LeaveMobileView({
   };
 
   const handleExportExcel = () => {
-    exportLeaveToExcel(records, `${monthName} ${yearDisplay}`, metadata);
+    exportLeaveToExcel(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+  };
+
+  const handleExportWord = () => {
+    exportLeaveToWord(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleDownloadPdf = async () => {
@@ -191,15 +196,16 @@ export default function LeaveMobileView({
             <span>បន្ថែមច្បាប់</span>
           </button>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={handleExportExcel}
               style={{
+                flex: 1,
                 background: '#15803d',
                 color: '#ffffff',
                 border: 'none',
                 borderRadius: 8,
-                padding: '9px 12px',
+                padding: '9px 10px',
                 fontSize: 12,
                 fontWeight: 600,
                 display: 'flex',
@@ -214,27 +220,25 @@ export default function LeaveMobileView({
             </button>
 
             <button
-              onClick={handleDownloadPdf}
-              disabled={isExportingPdf}
+              onClick={handleExportWord}
               style={{
-                background: '#b91c1c',
+                flex: 1,
+                background: '#1d4ed8',
                 color: '#ffffff',
                 border: 'none',
                 borderRadius: 8,
-                padding: '9px 12px',
+                padding: '9px 10px',
                 fontSize: 12,
                 fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 6,
-                cursor: isExportingPdf ? 'not-allowed' : 'pointer',
-                opacity: isExportingPdf ? 0.7 : 1
+                cursor: 'pointer'
               }}
-              title="ទាញយកជាឯកសារ PDF ផ្លូវការ"
             >
-              {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-              <span>{isExportingPdf ? 'កំពុងទាញ...' : 'Download PDF'}</span>
+              <FileText size={15} />
+              <span>Download Word</span>
             </button>
           </div>
         </div>

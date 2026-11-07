@@ -3,6 +3,7 @@ import Header from './components/Header';
 import MonthSelector from './components/MonthSelector';
 import TabNavigation from './components/TabNavigation';
 import LeaveTableView from './components/LeaveTableView';
+import IdCardTableView from './components/IdCardTableView';
 import FinanceTableView from './components/FinanceTableView';
 import UploadSection from './components/UploadSection';
 import SummaryTableView from './components/SummaryTableView';
@@ -12,14 +13,18 @@ import ReviewModal from './components/ReviewModal';
 
 // Mobile-Dedicated Components (Rule: Strict PC vs Mobile Isolation)
 import LeaveMobileView from './components/mobile/LeaveMobileView';
+import IdCardMobileView from './components/mobile/IdCardMobileView';
 import FinanceMobileView from './components/mobile/FinanceMobileView';
 import SummaryMobileView from './components/mobile/SummaryMobileView';
 import MobileBottomNav from './components/mobile/MobileBottomNav';
 import { useDeviceMode } from './utils/useDeviceMode';
+import { isAcademicMonthKey } from './utils/summaryAnalytics';
 
 import {
   loadAppState,
   saveAppState,
+  INITIAL_ID_CARD_DATA,
+  recomputeLinkedFinance,
   exportBackup,
   importBackup,
   DEFAULT_GEMINI_KEYS,
@@ -115,9 +120,11 @@ export default function App() {
           cloudMeta.directorTitle = 'នាយកសាលា';
           needsCloudUpdate = true;
         }
+        const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(appState.idCards || {}), ...(cloudData.idCards || {}) };
         const mergedState = {
           ...appState,
           ...cloudData,
+          idCards: mergedIdCards,
           meta: cloudMeta
         };
         // Mark as remote update so debounced auto-sync does NOT push back to Supabase!
@@ -194,6 +201,7 @@ export default function App() {
           const merged = {
             ...prev,
             ...remoteState,
+            idCards: { ...INITIAL_ID_CARD_DATA, ...(prev.idCards || {}), ...(remoteState.idCards || {}) },
             meta: mergedMeta
           };
           saveAppState(merged); // Sync to device memory
@@ -256,13 +264,17 @@ export default function App() {
     saveOfflineQueue(queue);
   }, [queue]);
 
-  const currentMonthKey = appState.meta.currentMonth || '2026-07';
-  const activeYear = (currentMonthKey || '2026-07').split('-')[0] || '2026';
+  const rawCurrentMonthKey = appState.meta.currentMonth || '2026-07';
+  const activeYear = (rawCurrentMonthKey || '2026-07').split('-')[0] || '2026';
+  const currentMonthKey = isAcademicMonthKey(rawCurrentMonthKey)
+    ? rawCurrentMonthKey
+    : `${activeYear}-05`;
 
-  // Scoped available months for the currently selected activeYear
+  // Scoped available months for the currently selected activeYear (excluding March 03 & April 04)
   const availableMonths = Array.from(new Set([
-    ...Object.keys(appState.leaves).filter(k => k.startsWith(`${activeYear}-`)),
-    ...Object.keys(appState.finance).filter(k => k.startsWith(`${activeYear}-`)),
+    ...Object.keys(appState.leaves).filter(k => k.startsWith(`${activeYear}-`) && isAcademicMonthKey(k)),
+    ...Object.keys(appState.finance).filter(k => k.startsWith(`${activeYear}-`) && isAcademicMonthKey(k)),
+    ...Object.keys(appState.idCards || {}).filter(k => k.startsWith(`${activeYear}-`) && isAcademicMonthKey(k)),
     currentMonthKey
   ])).sort().reverse();
 
@@ -274,13 +286,15 @@ export default function App() {
     ...(appState.meta.availableYears || []),
     ...Object.keys(appState.leaves).map(k => k.split('-')[0]).filter(Boolean),
     ...Object.keys(appState.finance).map(k => k.split('-')[0]).filter(Boolean),
+    ...Object.keys(appState.idCards || {}).map(k => k.split('-')[0]).filter(Boolean),
     activeYear
   ])).sort().reverse();
 
   const yearStatsList = allYearKeys.map(yr => {
     const monthKeysInYear = Array.from(new Set([
-      ...Object.keys(appState.leaves).filter(k => k.startsWith(`${yr}-`)),
-      ...Object.keys(appState.finance).filter(k => k.startsWith(`${yr}-`))
+      ...Object.keys(appState.leaves).filter(k => k.startsWith(`${yr}-`) && isAcademicMonthKey(k)),
+      ...Object.keys(appState.finance).filter(k => k.startsWith(`${yr}-`) && isAcademicMonthKey(k)),
+      ...Object.keys(appState.idCards || {}).filter(k => k.startsWith(`${yr}-`) && isAcademicMonthKey(k))
     ]));
     let leaveCount = 0;
     let financeCount = 0;
@@ -288,9 +302,10 @@ export default function App() {
     monthKeysInYear.forEach(mk => {
       const l = appState.leaves[mk]?.length || 0;
       const f = (appState.finance[mk]?.income?.length || 0) + (appState.finance[mk]?.expense?.length || 0);
+      const idc = (appState.idCards && appState.idCards[mk]?.length) || 0;
       leaveCount += l;
       financeCount += f;
-      if (l > 0 || f > 0) activeMonthsCount += 1;
+      if (l > 0 || f > 0 || idc > 0) activeMonthsCount += 1;
     });
     return {
       year: yr,
@@ -302,26 +317,92 @@ export default function App() {
 
   const currentLeaves = appState.leaves[currentMonthKey] || [];
   const currentFinance = appState.finance[currentMonthKey] || { income: [], expense: [] };
+  const currentIdCards = (appState.idCards && appState.idCards[currentMonthKey]) || [];
 
-  // 2. Central Mutator Functions
+  // 2. Central Mutator Functions (with 3-Channel Real-Time Auto-Sync)
   const mutateLeaves = useCallback((updatedLeaves) => {
-    setAppState(prev => ({
-      ...prev,
-      leaves: {
+    setAppState(prev => {
+      const nextLeaves = {
         ...prev.leaves,
         [currentMonthKey]: updatedLeaves
-      }
-    }));
+      };
+      const nextFinance = recomputeLinkedFinance(
+        prev.finance,
+        nextLeaves,
+        prev.idCards || INITIAL_ID_CARD_DATA,
+        [currentMonthKey]
+      );
+      return {
+        ...prev,
+        leaves: nextLeaves,
+        finance: nextFinance
+      };
+    });
   }, [currentMonthKey]);
 
+  const mutateIdCards = useCallback((updatedIdCards) => {
+    setAppState(prev => {
+      const nextIdCards = {
+        ...(prev.idCards || INITIAL_ID_CARD_DATA),
+        [currentMonthKey]: updatedIdCards
+      };
+      const nextFinance = recomputeLinkedFinance(
+        prev.finance,
+        prev.leaves,
+        nextIdCards,
+        [currentMonthKey]
+      );
+      return {
+        ...prev,
+        idCards: nextIdCards,
+        finance: nextFinance
+      };
+    });
+  }, [currentMonthKey]);
+
+  const mutateAddIdCardToMonth = useCallback((targetMonthKey, newRecord) => {
+    setAppState(prev => {
+      const existingIdCards = prev.idCards || INITIAL_ID_CARD_DATA;
+      const existingMonthList = existingIdCards[targetMonthKey] || [];
+      const nextIdCards = {
+        ...existingIdCards,
+        [targetMonthKey]: [...existingMonthList, newRecord]
+      };
+      const nextFinance = recomputeLinkedFinance(
+        prev.finance,
+        prev.leaves,
+        nextIdCards,
+        [targetMonthKey]
+      );
+      return {
+        ...prev,
+        idCards: nextIdCards,
+        finance: nextFinance,
+        meta: {
+          ...prev.meta,
+          currentMonth: targetMonthKey
+        }
+      };
+    });
+  }, []);
+
   const mutateFinance = useCallback((updatedFinance) => {
-    setAppState(prev => ({
-      ...prev,
-      finance: {
+    setAppState(prev => {
+      const rawNextFinance = {
         ...prev.finance,
         [currentMonthKey]: updatedFinance
-      }
-    }));
+      };
+      const nextFinance = recomputeLinkedFinance(
+        rawNextFinance,
+        prev.leaves,
+        prev.idCards || INITIAL_ID_CARD_DATA,
+        [currentMonthKey]
+      );
+      return {
+        ...prev,
+        finance: nextFinance
+      };
+    });
   }, [currentMonthKey]);
 
   const mutateStudents = useCallback((updatedStudents) => {
@@ -342,21 +423,36 @@ export default function App() {
   }, []);
 
   const mutateAddNewMonth = useCallback((newMonthKey) => {
-    setAppState(prev => ({
-      ...prev,
-      leaves: {
+    setAppState(prev => {
+      const nextLeaves = {
         ...prev.leaves,
         [newMonthKey]: prev.leaves[newMonthKey] || []
-      },
-      finance: {
+      };
+      const nextIdCards = {
+        ...(prev.idCards || INITIAL_ID_CARD_DATA),
+        [newMonthKey]: (prev.idCards && prev.idCards[newMonthKey]) || []
+      };
+      const rawNextFinance = {
         ...prev.finance,
         [newMonthKey]: prev.finance[newMonthKey] || { income: [], expense: [] }
-      },
-      meta: {
-        ...prev.meta,
-        currentMonth: newMonthKey
-      }
-    }));
+      };
+      const nextFinance = recomputeLinkedFinance(
+        rawNextFinance,
+        nextLeaves,
+        nextIdCards,
+        [newMonthKey]
+      );
+      return {
+        ...prev,
+        leaves: nextLeaves,
+        idCards: nextIdCards,
+        finance: nextFinance,
+        meta: {
+          ...prev.meta,
+          currentMonth: newMonthKey
+        }
+      };
+    });
   }, []);
 
   const mutateToggleNumerals = useCallback(() => {
@@ -374,11 +470,11 @@ export default function App() {
     if (!cleanYr) return;
     setAppState(prev => {
       const existingMonthsInYear = Array.from(new Set([
-        ...Object.keys(prev.leaves || {}).filter(k => k.startsWith(`${cleanYr}-`)),
-        ...Object.keys(prev.finance || {}).filter(k => k.startsWith(`${cleanYr}-`))
+        ...Object.keys(prev.leaves || {}).filter(k => k.startsWith(`${cleanYr}-`) && isAcademicMonthKey(k)),
+        ...Object.keys(prev.finance || {}).filter(k => k.startsWith(`${cleanYr}-`) && isAcademicMonthKey(k))
       ])).sort().reverse();
 
-      const nextMonthKey = existingMonthsInYear[0] || `${cleanYr}-01`;
+      const nextMonthKey = existingMonthsInYear[0] || `${cleanYr}-05`;
       const prevYears = Array.isArray(prev.meta?.availableYears) ? prev.meta.availableYears : [];
       const updatedYears = Array.from(new Set([...prevYears, cleanYr]));
 
@@ -1119,6 +1215,34 @@ export default function App() {
         )}
 
         {/* ======================================================== */}
+        {/* VIEW 1.5: STUDENT ID CARD PURCHASE VIEW                  */}
+        {/* ======================================================== */}
+        {activeTab === 'idcard' && (
+          isMobile ? (
+            <IdCardMobileView
+              records={currentIdCards}
+              monthKey={currentMonthKey}
+              metadata={appState.meta}
+              useKhmerNumerals={appState.meta.useKhmerNumerals}
+              studentMaster={appState.studentMaster}
+              onUpdateRecords={mutateIdCards}
+              onAddRecordToMonth={mutateAddIdCardToMonth}
+            />
+          ) : (
+            <IdCardTableView
+              records={currentIdCards}
+              monthKey={currentMonthKey}
+              metadata={appState.meta}
+              useKhmerNumerals={appState.meta.useKhmerNumerals}
+              studentMaster={appState.studentMaster}
+              onUpdateRecords={mutateIdCards}
+              onAddRecordToMonth={mutateAddIdCardToMonth}
+              onPrint={handlePrint}
+            />
+          )
+        )}
+
+        {/* ======================================================== */}
         {/* VIEW 2: FINANCE VIEW (PDF 1)                             */}
         {/* ======================================================== */}
         {activeTab === 'finance' && (
@@ -1175,7 +1299,9 @@ export default function App() {
               currentMonthKey={currentMonthKey}
               allLeaves={appState.leaves}
               allFinance={appState.finance}
+              allIdCards={appState.idCards}
               studentMaster={appState.studentMaster}
+              metadata={appState.meta}
               useKhmerNumerals={appState.meta.useKhmerNumerals}
               onSelectMonth={mutateMonth}
               onSelectYear={mutateSelectYear}
@@ -1185,7 +1311,9 @@ export default function App() {
               currentMonthKey={currentMonthKey}
               allLeaves={appState.leaves}
               allFinance={appState.finance}
+              allIdCards={appState.idCards}
               studentMaster={appState.studentMaster}
+              metadata={appState.meta}
               useKhmerNumerals={appState.meta.useKhmerNumerals}
               onSelectMonth={mutateMonth}
               onSelectYear={mutateSelectYear}

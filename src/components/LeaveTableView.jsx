@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Printer, FileSpreadsheet, Edit3, Download, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Printer, FileSpreadsheet, FileText, Edit3, Download, Loader2 } from 'lucide-react';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../utils/excelExporter';
+import { exportLeaveToWord } from '../utils/wordExporter';
 import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 import A4SheetScaler from './A4SheetScaler';
@@ -52,7 +53,17 @@ export default function LeaveTableView({
   };
 
   const handleExportExcel = () => {
-    exportLeaveToExcel(records, `${monthName} ${yearDisplay}`, metadata);
+    exportLeaveToExcel(records, `${monthName} ឆ្នាំ${yearDisplay}`, metadata, {
+      monthKey,
+      useKhmerNumerals
+    });
+  };
+
+  const handleExportWord = () => {
+    exportLeaveToWord(records, `${monthName} ឆ្នាំ${yearDisplay}`, metadata, {
+      monthKey,
+      useKhmerNumerals
+    });
   };
 
   const handleDownloadPdf = async () => {
@@ -129,10 +140,9 @@ export default function LeaveTableView({
           </button>
 
           <button
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
+            onClick={handleExportWord}
             style={{
-              background: '#b91c1c',
+              background: '#1d4ed8',
               color: '#ffffff',
               padding: '7px 14px',
               borderRadius: 6,
@@ -142,13 +152,11 @@ export default function LeaveTableView({
               alignItems: 'center',
               gap: 6,
               border: 'none',
-              cursor: isExportingPdf ? 'not-allowed' : 'pointer',
-              opacity: isExportingPdf ? 0.7 : 1
+              cursor: 'pointer'
             }}
-            title="ទាញយកជាឯកសារ PDF ផ្ទាល់ចូលកុំព្យូទ័រ"
           >
-            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+            <FileText size={16} />
+            <span>Download Word</span>
           </button>
 
           <button

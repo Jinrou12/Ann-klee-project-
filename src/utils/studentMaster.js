@@ -6,8 +6,8 @@ export const DEFAULT_STUDENT_MASTER = [
   // ថ្នាក់មត្តេយ្យ (15 នាក់)
   { id: 'm-1', name: 'ឃី ម៉េងលាភ', grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'm-2', name: 'ឆាន មាសឆៃ', grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'm-3', name: 'ឆាន រ៉ាយុទ្ធ', grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'm-4', name: 'ឌី សុខហេង', grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'm-3', name: 'ឆាន រ៉ាយុទ្ធ', aliases: ['ឆាន់ រ៉ាយុទ្ធ'], grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'm-4', name: 'ឌី សុខហេង', aliases: ['ឌី សុកហេង'], grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'm-5', name: 'ឌឿន រ៉ាដូ', aliases: ['ឡឿន រ៉ាដូ'], grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'm-6', name: 'ថុង ចិន', grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'm-7', name: 'នី ផានុត', grade: 'មត្តេយ្យ', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
@@ -37,8 +37,8 @@ export const DEFAULT_STUDENT_MASTER = [
   { id: 'g1-14', name: 'ហ៊ុំ រ៉ានុ', grade: '១', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
 
   // ថ្នាក់ទី២ (30 នាក់)
-  { id: 'g2-1', name: 'ឃិន ស៊ិវម៉ិញ', aliases: ['ឃិន សៀវម៉ិញ', 'គិន ស៊ិវម៉ិញ', 'ឃិន ស៊ីវម៉ិញ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-2', name: 'ចាន់ ឆៃអ៊ង', aliases: ['ឆាន ឆៃអ៊ង', 'ចាន់ ឆៃអង', 'ឆាន ឆៃអង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-1', name: 'ឃិន ស៊ិវម៉ិញ', aliases: ['ឃិន សៀវម៉ិញ', 'ឃិន សៀវមិញ', 'ឃិន សៀវម៉ីញ', 'គិន ស៊ិវម៉ិញ', 'ឃិន ស៊ីវម៉ិញ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-2', name: 'ចាន់ ឆៃអ៊ង', aliases: ['ចាន់ ឆៃអ៊័ង', 'ឆាន ឆៃអ៊ង', 'ចាន់ ឆៃអង', 'ឆាន ឆៃអង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-3', name: 'ចាន់ណា រ៉ាបូ', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   {
     id: 'g2-4',
@@ -58,28 +58,28 @@ export const DEFAULT_STUDENT_MASTER = [
     monkStatus: 'សាមណេរ'
   },
   { id: 'g2-5', name: 'ជួង ចិត្រា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-6', name: 'ឈុនហ៊ាង គីមហុង', aliases: ['ឈុន ហ៊ាងគីមហុង', 'ឈុនហ៊ាង គឹមហុង', 'ឆុនហ៊ាង គីមហុង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-7', name: 'ណុន តាវ៉ាន់', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-8', name: 'ប៉ុនធឿន ឧត្តម', aliases: ['ប៊ិន ធឿនឧត្តម', 'ប៊ិនធឿន ឧត្តម'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-6', name: 'ឈុនហ៊ាង គីមហុង', aliases: ['ឈុន ហ៊ាងគីមហុង', 'ឈុនហ៊ាង គឹមហុង', 'ឆុនហ៊ាង គីមហុង', 'ហ៊ាង គឹមហុង', 'ហ៊ាង គីមហុង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-7', name: 'ណុន តាវ៉ាន់', aliases: ['ណុន តាវ៉ាន'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-8', name: 'ប៉ុនធឿន ឧត្តម', aliases: ['ប៊ិន ធឿនឧត្តម', 'ប៊ិនធឿន ឧត្តម', 'ប៊ុន ធឿនឧត្តម', 'ប៊ុនធឿន ឧត្តម'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-9', name: 'ថេង សុខលីន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-10', name: 'ពិសិដ្ធ សុបញ្ញា', aliases: ['ពិសិដ្ឋ សុបញ្ញា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-11', name: 'ភាក់ សុភាព', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-12', name: 'ម៉េង ទិត្យ', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-13', name: 'ម៉េង ទី', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-14', name: 'ម៉េង ស្រ៊ីស៊ីរ៉ា', aliases: ['ម៉េង ស្រីស៊ីរ៉ា', 'ម៉េង ស្រ៊ីសុីរ៉ា', 'ម៉េង ស្រីសុីរ៉ា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-13', name: 'ម៉េង ទី', aliases: ['ម៉េងទី'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-14', name: 'ម៉េង ស្រ៊ីស៊ីរ៉ា', aliases: ['ម៉េង ស្រ៊ីសីរ៉ា', 'ម៉េង ស្រីស៊ីរ៉ា', 'ម៉េង ស្រ៊ីសុីរ៉ា', 'ម៉េង ស្រីសុីរ៉ា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-15', name: 'ម៉ែន សីហា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-16', name: 'មី ស៊ីនូ', aliases: ['មី សុីនូ', 'មី សីនូ', 'ម៉ី ស៊ីនូ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-17', name: 'យ៉េន ចាន់រ៉ា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-17', name: 'យ៉េន ចាន់រ៉ា', aliases: ['យ៉េន ចានរ៉ា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-18', name: 'រ៉េត ណារ៉ុង', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-19', name: 'រ៉េន វ៉ានុន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-19', name: 'រ៉េន វ៉ានុន', aliases: ['រ៉េន វាន់នុន'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-20', name: 'លី ពីន', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-21', name: 'ស៊ីម សុវណ្ណរាជ', aliases: ['ស៊ឹម សុវណ្ណរាជ', 'ស៊ិម សុវណ្ណរាជ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-22', name: 'សារ៉ាត់ ចិត្ត្រា', aliases: ['សារ៉ាត់ ចិត្រា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-23', name: 'សុន ម៉ែងអ៊័ង', aliases: ['សុន ម៉េងអ៊័ង', 'សុន ម៉េងអង', 'សុន ម៉ែងអង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-23', name: 'សុន ម៉ែងអ៊័ង', aliases: ['សុន ម៉េងអ៊័ង', 'សុន ម៉េងអ័ង', 'សុន ម៉េងអង', 'សុន ម៉ែងអង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-24', name: 'សេងលី ទីសា', aliases: ['សេង លីទីសា'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-25', name: 'ហេន សិលា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-26', name: 'ឡាយ ប៊ុនយ៉ុង', aliases: ['លាយ ប៊ុនយ៉ុង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g2-27', name: 'ឡាយ វីរះ', aliases: ['ឡាយ វីរៈ', 'លាយ វីរះ', 'លាយ វីរៈ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-26', name: 'ឡាយ ប៊ុនយ៉ុង', aliases: ['ឡាយ ប៉ុនយ៉ុង', 'លាយ ប៊ុនយ៉ុង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g2-27', name: 'ឡាយ វីរះ', aliases: ['ឡាយ វិរះ', 'ឡាយ វីរៈ', 'លាយ វីរះ', 'លាយ វីរៈ'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-28', name: 'ឡេង ហេងលាន', aliases: ['លេង ហេងលាន', 'ឡេង ហេងលាង', 'លេង ហេងលាង'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-29', name: 'អ៊ុន សារ៉េន', aliases: ['អុន សារ៉េន', 'អ៊ន សារ៉េន', 'ឯល សារ៉េន'], grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g2-30', name: 'អាន វឌ្ឍនា', grade: '២', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
@@ -89,12 +89,12 @@ export const DEFAULT_STUDENT_MASTER = [
   { id: 'g3-2', name: 'ខុម ភក្ដី', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-3', name: 'ឃុន លាងហៃ', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-4', name: 'ចិន្តា តុលា', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g3-5', name: 'ជឿន សូវីត', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g3-5', name: 'ជឿន សូវីត', aliases: ['ជឿន សុវីត', 'ជឿន សូវិត'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-6', name: 'ណា តិចគាង', aliases: ['ណា ទិចគាង', 'ណាត ធីណាង', 'ណា តិចកាង', 'ណា ទិចកាង'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'ភិក្ខុ' },
   { id: 'g3-7', name: 'ណាក់ វាន់នី', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-8', name: 'ទី ស៊ុយទ្រី', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g3-9', name: 'ធន ដាវីត', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g3-10', name: 'ប៊ុន បេត', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g3-9', name: 'ធន ដាវីត', aliases: ['ធន ដាវិត', 'ថន ដាវីត'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g3-10', name: 'ប៊ុន បេត', aliases: ['ប៊ុន ប៉េត'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-11', name: 'បាន សម្បត្តិ', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'ភិក្ខុ' },
   { id: 'g3-12', name: 'យិន លាព', aliases: ['យិន លាភ'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-13', name: 'រស់ ណារ៉ាន់', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'ភិក្ខុ' },
@@ -102,10 +102,10 @@ export const DEFAULT_STUDENT_MASTER = [
   { id: 'g3-15', name: 'វេង សុវណ្ណ', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-16', name: 'ស៊ីម វ៉ាន់ណេត', aliases: ['ស៊ឹង វណ្ណេត'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-17', name: 'សីហា ជីវ៉ា', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g3-18', name: 'ហត់ ម៉េងហួង', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g3-19', name: 'ហ៊ី រ៉ាឌី', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g3-18', name: 'ហត់ ម៉េងហួង', aliases: ['ហ៊ត់ ម៉េងហួង'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g3-19', name: 'ហ៊ី រ៉ាឌី', aliases: ['ហី រ៉ាឌី'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
   { id: 'g3-20', name: 'អ៊ល សំណាង', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
-  { id: 'g3-21', name: 'អេន ដាវីន', grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
+  { id: 'g3-21', name: 'អេន ដាវីន', aliases: ['ធន ដាវីន'], grade: '៣', gender: 'សមណសិស្ស', monkStatus: 'សាមណេរ' },
 ];
 
 /**
@@ -806,4 +806,141 @@ export function parseStudentFile(file) {
     reader.onerror = (err) => reject(err);
     reader.readAsArrayBuffer(file);
   });
+}
+
+/**
+ * Normalize Khmer phonetic sound groups for live autocomplete recommendation
+ * (e.g. typing "ក" also recommends students starting with or containing ក, ខ, គ, ឃ)
+ */
+function normalizeKhmerPhoneticSoundGroup(str) {
+  return normalizeKhmerHandwritingSkeleton(str)
+    .replace(/[ខគឃ]/g, 'ក')
+    .replace(/[ឆជឈញ]/g, 'ច')
+    .replace(/[ឌតទធថឋឍ]/g, 'ដ')
+    .replace(/[ណ]/g, 'ន')
+    .replace(/[ផពភ]/g, 'ប')
+    .replace(/[ឡ]/g, 'ល');
+}
+
+/**
+ * Recommend students from the 80-student master roster based on character prefix,
+ * substring, vowel skeleton, or phonetic sound similarity (e.g. typing "ក" recommends ក/គ/ឃ/ខ).
+ *
+ * @param {string} query - User's typed query
+ * @param {Array} studentList - Full 80-student master array
+ * @param {number} limit - Max number of recommendations to return
+ * @returns {Array<{ student: object, score: number, matchReason: string }>}
+ */
+export function recommendStudentsByPhoneticQuery(query, studentList = DEFAULT_STUDENT_MASTER, limit = 20) {
+  const list = Array.isArray(studentList) && studentList.length > 0 ? studentList : DEFAULT_STUDENT_MASTER;
+  const rawQuery = String(query || '').trim();
+  if (!rawQuery) {
+    return list.slice(0, limit).map(student => ({
+      student,
+      score: 50,
+      matchReason: 'បញ្ជីសមណសិស្ស'
+    }));
+  }
+
+  const compactQuery = rawQuery.replace(/[\s\u200B]/g, '');
+  const skelQuery = normalizeKhmerHandwritingSkeleton(rawQuery);
+  const phoneticQuery = normalizeKhmerPhoneticSoundGroup(rawQuery);
+
+  const scored = [];
+
+  for (const student of list) {
+    const candidates = [student.name, ...(student.aliases || [])].filter(Boolean);
+    let bestScore = 0;
+    let bestReason = '';
+
+    for (const cand of candidates) {
+      const words = cand.trim().split(/\s+/).filter(Boolean);
+      const compactCand = cand.replace(/[\s\u200B]/g, '');
+      const skelCand = normalizeKhmerHandwritingSkeleton(cand);
+      const phoneticCand = normalizeKhmerPhoneticSoundGroup(cand);
+
+      // 1. Exact word prefix (Surname or Given Name starts with query)
+      if (words.some(w => w.startsWith(compactQuery)) || compactCand.startsWith(compactQuery)) {
+        if (100 > bestScore) {
+          bestScore = 100;
+          bestReason = 'ត្រូវអក្សរដើម';
+        }
+        continue;
+      }
+
+      // 2. Vowel-skeleton word prefix
+      if (skelQuery) {
+        const wordSkels = words.map(w => normalizeKhmerHandwritingSkeleton(w));
+        if (wordSkels.some(ws => ws.startsWith(skelQuery)) || skelCand.startsWith(skelQuery)) {
+          if (94 > bestScore) {
+            bestScore = 94;
+            bestReason = 'ស្រដៀងស្រៈ';
+          }
+          continue;
+        }
+      }
+
+      // 3. Phonetic sound group word-initial match (e.g. typing "ក" matches words starting with ក, គ, ឃ, ខ)
+      if (phoneticQuery) {
+        const wordPhonetics = words.map(w => normalizeKhmerPhoneticSoundGroup(w));
+        if (wordPhonetics.some(wp => wp.startsWith(phoneticQuery)) || phoneticCand.startsWith(phoneticQuery)) {
+          if (88 > bestScore) {
+            bestScore = 88;
+            bestReason = 'សំនឿងស្រដៀង';
+          }
+          continue;
+        }
+      }
+
+      // 4. Exact substring anywhere in name
+      if (compactCand.includes(compactQuery)) {
+        if (78 > bestScore) {
+          bestScore = 78;
+          bestReason = 'ត្រូវតួអក្សរ';
+        }
+        continue;
+      }
+
+      // 5. Vowel-skeleton substring
+      if (skelQuery && skelCand.includes(skelQuery)) {
+        if (72 > bestScore) {
+          bestScore = 72;
+          bestReason = 'ស្រដៀងស្រៈ';
+        }
+        continue;
+      }
+
+      // 6. Phonetic sound group substring
+      if (phoneticQuery && phoneticCand.includes(phoneticQuery)) {
+        if (66 > bestScore) {
+          bestScore = 66;
+          bestReason = 'សំនឿងស្រដៀង';
+        }
+        continue;
+      }
+
+      // 5. Fuzzy similarity for 2+ character queries
+      if (compactQuery.length >= 2) {
+        const sim = computeKhmerNameSimilarity(rawQuery, cand);
+        if (sim >= 0.45) {
+          const simScore = Math.round(sim * 72);
+          if (simScore > bestScore) {
+            bestScore = simScore;
+            bestReason = 'សំនឿងស្រដៀង';
+          }
+        }
+      }
+    }
+
+    if (bestScore > 0) {
+      scored.push({
+        student,
+        score: bestScore,
+        matchReason: bestReason
+      });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.student.name.localeCompare(b.student.name, 'km'));
+  return scored.slice(0, limit);
 }

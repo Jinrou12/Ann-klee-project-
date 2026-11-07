@@ -28,6 +28,8 @@ export function toArabicDigits(input) {
   return res;
 }
 
+export const toEnglishDigits = toArabicDigits;
+
 /**
  * Format currency in Khmer Riel (៛) with space separators
  * Example: 3443031 -> "៣ ៤៤៣ ០៣១៛"
@@ -38,11 +40,13 @@ export function toArabicDigits(input) {
 export function formatKhmerCurrency(amount, useKhmerNumerals = true) {
   if (amount === null || amount === undefined || amount === '') return '០៛';
   const cleanNumber = typeof amount === 'number' ? amount : parseFloat(toArabicDigits(amount.toString()).replace(/[^0-9.-]/g, '')) || 0;
-  
-  // Format with thousand separators
-  const parts = Math.round(cleanNumber).toString().split('.');
+
+  // Format with thousand separators (safe for negative amounts)
+  const isNegative = cleanNumber < 0;
+  const absVal = Math.abs(Math.round(cleanNumber));
+  const parts = absVal.toString().split('.');
   parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  const formatted = parts.join('.') + '៛';
+  const formatted = (isNegative ? '-' : '') + parts.join('.') + '៛';
 
   return useKhmerNumerals ? toKhmerDigits(formatted) : formatted;
 }
@@ -126,6 +130,41 @@ export function formatCurrencyTotals(totals = {}, useKhmerNumerals = true, separ
 }
 
 /**
+ * Checks whether balance totals or net balance indicates a deficit (ចាយលើសចំណូល).
+ * @param {object} balanceTotals - { KHR: number, USD: number }
+ * @param {number|null} netBalance - Numeric balance
+ * @returns {boolean}
+ */
+export function isFinanceDeficit(balanceTotals = {}, netBalance = null) {
+  const khr = Number(balanceTotals?.KHR) || 0;
+  const usd = Number(balanceTotals?.USD) || 0;
+  if (khr < 0 || usd < 0) return true;
+  if (typeof netBalance === 'number' && netBalance < 0) return true;
+  return false;
+}
+
+/**
+ * Format expense totals:
+ * When isDeficit is true (expense > income), prefix with '-' (e.g. -១ ២០០៛, -$៥០).
+ * When isDeficit is false, retain positive representation (១ ២០០៛).
+ * @param {object} totals - { KHR: number, USD: number }
+ * @param {boolean} isDeficit - Whether expenses exceed income
+ * @param {boolean} useKhmerNumerals - Display in Khmer numerals
+ * @param {string} separator - Separator for multi-currency
+ * @returns {string}
+ */
+export function formatExpenseTotals(totals = {}, isDeficit = false, useKhmerNumerals = true, separator = ' + ') {
+  if (!isDeficit) {
+    return formatCurrencyTotals(totals, useKhmerNumerals, separator);
+  }
+  const negated = {
+    KHR: (Number(totals?.KHR) || 0) > 0 ? -(Number(totals.KHR)) : (Number(totals?.KHR) || 0),
+    USD: (Number(totals?.USD) || 0) > 0 ? -(Number(totals.USD)) : (Number(totals?.USD) || 0)
+  };
+  return formatCurrencyTotals(negated, useKhmerNumerals, separator);
+}
+
+/**
  * Parse a raw string to a pure float number
  * Handles both Khmer and Arabic digits
  * @param {string|number} input 
@@ -169,8 +208,13 @@ export function parseDurationShorthand(rawInput) {
   const withoutLeadDash = trimmed.replace(/^[-–—]+\s*/, '').trim();
   if (!withoutLeadDash) return trimmed;
 
-  // Convert Khmer digits to Arabic digits for uniform regex matching
-  const norm = toArabicDigits(withoutLeadDash);
+  // Convert Khmer digits to Arabic digits for uniform regex matching (plus common Khmer word typos)
+  const norm = toArabicDigits(
+    withoutLeadDash
+      .replace(/លា្ងច/g, 'ល្ងាច')
+      .replace(/ព្រក/g, 'ព្រឹក')
+      .replace(/^មួយ\s*/, '1')
+  );
 
   // 1. Morning shorthand: "1ព", "1A", "1a", "1am", "ព", "a", "am" (and Nព្រឹក)
   const morningMatch = norm.match(/^(\d+)?\s*(?:ព|ព្រឹក|a|am)$/i);
@@ -179,11 +223,16 @@ export function parseDurationShorthand(rawInput) {
     return `${num}ព្រឹក`;
   }
 
-  // 2. Afternoon/Evening shorthand: "1ល", "1P", "1p", "1pm", "ល", "p", "pm" (and Nល្ងាច)
+  // 2. Afternoon/Evening shorthand: "1ល", "1P", "1p", "1pm", "ល", "p", "pm" (and Nល្ងាច / Nរសៀល)
   const afternoonMatch = norm.match(/^(\d+)?\s*(?:ល|ល្ងាច|p|pm)$/i);
   if (afternoonMatch) {
     const num = afternoonMatch[1] ? toKhmerDigits(afternoonMatch[1]) : '១';
     return `${num}ល្ងាច`;
+  }
+  const afternoonResielMatch = norm.match(/^(\d+)?\s*រសៀល$/);
+  if (afternoonResielMatch) {
+    const num = afternoonResielMatch[1] ? toKhmerDigits(afternoonResielMatch[1]) : '១';
+    return `${num}រសៀល`;
   }
 
   // 3. Half-day with integer prefix: "1.5", "1,5", "1 5", "១.៥", "១ ៥", "2.5", "2 5"
@@ -205,9 +254,15 @@ export function parseDurationShorthand(rawInput) {
     return `${toKhmerDigits(intMatch[1])}ថ្ងៃ`;
   }
 
-  // 6. If already contains Khmer duration words (e.g. "1 ថ្ងៃ", "1ថ្ងៃកន្លះ"), normalize digits to Khmer
-  if (/(ថ្ងៃ|ព្រឹក|ល្ងាច|កន្លះ)/.test(withoutLeadDash)) {
-    return toKhmerDigits(withoutLeadDash.replace(/\s+/g, ''));
+  // 6. If already contains Khmer duration words (e.g. "1 ថ្ងៃ", "1ថ្ងៃកន្លះ", "1រសៀល"), normalize digits to Khmer
+  if (/(ថ្ងៃ|ព្រឹក|ល្ងាច|រសៀល|កន្លះ)/.test(withoutLeadDash)) {
+    return toKhmerDigits(
+      withoutLeadDash
+        .replace(/លា្ងច/g, 'ល្ងាច')
+        .replace(/ព្រក/g, 'ព្រឹក')
+        .replace(/^មួយ\s*/, '១')
+        .replace(/\s+/g, '')
+    );
   }
 
   return trimmed;

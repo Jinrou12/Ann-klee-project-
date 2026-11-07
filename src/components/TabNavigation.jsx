@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, DollarSign, Camera, BarChart3 } from 'lucide-react';
+import { FileText, DollarSign, Camera, BarChart3, CreditCard } from 'lucide-react';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 
 export default function TabNavigation({
@@ -15,6 +15,14 @@ export default function TabNavigation({
       icon: FileText,
       iconColor: '#d97706',
       iconBg: '#fef3c7',
+      badge: null
+    },
+    {
+      id: 'idcard',
+      label: 'សមណសិស្សទិញ ID កាត',
+      icon: CreditCard,
+      iconColor: '#0284c7',
+      iconBg: '#e0f2fe',
       badge: null
     },
     {

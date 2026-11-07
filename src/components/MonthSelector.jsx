@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Plus } from 'lucide-react';
 import { KHMER_SOLAR_MONTHS } from '../utils/khmerCalendar';
 import { toKhmerDigits } from '../utils/khmerNumerals';
+import { SEMESTER_1_MONTH_NUMS, SEMESTER_2_MONTH_NUMS, isAcademicMonthKey } from '../utils/summaryAnalytics';
 
 export default function MonthSelector({
   currentMonth,
@@ -32,6 +33,11 @@ export default function MonthSelector({
     onAddNewMonth(createdKey);
     setShowAddMonth(false);
   };
+
+  // Filter out March (03) & April (04) and group available months by Semester 1 & Semester 2
+  const cleanAvailableMonths = (availableMonths || []).filter(isAcademicMonthKey);
+  const sem1Available = cleanAvailableMonths.filter(k => SEMESTER_1_MONTH_NUMS.includes(k.split('-')[1]));
+  const sem2Available = cleanAvailableMonths.filter(k => SEMESTER_2_MONTH_NUMS.includes(k.split('-')[1]));
 
   return (
     <div className="no-print" style={{
@@ -76,7 +82,7 @@ export default function MonthSelector({
           <Plus size={16} />
         </button>
 
-        {/* [ខែ ▾] Month Dropdown */}
+        {/* [ខែ ▾] Month Dropdown grouped by 2 Semesters (excluding March & April) */}
         <select
           value={currentMonth}
           onChange={e => onSelectMonth(e.target.value)}
@@ -91,7 +97,25 @@ export default function MonthSelector({
             cursor: 'pointer'
           }}
         >
-          {availableMonths.map(mKey => (
+          {sem1Available.length > 0 && (
+            <optgroup label="ឆមាសទី ១ (ឧសភា - កញ្ញា)">
+              {sem1Available.map(mKey => (
+                <option key={mKey} value={mKey}>
+                  {formatMonthLabel(mKey)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {sem2Available.length > 0 && (
+            <optgroup label="ឆមាសទី ២ (តុលា - កុម្ភៈ)">
+              {sem2Available.map(mKey => (
+                <option key={mKey} value={mKey}>
+                  {formatMonthLabel(mKey)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {sem1Available.length === 0 && sem2Available.length === 0 && cleanAvailableMonths.map(mKey => (
             <option key={mKey} value={mKey}>
               {formatMonthLabel(mKey)}
             </option>
@@ -99,7 +123,7 @@ export default function MonthSelector({
         </select>
       </div>
 
-      {/* New Month Popover Form */}
+      {/* New Month Popover Form (Grouped by Semester 1 & Semester 2, excluding March & April) */}
       {showAddMonth && (
         <form onSubmit={handleCreateMonth} style={{
           width: '100%',
@@ -116,10 +140,18 @@ export default function MonthSelector({
             onChange={e => setNewMonthNum(e.target.value)}
             style={{ fontSize: 13, padding: '4px 8px' }}
           >
-            {KHMER_SOLAR_MONTHS.map((mName, idx) => {
-              const val = String(idx + 1).padStart(2, '0');
-              return <option key={val} value={val}>{mName}</option>;
-            })}
+            <optgroup label="ឆមាសទី ១ (ឧសភា - កញ្ញា)">
+              {SEMESTER_1_MONTH_NUMS.map(val => {
+                const mName = KHMER_SOLAR_MONTHS[parseInt(val, 10) - 1] || val;
+                return <option key={val} value={val}>ខែ{mName}</option>;
+              })}
+            </optgroup>
+            <optgroup label="ឆមាសទី ២ (តុលា - កុម្ភៈ)">
+              {SEMESTER_2_MONTH_NUMS.map(val => {
+                const mName = KHMER_SOLAR_MONTHS[parseInt(val, 10) - 1] || val;
+                return <option key={val} value={val}>ខែ{mName}</option>;
+              })}
+            </optgroup>
           </select>
           <button
             type="submit"

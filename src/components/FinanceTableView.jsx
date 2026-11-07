@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Printer, FileSpreadsheet, DollarSign, ArrowDownRight, ArrowUpRight, Download, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Printer, FileSpreadsheet, FileText, DollarSign, ArrowDownRight, ArrowUpRight, Download, Loader2 } from 'lucide-react';
 import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals } from '../utils/khmerNumerals';
 import { exportFinanceToExcel } from '../utils/excelExporter';
+import { exportFinanceToWord } from '../utils/wordExporter';
 import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 import A4SheetScaler from './A4SheetScaler';
@@ -42,12 +43,28 @@ export default function FinanceTableView({
     const updated = list.map(item => {
       if (item.id === id) {
         const newItem = { ...item, [field]: val };
+        if (section === 'income' && field === 'total') {
+          const rawStr = String(val ?? '').trim();
+          const numVal = parseKhmerNumber(rawStr);
+          if (rawStr && !/^[0-9០-៩\s.,]+$/.test(rawStr)) {
+            newItem.total = 0;
+            newItem.totalLabel = rawStr;
+          } else {
+            newItem.total = Number.isFinite(numVal) ? numVal : 0;
+            delete newItem.totalLabel;
+          }
+        }
         // Auto-calculate total if qty and unitPrice are provided as numbers
         if (field === 'qty' || field === 'unitPrice') {
-          const qtyNum = parseKhmerNumber(field === 'qty' ? val : item.qty);
+          const qtyStr = String(field === 'qty' ? val : item.qty || '').trim();
+          const qtyNum = parseKhmerNumber(qtyStr);
           const priceNum = parseKhmerNumber(field === 'unitPrice' ? val : item.unitPrice);
           if (qtyNum > 0 && priceNum > 0 && !isNaN(qtyNum) && !isNaN(priceNum)) {
             newItem.total = Math.round(qtyNum * priceNum);
+            delete newItem.totalLabel;
+          } else if (section === 'income' && (!priceNum || priceNum === 0) && (!newItem.total || Number(newItem.total) === 0) && qtyStr && !/^[0-9០-៩\s.,]+$/.test(qtyStr)) {
+            newItem.total = 0;
+            newItem.totalLabel = qtyStr;
           }
         }
         return newItem;
@@ -86,7 +103,11 @@ export default function FinanceTableView({
   };
 
   const handleExportExcel = () => {
-    exportFinanceToExcel(financeData, `${monthName} ${yearDisplay}`, metadata);
+    exportFinanceToExcel(financeData, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+  };
+
+  const handleExportWord = () => {
+    exportFinanceToWord(financeData, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleDownloadPdf = async () => {
@@ -193,10 +214,9 @@ export default function FinanceTableView({
           </button>
 
           <button
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
+            onClick={handleExportWord}
             style={{
-              background: '#b91c1c',
+              background: '#1d4ed8',
               color: '#ffffff',
               padding: '7px 14px',
               borderRadius: 6,
@@ -206,13 +226,11 @@ export default function FinanceTableView({
               alignItems: 'center',
               gap: 6,
               border: 'none',
-              cursor: isExportingPdf ? 'not-allowed' : 'pointer',
-              opacity: isExportingPdf ? 0.7 : 1
+              cursor: 'pointer'
             }}
-            title="ទាញយកជាឯកសារ PDF ផ្ទាល់ចូលកុំព្យូទ័រ"
           >
-            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+            <FileText size={16} />
+            <span>Download Word</span>
           </button>
 
           <button
