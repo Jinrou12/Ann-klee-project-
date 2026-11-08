@@ -131,37 +131,26 @@ export function buildFinanceSummaryModel(
   const teacherExpenseTotals = sumByCurrency(teacherExpenseItems);
   const expenseTotals = sumByCurrency(expenseList);
 
-  let teacherCountNum = teacherExpenseItems.length > 0 ? 6 : 0;
-  for (const tItem of teacherExpenseItems) {
-    const m = String(tItem?.desc || '').match(/([0-9០-៩]+)\s*អង្គ/);
-    if (m && m[1]) {
-      const parsed = parseKhmerNumber(m[1]);
-      if (parsed > 0 && Number.isFinite(parsed)) {
-        teacherCountNum = parsed;
-        break;
-      }
-    }
-  }
-
   let totalTeacherHours = 0;
   for (const tItem of teacherExpenseItems) {
     const qtyRaw = String(tItem?.qty || '').trim();
     const qtyParsed = parseKhmerNumber(qtyRaw);
-    if (qtyParsed > 0 && !/អង្គ|នាក់|រូប/.test(qtyRaw)) {
+    const totalVal = Number(tItem?.total) || 0;
+    const unitRaw = parseKhmerNumber(tItem?.unitPrice);
+    const hourlyRate = unitRaw > 0 && unitRaw <= 20000 ? unitRaw : 4000;
+
+    if (
+      qtyParsed > 0 &&
+      !/អង្គ|នាក់|រូប/.test(qtyRaw) &&
+      !(qtyParsed === 1 && totalVal > hourlyRate * 2)
+    ) {
       totalTeacherHours += qtyParsed;
-    } else if (Number(tItem?.total) > 0) {
-      const unit = parseKhmerNumber(tItem?.unitPrice) || 4000;
-      if (unit > 0) {
-        totalTeacherHours += Math.round(Number(tItem.total) / unit);
-      }
+    } else if (totalVal > 0 && hourlyRate > 0) {
+      totalTeacherHours += Math.round(totalVal / hourlyRate);
     }
   }
 
-  const isMultiMonthPeriod =
-    periodMode === 'semester1' || periodMode === 'semester2' || periodMode === 'year';
-  const teacherQtyText = isMultiMonthPeriod
-    ? `${fmt(totalTeacherHours)}ម៉ោង`
-    : `${fmt(teacherCountNum)}អង្គ/នាក់`;
+  const teacherQtyText = `${fmt(totalTeacherHours)}ម៉ោង`;
 
   // 3. Net Balance & Deficit check
   const totalIncomeRaw = incomeList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
