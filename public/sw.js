@@ -1,9 +1,12 @@
-const CACHE_NAME = 'hun-neng-app-v4';
+const CACHE_NAME = 'hun-neng-app-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/favicon.ico',
   '/logo.png',
+  '/icon-pc-v5-192.png',
+  '/icon-pc-v5-512.png',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
   '/pwa-maskable-192x192.png',
