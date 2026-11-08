@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hun-neng-app-v3';
+const CACHE_NAME = 'hun-neng-app-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -6,6 +6,8 @@ const STATIC_ASSETS = [
   '/logo.png',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
+  '/pwa-maskable-192x192.png',
+  '/pwa-maskable-512x512.png',
   '/apple-touch-icon.png'
 ];
 

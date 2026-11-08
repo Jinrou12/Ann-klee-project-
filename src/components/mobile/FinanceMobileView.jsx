@@ -4,11 +4,12 @@ import {
   DollarSign, ArrowDownRight, ArrowUpRight, Wallet, ShoppingBag, Search, Download, Loader2, Printer 
 } from 'lucide-react';
 import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, formatMoney, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals, formatExpenseTotals, isFinanceDeficit, getCurrencySymbol, normalizeCurrency } from '../../utils/khmerNumerals';
-import { exportFinanceToExcel } from '../../utils/excelExporter';
-import { exportFinanceToWord } from '../../utils/wordExporter';
-import { exportElementToPdf } from '../../utils/pdfExporter';
+import { exportFinanceDualExcel } from '../../utils/excelExporter';
+import { exportFinanceDualWord } from '../../utils/wordExporter';
+import { exportDualElementsToPdf } from '../../utils/pdfExporter';
 import A4SheetScaler from '../A4SheetScaler';
 import OfficialFinanceDocument from '../OfficialFinanceDocument';
+import OfficialFinanceSummaryDocument from '../OfficialFinanceSummaryDocument';
 import CurrencyToggle from '../CurrencyToggle';
 
 export default function FinanceMobileView({
@@ -156,19 +157,33 @@ export default function FinanceMobileView({
   };
 
   const handleExportExcel = () => {
-    exportFinanceToExcel(financeData, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    exportFinanceDualExcel(financeData, `${monthName} ${yearDisplay}`, metadata, {
+      monthKey,
+      monthName,
+      yearDisplay,
+      periodMode: 'month',
+      useKhmerNumerals
+    });
   };
 
   const handleExportWord = () => {
-    exportFinanceToWord(financeData, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    exportFinanceDualWord(financeData, `${monthName} ${yearDisplay}`, metadata, {
+      monthKey,
+      monthName,
+      yearDisplay,
+      periodMode: 'month',
+      useKhmerNumerals
+    });
   };
 
   const handleDownloadPdf = async () => {
     try {
       setIsExportingPdf(true);
-      await exportElementToPdf(
+      await exportDualElementsToPdf(
         '#printable-finance-document',
-        `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`
+        `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`,
+        '#printable-mobile-finance-summary-document',
+        `របាយការណ៍ចំណូលចំណាយសង្ខេប_${monthName}_${yearDisplay}`
       );
     } catch (err) {
       alert('មិនអាចទាញយក PDF បានទេ៖ ' + (err.message || 'Error'));
@@ -897,6 +912,16 @@ export default function FinanceMobileView({
           yearDisplay={yearDisplay}
           useKhmerNumerals={useKhmerNumerals}
           monthKey={monthKey}
+        />
+        <OfficialFinanceSummaryDocument
+          id="printable-mobile-finance-summary-document"
+          financeData={financeData}
+          metadata={metadata}
+          monthName={monthName}
+          yearDisplay={yearDisplay}
+          useKhmerNumerals={useKhmerNumerals}
+          monthKey={monthKey}
+          periodMode="month"
         />
       </div>
     </div>

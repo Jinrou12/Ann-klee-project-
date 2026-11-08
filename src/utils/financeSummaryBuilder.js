@@ -33,6 +33,7 @@ export function isTeacherHourlyExpenseItem(item) {
   return (
     desc.includes('ប្រាក់ម៉ោង') ||
     desc.includes('គ្រូស្ម័គ្រចិត្ត') ||
+    desc.includes('គ្រូស្ម័ក្រចិត្ត') ||
     desc.includes('ជួលគ្រូ')
   );
 }
@@ -142,6 +143,26 @@ export function buildFinanceSummaryModel(
     }
   }
 
+  let totalTeacherHours = 0;
+  for (const tItem of teacherExpenseItems) {
+    const qtyRaw = String(tItem?.qty || '').trim();
+    const qtyParsed = parseKhmerNumber(qtyRaw);
+    if (qtyParsed > 0 && !/អង្គ|នាក់|រូប/.test(qtyRaw)) {
+      totalTeacherHours += qtyParsed;
+    } else if (Number(tItem?.total) > 0) {
+      const unit = parseKhmerNumber(tItem?.unitPrice) || 4000;
+      if (unit > 0) {
+        totalTeacherHours += Math.round(Number(tItem.total) / unit);
+      }
+    }
+  }
+
+  const isMultiMonthPeriod =
+    periodMode === 'semester1' || periodMode === 'semester2' || periodMode === 'year';
+  const teacherQtyText = isMultiMonthPeriod
+    ? `${fmt(totalTeacherHours)}ម៉ោង`
+    : `${fmt(teacherCountNum)}អង្គ/នាក់`;
+
   // 3. Net Balance & Deficit check
   const totalIncomeRaw = incomeList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const totalExpenseRaw = expenseList.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
@@ -196,7 +217,7 @@ export function buildFinanceSummaryModel(
       {
         no: fmt(2),
         desc: 'ចំណាយ លើការជួលគ្រូប្រាក់ម៉ោង',
-        qty: `${fmt(teacherCountNum)}អង្គ/នាក់`,
+        qty: teacherQtyText,
         amountText: formatCurrencyTotals(teacherExpenseTotals, useKhmerNumerals),
         note: ''
       }

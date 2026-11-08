@@ -230,13 +230,13 @@ export default function SummaryTableView({
 
   const periodTitleLabel = useMemo(() => {
     if (periodMode === 'year') {
-      return `សរុបប្រចាំឆ្នាំសិក្សា ${fmtNum(selectedYear)}`;
+      return `ឆ្នាំ${fmtNum(selectedYear)}`;
     }
     if (periodMode === 'semester1') {
-      return `ឆមាសទី ${fmtNum(1)} (ឧសភា-កញ្ញា) ឆ្នាំ${fmtNum(selectedYear)}`;
+      return `ឆមាសទី ${fmtNum(1)} ឆ្នាំ${fmtNum(selectedYear)}`;
     }
     if (periodMode === 'semester2') {
-      return `ឆមាសទី ${fmtNum(2)} (តុលា-កុម្ភៈ) ឆ្នាំ${fmtNum(selectedYear)}`;
+      return `ឆមាសទី ${fmtNum(2)} ឆ្នាំ${fmtNum(selectedYear)}`;
     }
     return formatMonthKeyLabel(selectedMonth, useKhmerNumerals);
   }, [periodMode, selectedMonth, selectedYear, useKhmerNumerals]);

@@ -34,14 +34,15 @@ import {
   ACADEMIC_MONTH_NUMS
 } from '../../utils/summaryAnalytics';
 import { KHMER_SOLAR_MONTHS } from '../../utils/khmerCalendar';
-import { exportLeaveToExcel, exportIdCardToExcel, exportFinanceToExcel } from '../../utils/excelExporter';
-import { exportLeaveToWord, exportIdCardToWord, exportFinanceToWord } from '../../utils/wordExporter';
-import { exportElementToPdf } from '../../utils/pdfExporter';
+import { exportLeaveToExcel, exportIdCardToExcel, exportFinanceDualExcel } from '../../utils/excelExporter';
+import { exportLeaveToWord, exportIdCardToWord, exportFinanceDualWord } from '../../utils/wordExporter';
+import { exportElementToPdf, exportDualElementsToPdf } from '../../utils/pdfExporter';
 import PeriodDropdown from '../PeriodDropdown';
 import A4SheetScaler from '../A4SheetScaler';
 import OfficialLeaveDocument from '../OfficialLeaveDocument';
 import OfficialIdCardDocument from '../OfficialIdCardDocument';
 import OfficialFinanceDocument from '../OfficialFinanceDocument';
+import OfficialFinanceSummaryDocument from '../OfficialFinanceSummaryDocument';
 
 export default function SummaryMobileView({
   currentMonthKey = '2026-07',
@@ -218,13 +219,13 @@ export default function SummaryMobileView({
 
   const periodTitleLabel = useMemo(() => {
     if (periodMode === 'year') {
-      return `សរុបប្រចាំឆ្នាំសិក្សា ${fmtNum(selectedYear)}`;
+      return `ឆ្នាំ${fmtNum(selectedYear)}`;
     }
     if (periodMode === 'semester1') {
-      return `ឆមាសទី ${fmtNum(1)} (ឧសភា-កញ្ញា) ឆ្នាំ${fmtNum(selectedYear)}`;
+      return `ឆមាសទី ${fmtNum(1)} ឆ្នាំ${fmtNum(selectedYear)}`;
     }
     if (periodMode === 'semester2') {
-      return `ឆមាសទី ${fmtNum(2)} (តុលា-កុម្ភៈ) ឆ្នាំ${fmtNum(selectedYear)}`;
+      return `ឆមាសទី ${fmtNum(2)} ឆ្នាំ${fmtNum(selectedYear)}`;
     }
     return formatMonthKeyLabel(selectedMonth, useKhmerNumerals);
   }, [periodMode, selectedMonth, selectedYear, useKhmerNumerals]);
@@ -336,6 +337,14 @@ export default function SummaryMobileView({
     return { income: inc, expense: exp };
   }, [displayedFinanceItems, financeCategoryFilter]);
 
+  const fullPeriodFinanceDataForSummary = useMemo(
+    () => ({
+      income: summary.financeSummary.incomeItems || [],
+      expense: summary.financeSummary.expenseItems || []
+    }),
+    [summary.financeSummary]
+  );
+
   const financeCustomPeriodTitle = useMemo(() => {
     const typeLabel = financeCategoryFilter === 'income'
       ? 'តារាងចំណូល'
@@ -365,11 +374,16 @@ export default function SummaryMobileView({
 
   const handleExportExcel = () => {
     if (sectionMode === 'finance') {
-      exportFinanceToExcel(financeDataForOfficialDoc, periodTitleLabel, metadata, {
+      exportFinanceDualExcel(financeDataForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
+        monthName: activeMonthName,
+        yearDisplay,
+        periodMode,
         useKhmerNumerals,
         customPeriodTitle: financeCustomPeriodTitle,
-        categoryFilter: financeCategoryFilter
+        categoryFilter: financeCategoryFilter,
+        isDeficitOverride: isOverallDeficit,
+        summaryFinanceData: fullPeriodFinanceDataForSummary
       });
     } else if (sectionMode === 'idcards') {
       exportIdCardToExcel(displayedIdCardRecords, periodTitleLabel, metadata, {
@@ -391,11 +405,16 @@ export default function SummaryMobileView({
 
   const handleExportWord = () => {
     if (sectionMode === 'finance') {
-      exportFinanceToWord(financeDataForOfficialDoc, periodTitleLabel, metadata, {
+      exportFinanceDualWord(financeDataForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
+        monthName: activeMonthName,
+        yearDisplay,
+        periodMode,
         useKhmerNumerals,
         customPeriodTitle: financeCustomPeriodTitle,
-        categoryFilter: financeCategoryFilter
+        categoryFilter: financeCategoryFilter,
+        isDeficitOverride: isOverallDeficit,
+        summaryFinanceData: fullPeriodFinanceDataForSummary
       });
     } else if (sectionMode === 'idcards') {
       exportIdCardToWord(displayedIdCardRecords, periodTitleLabel, metadata, {
@@ -420,9 +439,11 @@ export default function SummaryMobileView({
       setIsExportingPdf(true);
       const safePeriodSlug = String(periodTitleLabel || activeMonthName).replace(/\s+/g, '_');
       if (sectionMode === 'finance') {
-        await exportElementToPdf(
+        await exportDualElementsToPdf(
           '#printable-mobile-summary-finance-document',
-          `របាយការណ៍ហិរញ្ញវត្ថុ_${safePeriodSlug}`
+          `របាយការណ៍ហិរញ្ញវត្ថុ_${safePeriodSlug}`,
+          '#printable-mobile-summary-finance-brief-document',
+          `របាយការណ៍ចំណូលចំណាយសង្ខេប_${safePeriodSlug}`
         );
       } else if (sectionMode === 'idcards') {
         await exportElementToPdf(
@@ -1502,6 +1523,17 @@ export default function SummaryMobileView({
           customPeriodTitle={financeCustomPeriodTitle}
           isDeficitOverride={isOverallDeficit}
           categoryFilter={financeCategoryFilter}
+        />
+        <OfficialFinanceSummaryDocument
+          id="printable-mobile-summary-finance-brief-document"
+          financeData={fullPeriodFinanceDataForSummary}
+          metadata={metadata}
+          monthName={activeMonthName}
+          yearDisplay={yearDisplay}
+          useKhmerNumerals={useKhmerNumerals}
+          monthKey={effectiveReportMonthKey}
+          periodMode={periodMode}
+          isDeficitOverride={isOverallDeficit}
         />
       </div>
     </div>
