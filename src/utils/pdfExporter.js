@@ -1,4 +1,6 @@
 import html2pdf from 'html2pdf.js';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 /**
  * High-definition PDF Exporter for Khmer Administrative Documents (A4 Standard)
@@ -21,6 +23,79 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
       await document.fonts.ready;
     } catch {
       // Continue even if font readiness promise rejects
+    }
+  }
+
+  // Save current scroll position and reset to (0, 0) during capture so html2canvas never offsets by window.scrollY
+  const savedScrollX = typeof window !== 'undefined' ? (window.scrollX || window.pageXOffset || 0) : 0;
+  const savedScrollY = typeof window !== 'undefined' ? (window.scrollY || window.pageYOffset || 0) : 0;
+  if (typeof window !== 'undefined') {
+    window.scrollTo(0, 0);
+  }
+
+  // Special High-Precision Multi-Page A4 Sheet Exporter (for OfficialAdminReportDocument)
+  // Renders each discrete 794x1123 `.admin-a4-page-sheet` onto its own 210x297mm A4 PDF page
+  // preserving full-bleed background watermarks, bottom page numbers, and 0% cut-off text.
+  const discreteSheets = Array.from(element.querySelectorAll('.admin-a4-page-sheet'));
+  if (discreteSheets.length > 0) {
+    const finalFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+
+    try {
+      // Ensure all watermark/embedded images inside sheets are loaded
+      const imgs = Array.from(element.querySelectorAll('img'));
+      await Promise.all(
+        imgs.map(img =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise(resolve => {
+                img.onload = resolve;
+                img.onerror = resolve;
+              })
+        )
+      );
+
+      const pdf = new jsPDF({
+        unit: 'mm',
+        format: 'a4',
+        orientation: 'portrait'
+      });
+
+      for (let idx = 0; idx < discreteSheets.length; idx++) {
+        const sheet = discreteSheets[idx];
+        const prevShadow = sheet.style.boxShadow;
+        const prevRadius = sheet.style.borderRadius;
+        sheet.style.boxShadow = 'none';
+        sheet.style.borderRadius = '0px';
+
+        try {
+          const canvas = await html2canvas(sheet, {
+            scale: 2,
+            useCORS: true,
+            letterRendering: false,
+            logging: false,
+            backgroundColor: '#ffffff',
+            width: 794,
+            height: 1123
+          });
+
+          if (idx > 0) {
+            pdf.addPage('a4', 'portrait');
+          }
+          pdf.setPage(idx + 1);
+          const imgData = canvas.toDataURL('image/jpeg', 0.98);
+          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+        } finally {
+          sheet.style.boxShadow = prevShadow;
+          sheet.style.borderRadius = prevRadius;
+        }
+      }
+
+      pdf.save(finalFilename);
+      return;
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.scrollTo(savedScrollX, savedScrollY);
+      }
     }
   }
 
@@ -96,6 +171,9 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     console.error('Error generating PDF:', err);
     throw err;
   } finally {
+    if (typeof window !== 'undefined') {
+      window.scrollTo(savedScrollX, savedScrollY);
+    }
     // 3. Always restore element styles and .no-print elements back onto the live screen
     element.classList.remove('pdf-rendering-active');
     element.classList.remove('pdf-single-page-fit');
@@ -126,4 +204,3 @@ export async function exportDualElementsToPdf(
   await new Promise(resolve => setTimeout(resolve, 400));
   await exportElementToPdf(secondElementOrSelector, secondFilename);
 }
-

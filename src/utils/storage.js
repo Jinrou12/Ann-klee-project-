@@ -1,6 +1,7 @@
 // Central State Storage and Mutator Guard (Rule 7)
 import { DEFAULT_STUDENT_MASTER, matchStudentName, normalizeStudentGrade } from './studentMaster';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { INITIAL_ADMIN_REPORTS } from './adminReportBuilder';
 
 // Helper to parse comma/newline/whitespace-separated API key strings or arrays into clean unique keys
 export function parseApiKeyList(raw) {
@@ -748,6 +749,7 @@ export function loadAppState() {
         leaves: INITIAL_LEAVE_DATA,
         finance: recomputeLinkedFinance(INITIAL_FINANCE_DATA, INITIAL_LEAVE_DATA, INITIAL_ID_CARD_DATA),
         idCards: INITIAL_ID_CARD_DATA,
+        adminReports: INITIAL_ADMIN_REPORTS,
         meta: INITIAL_METADATA,
         studentMaster: DEFAULT_STUDENT_MASTER,
       };
@@ -815,11 +817,13 @@ export function loadAppState() {
     });
 
     const syncedFinance = recomputeLinkedFinance(normalizedFinance, normalizedLeaves, mergedIdCards);
+    const mergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(parsed.adminReports || {}) };
 
     return {
       leaves: normalizedLeaves,
       finance: syncedFinance,
       idCards: mergedIdCards,
+      adminReports: mergedAdminReports,
       meta: mergedMeta,
       studentMaster: loadedStudents,
     };
@@ -829,6 +833,7 @@ export function loadAppState() {
       leaves: INITIAL_LEAVE_DATA,
       finance: recomputeLinkedFinance(INITIAL_FINANCE_DATA, INITIAL_LEAVE_DATA, INITIAL_ID_CARD_DATA),
       idCards: INITIAL_ID_CARD_DATA,
+      adminReports: INITIAL_ADMIN_REPORTS,
       meta: INITIAL_METADATA,
       studentMaster: DEFAULT_STUDENT_MASTER,
     };
@@ -1630,10 +1635,12 @@ export async function fetchCloudAppState() {
     if (data && data.data) {
       const cleanLeaves = sanitizeLeaveState(data.data.leaves);
       const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(data.data.idCards || {}) };
+      const mergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(data.data.adminReports || {}) };
       return {
         ...data.data,
         leaves: cleanLeaves,
         idCards: mergedIdCards,
+        adminReports: mergedAdminReports,
         finance: recomputeLinkedFinance(data.data.finance, cleanLeaves, mergedIdCards),
         studentMaster: enrichStudentMasterAliases(data.data.studentMaster)
       };
@@ -1679,10 +1686,12 @@ export function subscribeToCloudAppState(onRemoteUpdate) {
           if (payload.new && payload.new.data) {
             const cleanLeaves = sanitizeLeaveState(payload.new.data.leaves);
             const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(payload.new.data.idCards || {}) };
+            const mergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(payload.new.data.adminReports || {}) };
             onRemoteUpdate({
               ...payload.new.data,
               leaves: cleanLeaves,
               idCards: mergedIdCards,
+              adminReports: mergedAdminReports,
               finance: recomputeLinkedFinance(payload.new.data.finance, cleanLeaves, mergedIdCards),
               studentMaster: enrichStudentMasterAliases(payload.new.data.studentMaster)
             });

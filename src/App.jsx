@@ -7,6 +7,7 @@ import IdCardTableView from './components/IdCardTableView';
 import FinanceTableView from './components/FinanceTableView';
 import UploadSection from './components/UploadSection';
 import SummaryTableView from './components/SummaryTableView';
+import AdminReportView from './components/AdminReportView';
 import StudentMasterModal from './components/StudentMasterModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import ReviewModal from './components/ReviewModal';
@@ -19,6 +20,7 @@ import SummaryMobileView from './components/mobile/SummaryMobileView';
 import MobileBottomNav from './components/mobile/MobileBottomNav';
 import { useDeviceMode } from './utils/useDeviceMode';
 import { isAcademicMonthKey } from './utils/summaryAnalytics';
+import { INITIAL_ADMIN_REPORTS } from './utils/adminReportBuilder';
 
 import {
   loadAppState,
@@ -69,6 +71,7 @@ export default function App() {
   const [trainingCount, setTrainingCount] = useState(() => getStoredTrainingDataset().length);
 
   // Active view states
+  const [appMode, setAppMode] = useState('main'); // 'main' | 'admin_report'
   const [activeTab, setActiveTab] = useState('leave'); // 'leave' | 'finance' | 'upload'
   const [mobilePreviewA4, setMobilePreviewA4] = useState(false); // false = Mobile Card (📱), true = Official A4 Preview (🖥️)
   const [isProcessing, setIsProcessing] = useState(false);
@@ -123,6 +126,7 @@ export default function App() {
           needsCloudUpdate = true;
         }
         const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(appState.idCards || {}), ...(cloudData.idCards || {}) };
+        const mergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(appState.adminReports || {}), ...(cloudData.adminReports || {}) };
         const normalizedCloudLeaves = sanitizeLeaveState(cloudData.leaves);
         const recomputedCloudFinance = recomputeLinkedFinance(
           cloudData.finance,
@@ -138,6 +142,7 @@ export default function App() {
           leaves: normalizedCloudLeaves,
           finance: recomputedCloudFinance,
           idCards: mergedIdCards,
+          adminReports: mergedAdminReports,
           meta: cloudMeta
         };
         // Mark as remote update so debounced auto-sync does NOT push back to Supabase!
@@ -212,6 +217,7 @@ export default function App() {
             mergedMeta.directorTitle = 'នាយកសាលា';
           }
           const mergedRemoteIdCards = { ...INITIAL_ID_CARD_DATA, ...(prev.idCards || {}), ...(remoteState.idCards || {}) };
+          const mergedRemoteAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(prev.adminReports || {}), ...(remoteState.adminReports || {}) };
           const normalizedRemoteLeaves = sanitizeLeaveState(remoteState.leaves);
           const syncedRemoteFinance = recomputeLinkedFinance(
             remoteState.finance,
@@ -224,6 +230,7 @@ export default function App() {
             leaves: normalizedRemoteLeaves,
             finance: syncedRemoteFinance,
             idCards: mergedRemoteIdCards,
+            adminReports: mergedRemoteAdminReports,
             meta: mergedMeta
           };
           saveAppState(merged); // Sync to device memory
@@ -431,6 +438,31 @@ export default function App() {
       ...prev,
       studentMaster: updatedStudents
     }));
+  }, []);
+
+  const mutateAdminReport = useCallback((reportKey, updatedReportData) => {
+    setAppState(prev => ({
+      ...prev,
+      adminReports: {
+        ...INITIAL_ADMIN_REPORTS,
+        ...(prev.adminReports || {}),
+        [reportKey]: updatedReportData
+      }
+    }));
+  }, []);
+
+  const mutateResetAdminReport = useCallback((reportKey) => {
+    setAppState(prev => {
+      const nextReports = {
+        ...INITIAL_ADMIN_REPORTS,
+        ...(prev.adminReports || {})
+      };
+      delete nextReports[reportKey];
+      return {
+        ...prev,
+        adminReports: nextReports
+      };
+    });
   }, []);
 
   const mutateMonth = useCallback((monthKey) => {
@@ -1175,6 +1207,8 @@ export default function App() {
           isMobile={isMobile}
           mobilePreviewA4={mobilePreviewA4}
           onToggleMobilePreviewA4={() => setMobilePreviewA4(prev => !prev)}
+          appMode={appMode}
+          onToggleAppMode={() => setAppMode(prev => (prev === 'admin_report' ? 'main' : 'admin_report'))}
         />
 
         {/* View Switcher Banner for Mobile users who manually forced PC view */}
@@ -1210,154 +1244,170 @@ export default function App() {
           </div>
         )}
 
-        {/* Desktop Tab Navigation (Hidden on Mobile since Mobile has bottom nav) */}
-        {!isMobile && (
-          <TabNavigation
-            activeTab={activeTab}
-            onSelectTab={setActiveTab}
-            leaveCount={currentLeaves.length}
-            queueCount={queue.filter(q => q.status === 'pending').length}
+        {appMode === 'admin_report' ? (
+          <AdminReportView
+            currentMonthKey={currentMonthKey}
+            activeYear={activeYear}
+            adminReports={appState.adminReports}
+            metadata={appState.meta}
             useKhmerNumerals={appState.meta.useKhmerNumerals}
-          />
-        )}
-
-        {/* ======================================================== */}
-        {/* VIEW 1: STUDENT LEAVE VIEW (PDF 2)                       */}
-        {/* ======================================================== */}
-        {activeTab === 'leave' && (
-          isMobile ? (
-            <LeaveMobileView
-              records={currentLeaves}
-              monthKey={currentMonthKey}
-              metadata={appState.meta}
-              useKhmerNumerals={appState.meta.useKhmerNumerals}
-              studentMaster={appState.studentMaster}
-              onUpdateRecords={mutateLeaves}
-              onPrint={handlePrint}
-              onSwitchToDesktop={() => setViewMode('desktop')}
-              mobilePreviewA4={mobilePreviewA4}
-            />
-          ) : (
-            <LeaveTableView
-              records={currentLeaves}
-              monthKey={currentMonthKey}
-              metadata={appState.meta}
-              useKhmerNumerals={appState.meta.useKhmerNumerals}
-              studentMaster={appState.studentMaster}
-              onUpdateRecords={mutateLeaves}
-              onPrint={handlePrint}
-            />
-          )
-        )}
-
-        {/* ======================================================== */}
-        {/* VIEW 1.5: STUDENT ID CARD PURCHASE VIEW                  */}
-        {/* ======================================================== */}
-        {activeTab === 'idcard' && (
-          isMobile ? (
-            <IdCardMobileView
-              records={currentIdCards}
-              monthKey={currentMonthKey}
-              metadata={appState.meta}
-              useKhmerNumerals={appState.meta.useKhmerNumerals}
-              studentMaster={appState.studentMaster}
-              onUpdateRecords={mutateIdCards}
-              onAddRecordToMonth={mutateAddIdCardToMonth}
-              mobilePreviewA4={mobilePreviewA4}
-            />
-          ) : (
-            <IdCardTableView
-              records={currentIdCards}
-              monthKey={currentMonthKey}
-              metadata={appState.meta}
-              useKhmerNumerals={appState.meta.useKhmerNumerals}
-              studentMaster={appState.studentMaster}
-              onUpdateRecords={mutateIdCards}
-              onAddRecordToMonth={mutateAddIdCardToMonth}
-              onPrint={handlePrint}
-            />
-          )
-        )}
-
-        {/* ======================================================== */}
-        {/* VIEW 2: FINANCE VIEW (PDF 1)                             */}
-        {/* ======================================================== */}
-        {activeTab === 'finance' && (
-          isMobile ? (
-            <FinanceMobileView
-              financeData={currentFinance}
-              monthKey={currentMonthKey}
-              metadata={appState.meta}
-              useKhmerNumerals={appState.meta.useKhmerNumerals}
-              onUpdateFinance={mutateFinance}
-              onPrint={handlePrint}
-              onSwitchToDesktop={() => setViewMode('desktop')}
-              mobilePreviewA4={mobilePreviewA4}
-            />
-          ) : (
-            <FinanceTableView
-              financeData={currentFinance}
-              monthKey={currentMonthKey}
-              metadata={appState.meta}
-              useKhmerNumerals={appState.meta.useKhmerNumerals}
-              onUpdateFinance={mutateFinance}
-              onPrint={handlePrint}
-            />
-          )
-        )}
-
-        {/* ======================================================== */}
-        {/* VIEW 3: UPLOAD & OCR SCANNER                             */}
-        {/* ======================================================== */}
-        {activeTab === 'upload' && (
-          <UploadSection
-            queue={queue}
-            studentMaster={appState.studentMaster}
-            allLeaves={appState.leaves}
-            onAddToQueue={handleAddToQueue}
-            onRemoveFromQueue={handleRemoveFromQueue}
-            onClearQueue={handleClearQueue}
-            onProcessQueue={handleProcessQueue}
-            onUpdateQueueItem={handleUpdateQueueItem}
-            onRotateQueueItem={handleRotateQueueItem}
-            onRetakeQueueItem={handleRetakeQueueItem}
-            onApproveItem={handleApproveSingleItem}
-            onApproveAll={handleApproveAllQueue}
-            isProcessing={isProcessing}
             isMobile={isMobile}
+            mobilePreviewA4={mobilePreviewA4}
+            onUpdateAdminReport={mutateAdminReport}
+            onResetSynthesizedReport={mutateResetAdminReport}
           />
-        )}
+        ) : (
+          <>
+            {/* Desktop Tab Navigation (Hidden on Mobile since Mobile has bottom nav) */}
+            {!isMobile && (
+              <TabNavigation
+                activeTab={activeTab}
+                onSelectTab={setActiveTab}
+                leaveCount={currentLeaves.length}
+                queueCount={queue.filter(q => q.status === 'pending').length}
+                useKhmerNumerals={appState.meta.useKhmerNumerals}
+              />
+            )}
 
-        {/* ======================================================== */}
-        {/* VIEW 4: MONTHLY & YEARLY SUMMARY ANALYTICS               */}
-        {/* ======================================================== */}
-        {activeTab === 'summary' && (
-          isMobile ? (
-            <SummaryMobileView
-              currentMonthKey={currentMonthKey}
-              allLeaves={appState.leaves}
-              allFinance={appState.finance}
-              allIdCards={appState.idCards}
-              studentMaster={appState.studentMaster}
-              metadata={appState.meta}
-              useKhmerNumerals={appState.meta.useKhmerNumerals}
-              onSelectMonth={mutateMonth}
-              onSelectYear={mutateSelectYear}
-              mobilePreviewA4={mobilePreviewA4}
-            />
-          ) : (
-            <SummaryTableView
-              currentMonthKey={currentMonthKey}
-              allLeaves={appState.leaves}
-              allFinance={appState.finance}
-              allIdCards={appState.idCards}
-              studentMaster={appState.studentMaster}
-              metadata={appState.meta}
-              useKhmerNumerals={appState.meta.useKhmerNumerals}
-              onSelectMonth={mutateMonth}
-              onSelectYear={mutateSelectYear}
-            />
-          )
+            {/* ======================================================== */}
+            {/* VIEW 1: STUDENT LEAVE VIEW (PDF 2)                       */}
+            {/* ======================================================== */}
+            {activeTab === 'leave' && (
+              isMobile ? (
+                <LeaveMobileView
+                  records={currentLeaves}
+                  monthKey={currentMonthKey}
+                  metadata={appState.meta}
+                  useKhmerNumerals={appState.meta.useKhmerNumerals}
+                  studentMaster={appState.studentMaster}
+                  onUpdateRecords={mutateLeaves}
+                  onPrint={handlePrint}
+                  onSwitchToDesktop={() => setViewMode('desktop')}
+                  mobilePreviewA4={mobilePreviewA4}
+                />
+              ) : (
+                <LeaveTableView
+                  records={currentLeaves}
+                  monthKey={currentMonthKey}
+                  metadata={appState.meta}
+                  useKhmerNumerals={appState.meta.useKhmerNumerals}
+                  studentMaster={appState.studentMaster}
+                  onUpdateRecords={mutateLeaves}
+                  onPrint={handlePrint}
+                />
+              )
+            )}
+
+            {/* ======================================================== */}
+            {/* VIEW 1.5: STUDENT ID CARD PURCHASE VIEW                  */}
+            {/* ======================================================== */}
+            {activeTab === 'idcard' && (
+              isMobile ? (
+                <IdCardMobileView
+                  records={currentIdCards}
+                  monthKey={currentMonthKey}
+                  metadata={appState.meta}
+                  useKhmerNumerals={appState.meta.useKhmerNumerals}
+                  studentMaster={appState.studentMaster}
+                  onUpdateRecords={mutateIdCards}
+                  onAddRecordToMonth={mutateAddIdCardToMonth}
+                  mobilePreviewA4={mobilePreviewA4}
+                />
+              ) : (
+                <IdCardTableView
+                  records={currentIdCards}
+                  monthKey={currentMonthKey}
+                  metadata={appState.meta}
+                  useKhmerNumerals={appState.meta.useKhmerNumerals}
+                  studentMaster={appState.studentMaster}
+                  onUpdateRecords={mutateIdCards}
+                  onAddRecordToMonth={mutateAddIdCardToMonth}
+                  onPrint={handlePrint}
+                />
+              )
+            )}
+
+            {/* ======================================================== */}
+            {/* VIEW 2: FINANCE VIEW (PDF 1)                             */}
+            {/* ======================================================== */}
+            {activeTab === 'finance' && (
+              isMobile ? (
+                <FinanceMobileView
+                  financeData={currentFinance}
+                  monthKey={currentMonthKey}
+                  metadata={appState.meta}
+                  useKhmerNumerals={appState.meta.useKhmerNumerals}
+                  onUpdateFinance={mutateFinance}
+                  onPrint={handlePrint}
+                  onSwitchToDesktop={() => setViewMode('desktop')}
+                  mobilePreviewA4={mobilePreviewA4}
+                />
+              ) : (
+                <FinanceTableView
+                  financeData={currentFinance}
+                  monthKey={currentMonthKey}
+                  metadata={appState.meta}
+                  useKhmerNumerals={appState.meta.useKhmerNumerals}
+                  onUpdateFinance={mutateFinance}
+                  onPrint={handlePrint}
+                />
+              )
+            )}
+
+            {/* ======================================================== */}
+            {/* VIEW 3: UPLOAD & OCR SCANNER                             */}
+            {/* ======================================================== */}
+            {activeTab === 'upload' && (
+              <UploadSection
+                queue={queue}
+                studentMaster={appState.studentMaster}
+                allLeaves={appState.leaves}
+                onAddToQueue={handleAddToQueue}
+                onRemoveFromQueue={handleRemoveFromQueue}
+                onClearQueue={handleClearQueue}
+                onProcessQueue={handleProcessQueue}
+                onUpdateQueueItem={handleUpdateQueueItem}
+                onRotateQueueItem={handleRotateQueueItem}
+                onRetakeQueueItem={handleRetakeQueueItem}
+                onApproveItem={handleApproveSingleItem}
+                onApproveAll={handleApproveAllQueue}
+                isProcessing={isProcessing}
+                isMobile={isMobile}
+              />
+            )}
+
+            {/* ======================================================== */}
+            {/* VIEW 4: MONTHLY & YEARLY SUMMARY ANALYTICS               */}
+            {/* ======================================================== */}
+            {activeTab === 'summary' && (
+              isMobile ? (
+                <SummaryMobileView
+                  currentMonthKey={currentMonthKey}
+                  allLeaves={appState.leaves}
+                  allFinance={appState.finance}
+                  allIdCards={appState.idCards}
+                  studentMaster={appState.studentMaster}
+                  metadata={appState.meta}
+                  useKhmerNumerals={appState.meta.useKhmerNumerals}
+                  onSelectMonth={mutateMonth}
+                  onSelectYear={mutateSelectYear}
+                  mobilePreviewA4={mobilePreviewA4}
+                />
+              ) : (
+                <SummaryTableView
+                  currentMonthKey={currentMonthKey}
+                  allLeaves={appState.leaves}
+                  allFinance={appState.finance}
+                  allIdCards={appState.idCards}
+                  studentMaster={appState.studentMaster}
+                  metadata={appState.meta}
+                  useKhmerNumerals={appState.meta.useKhmerNumerals}
+                  onSelectMonth={mutateMonth}
+                  onSelectYear={mutateSelectYear}
+                />
+              )
+            )}
+          </>
         )}
       </main>
 
@@ -1365,7 +1415,10 @@ export default function App() {
       {isMobile && (
         <MobileBottomNav
           activeTab={activeTab}
-          onSelectTab={setActiveTab}
+          onSelectTab={(tab) => {
+            setAppMode('main');
+            setActiveTab(tab);
+          }}
           leaveCount={currentLeaves.length}
           queueCount={queue.filter(q => q.status === 'pending').length}
           useKhmerNumerals={appState.meta.useKhmerNumerals}

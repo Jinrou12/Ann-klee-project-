@@ -12,7 +12,13 @@ export function useDeviceMode(breakpoint = 860) {
   );
   const [overrideMode, setOverrideMode] = useState(() => {
     try {
-      return localStorage.getItem(STORAGE_KEY_FORCE_MODE) || 'auto';
+      const saved = localStorage.getItem(STORAGE_KEY_FORCE_MODE) || 'auto';
+      // Never trap a desktop screen (>= breakpoint) in forced mobile mode
+      if (saved === 'mobile' && typeof window !== 'undefined' && window.innerWidth >= breakpoint) {
+        localStorage.setItem(STORAGE_KEY_FORCE_MODE, 'auto');
+        return 'auto';
+      }
+      return saved;
     } catch {
       return 'auto';
     }
@@ -29,11 +35,11 @@ export function useDeviceMode(breakpoint = 860) {
 
   const isAutoMobile = windowWidth < breakpoint;
   
-  const isMobile = overrideMode === 'mobile' 
-    ? true 
-    : overrideMode === 'desktop' 
-      ? false 
-      : isAutoMobile;
+  const isMobile = !isAutoMobile
+    ? false
+    : overrideMode === 'desktop'
+      ? false
+      : true;
 
   const isDesktop = !isMobile;
 

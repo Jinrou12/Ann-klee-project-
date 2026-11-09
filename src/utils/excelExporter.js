@@ -1031,3 +1031,123 @@ export async function exportFinanceDualExcel(
   const summarySourceData = options.summaryFinanceData || financeData;
   await exportFinanceSummaryReportToExcel(summarySourceData, monthLabel, metadata, sharedOptions);
 }
+
+/**
+ * Export Administrative Narrative Report (Monthly / Semester 1 / Semester 2 / Annual) to Styled Excel (.xlsx)
+ */
+export async function exportAdminReportToExcel(displayModel, metadata = {}) {
+  const logoBytes = await loadOfficialLogoBytes();
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const rows = [];
+  const merges = [];
+  const numCols = 5;
+
+  const pushFullRow = (text, styleIdx = 0, height = 24) => {
+    const rNum = rows.length + 1;
+    rows.push({
+      height,
+      cells: [{ v: text, s: styleIdx }]
+    });
+    merges.push(`${cellRef(rNum, 0)}:${cellRef(rNum, numCols - 1)}`);
+  };
+
+  // 1. Official Ministry & Kingdom Header
+  appendOfficialHeader(rows, merges, numCols, metadata, true, hasLogo);
+
+  // 2. Salutation & Recipient
+  pushFullRow('សូមក្រាបថ្វាយបង្គំ', 1, 24);
+  pushFullRow(displayModel.recipientTitle, 2, 26);
+  pushFullRow('ជាទីគោរពសក្ការៈដ៏ខ្ពង់ខ្ពស់!', 13, 22);
+  rows.push({ height: 10, cells: [] });
+
+  // 3. Subject & Intro
+  pushFullRow(`កម្មវត្ថុ៖ ${displayModel.subjectText}`, 12, 36);
+  pushFullRow(displayModel.introParagraph, 0, 42);
+  rows.push({ height: 10, cells: [] });
+
+  // I. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
+  pushFullRow('I.តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា', 12, 26);
+  pushFullRow(displayModel.section1Intro, 0, 38);
+  const fmtNum = (n) => toKhmerDigits(n);
+  (displayModel.managementRoles || []).forEach((m, idx) => {
+    pushFullRow(`${fmtNum(idx + 1)}. ${m.name}     ${m.role}`, 0, 24);
+  });
+  rows.push({ height: 8, cells: [] });
+
+  // II. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
+  pushFullRow('II.ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស', 12, 26);
+  pushFullRow('ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ', 12, 24);
+  (displayModel.staffStats || []).forEach(line => {
+    pushFullRow(`❖ ${line}`, 0, 24);
+  });
+  pushFullRow('ខ-ចំនួនថ្នាក់ សមណសិស្ស', 12, 24);
+  (displayModel.studentStatLines || []).forEach(line => {
+    pushFullRow(`❖ ${line}`, 0, 24);
+  });
+  rows.push({ height: 8, cells: [] });
+
+  // III. វឌ្ឍនភាពការងារ
+  pushFullRow(displayModel.section3Heading, 12, 26);
+  pushFullRow(displayModel.section3SubAHeading, 12, 24);
+  (displayModel.activities || []).forEach(line => {
+    const ht = line.length > 95 ? 42 : 24;
+    pushFullRow(`- ${line}`, 0, ht);
+  });
+  pushFullRow('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍', 12, 24);
+  (displayModel.adminDocLines || []).forEach(line => {
+    pushFullRow(`- ${line}`, 0, 24);
+  });
+  pushFullRow(displayModel.section3SubCHeading, 12, 24);
+  pushFullRow(displayModel.section3SubDHeading, 12, 24);
+  (displayModel.appendixItems || []).forEach((line, idx) => {
+    pushFullRow(`${fmtNum(idx + 1)}. ${line}`, 0, 24);
+  });
+  rows.push({ height: 8, cells: [] });
+
+  // IV. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
+  pushFullRow('IV.បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ', 12, 26);
+  pushFullRow('១-បញ្ហាប្រឈម', 12, 24);
+  (displayModel.challenges || []).forEach(line => {
+    const ht = line.length > 95 ? 38 : 24;
+    pushFullRow(`- ${line}`, 0, ht);
+  });
+  pushFullRow('២-ដំណោះស្រាយ', 12, 24);
+  (displayModel.solutions || []).forEach(line => {
+    const ht = line.length > 95 ? 38 : 24;
+    pushFullRow(`- ${line}`, 0, ht);
+  });
+  pushFullRow('៣-សំណូមពរ', 12, 24);
+  (displayModel.requests || []).forEach(line => {
+    pushFullRow(`- ${line}`, 0, 24);
+  });
+  rows.push({ height: 8, cells: [] });
+
+  // V. ទិសដៅបន្ត
+  pushFullRow('V.ទិសដៅបន្ត', 12, 26);
+  (displayModel.directions || []).forEach(line => {
+    pushFullRow(`- ${line}`, 0, 24);
+  });
+  rows.push({ height: 8, cells: [] });
+
+  // VI. សន្និដ្ឋាន
+  pushFullRow('VI.សន្និដ្ឋាន', 12, 26);
+  pushFullRow(displayModel.conclusionText, 0, 48);
+  pushFullRow(displayModel.closingLine1, 0, 24);
+  pushFullRow(displayModel.closingLine2, 0, 24);
+  rows.push({ height: 12, cells: [] });
+
+  // Right-side Lunar/Solar Dates & Signer
+  pushFullRow(displayModel.lunarDateLine, 13, 22);
+  pushFullRow(displayModel.solarDateLine, 13, 22);
+  pushFullRow(displayModel.signerTitle || 'ព្រះនាយក', 1, 26);
+
+  downloadStyledXlsx({
+    sheetName: 'របាយការណ៍រដ្ឋបាល',
+    colWidths: [14, 34, 22, 22, 22],
+    rows,
+    merges,
+    fileName: `របាយការណ៍_${displayModel.shortFileNameTag}.xlsx`,
+    logoBytes
+  });
+}
+

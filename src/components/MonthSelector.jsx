@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Smartphone, Monitor } from 'lucide-react';
+import { Calendar, Plus, Smartphone, Monitor, FileText, LayoutGrid } from 'lucide-react';
 import { KHMER_SOLAR_MONTHS } from '../utils/khmerCalendar';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 import { SEMESTER_1_MONTH_NUMS, SEMESTER_2_MONTH_NUMS, isAcademicMonthKey } from '../utils/summaryAnalytics';
@@ -12,7 +12,9 @@ export default function MonthSelector({
   useKhmerNumerals,
   isMobile = false,
   mobilePreviewA4 = false,
-  onToggleMobilePreviewA4
+  onToggleMobilePreviewA4,
+  appMode = 'main',
+  onToggleAppMode
 }) {
   const activeYearFromMonth = (currentMonth || '2026-07').split('-')[0] || '2026';
   const [showAddMonth, setShowAddMonth] = useState(false);
@@ -153,84 +155,140 @@ export default function MonthSelector({
           </select>
         </div>
 
-        {/* Mobile-Only Sliding Toggle Switch (📱 Mobile Card ⇄ 🖥️ PC A4 Preview) */}
-        {isMobile && onToggleMobilePreviewA4 && (
-          <button
-            type="button"
-            role="switch"
-            aria-checked={mobilePreviewA4}
-            onClick={onToggleMobilePreviewA4}
-            title={mobilePreviewA4 ? 'ប្ដូរមកទម្រង់កាតទូរសព្ទ (Mobile)' : 'ប្ដូរទៅមើលទម្រង់ក្រដាសកុំព្យូទ័រ (PC A4)'}
-            style={{
-              position: 'relative',
-              width: 64,
-              height: 34,
-              borderRadius: 999,
-              border: mobilePreviewA4 ? '1.5px solid #0284c7' : '1.5px solid #cbd5e1',
-              background: mobilePreviewA4
-                ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)'
-                : '#f1f5f9',
-              padding: 3,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-              boxShadow: mobilePreviewA4
-                ? '0 2px 6px rgba(2, 132, 199, 0.28)'
-                : 'inset 0 1px 3px rgba(15, 23, 42, 0.08)',
-              flexShrink: 0
-            }}
-          >
-            {/* Background Ghost Icons on Track */}
-            <span style={{
-              width: 26,
-              height: 26,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: mobilePreviewA4 ? 'rgba(255,255,255,0.65)' : 'transparent',
-              transition: 'color 0.2s'
-            }}>
-              <Smartphone size={14} strokeWidth={2.2} />
-            </span>
-            <span style={{
-              width: 26,
-              height: 26,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: mobilePreviewA4 ? 'transparent' : '#64748b',
-              transition: 'color 0.2s'
-            }}>
-              <Monitor size={14} strokeWidth={2.2} />
-            </span>
-
-            {/* Sliding Circular Thumb showing active 📱 or 🖥️ icon */}
-            <span style={{
-              position: 'absolute',
-              top: 3,
-              left: 3,
-              width: 26,
-              height: 26,
-              borderRadius: '50%',
-              background: '#ffffff',
-              color: mobilePreviewA4 ? '#0284c7' : '#b45309',
-              boxShadow: '0 2px 5px rgba(15, 23, 42, 0.22)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transform: mobilePreviewA4 ? 'translateX(30px)' : 'translateX(0px)',
-              transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s'
-            }}>
-              {mobilePreviewA4 ? (
-                <Monitor size={15} strokeWidth={2.5} />
+        {/* Right Side Controls:
+            - On PC: ONLY the "របាយការណ៍" button
+            - On Mobile: "របាយការណ៍" button + Mobile/PC Toggle Switch [📱 | 🖥️] */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: isMobile ? 6 : 10,
+          flexShrink: 0
+        }}>
+          {/* Mode Switch Button: Main System ⇄ Administrative Reports (របាយការណ៍ ខែ/ឆមាស/ឆ្នាំ) */}
+          {onToggleAppMode && (
+            <button
+              type="button"
+              onClick={onToggleAppMode}
+              title={
+                appMode === 'admin_report'
+                  ? 'ត្រឡប់ទៅផ្ទាំងច្បាប់សមណសិស្ស និងចំណូល-ចំណាយ'
+                  : 'ចូលផ្ទាំងរបាយការណ៍រដ្ឋបាលប្រចាំខែ ឆមាស និងឆ្នាំ'
+              }
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: isMobile ? 4 : 6,
+                height: 34,
+                padding: isMobile ? '0 10px' : '0 14px',
+                borderRadius: 999,
+                border: appMode === 'admin_report' ? '1.5px solid #b45309' : '1.5px solid #0284c7',
+                background: appMode === 'admin_report'
+                  ? 'linear-gradient(135deg, #b45309 0%, #92400e 100%)'
+                  : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                color: '#ffffff',
+                fontSize: isMobile ? 12 : 13,
+                fontWeight: 800,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                boxShadow: appMode === 'admin_report'
+                  ? '0 2px 6px rgba(180, 83, 9, 0.28)'
+                  : '0 2px 6px rgba(2, 132, 199, 0.28)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              {appMode === 'admin_report' ? (
+                <>
+                  <LayoutGrid size={isMobile ? 14 : 15} strokeWidth={2.5} />
+                  <span>ត្រឡប់ដើម</span>
+                </>
               ) : (
-                <Smartphone size={15} strokeWidth={2.5} />
+                <>
+                  <FileText size={isMobile ? 14 : 15} strokeWidth={2.5} />
+                  <span>របាយការណ៍</span>
+                </>
               )}
-            </span>
-          </button>
-        )}
+            </button>
+          )}
+
+          {/* Mobile-Only Sliding Toggle Switch (📱 Mobile Card ⇄ 🖥️ PC A4 Preview) */}
+          {isMobile && onToggleMobilePreviewA4 && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={mobilePreviewA4}
+              onClick={onToggleMobilePreviewA4}
+              title={mobilePreviewA4 ? 'ប្ដូរមកទម្រង់កាតទូរសព្ទ (Mobile)' : 'ប្ដូរទៅមើលទម្រង់ក្រដាសកុំព្យូទ័រ (PC A4)'}
+              style={{
+                position: 'relative',
+                width: 64,
+                height: 34,
+                borderRadius: 999,
+                border: mobilePreviewA4 ? '1.5px solid #0284c7' : '1.5px solid #cbd5e1',
+                background: mobilePreviewA4
+                  ? 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)'
+                  : '#f1f5f9',
+                padding: 3,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: mobilePreviewA4
+                  ? '0 2px 6px rgba(2, 132, 199, 0.28)'
+                  : 'inset 0 1px 3px rgba(15, 23, 42, 0.08)',
+                flexShrink: 0
+              }}
+            >
+              {/* Background Ghost Icons on Track */}
+              <span style={{
+                width: 26,
+                height: 26,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: mobilePreviewA4 ? 'rgba(255,255,255,0.65)' : 'transparent',
+                transition: 'color 0.2s'
+              }}>
+                <Smartphone size={14} strokeWidth={2.2} />
+              </span>
+              <span style={{
+                width: 26,
+                height: 26,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: mobilePreviewA4 ? 'transparent' : '#64748b',
+                transition: 'color 0.2s'
+              }}>
+                <Monitor size={14} strokeWidth={2.2} />
+              </span>
+
+              {/* Sliding Circular Thumb showing active 📱 or 🖥️ icon */}
+              <span style={{
+                position: 'absolute',
+                top: 3,
+                left: 3,
+                width: 26,
+                height: 26,
+                borderRadius: '50%',
+                background: '#ffffff',
+                color: mobilePreviewA4 ? '#0284c7' : '#b45309',
+                boxShadow: '0 2px 5px rgba(15, 23, 42, 0.22)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: mobilePreviewA4 ? 'translateX(30px)' : 'translateX(0px)',
+                transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s'
+              }}>
+                {mobilePreviewA4 ? (
+                  <Monitor size={15} strokeWidth={2.5} />
+                ) : (
+                  <Smartphone size={15} strokeWidth={2.5} />
+                )}
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* New Month Popover Form (Grouped by Semester 1 & Semester 2, excluding March & April) */}

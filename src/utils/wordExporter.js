@@ -719,3 +719,173 @@ export async function exportFinanceDualWord(
   const summarySourceData = options.summaryFinanceData || financeData;
   await exportFinanceSummaryReportToWord(summarySourceData, monthLabel, metadata, sharedOptions);
 }
+
+/**
+ * Create a multi-run Word paragraph (<w:p>) for mixed Moul + Siemreap lines (e.g. "កម្មវត្ថុ៖ ..." or Management Roles)
+ */
+function wMultiRunParagraph(runs = [], {
+  align = 'both',
+  spaceBefore = 0,
+  spaceAfter = 40,
+  indentLeft = 0
+} = {}) {
+  const indXml = indentLeft > 0 ? `<w:ind w:left="${indentLeft}"/>` : '';
+  const runsXml = runs.map(r => {
+    const font = r.font || FONT_SIEMREAP;
+    const halfPts = Math.round((r.sizePt || 12) * 2);
+    const bXml = r.bold ? '<w:b/><w:bCs/>' : '';
+    const uXml = r.underline ? '<w:u w:val="single"/>' : '';
+    return `<w:r>
+      <w:rPr>
+        <w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}" w:eastAsia="${font}"/>
+        ${bXml}
+        <w:sz w:val="${halfPts}"/>
+        <w:szCs w:val="${halfPts}"/>
+        ${uXml}
+      </w:rPr>
+      <w:t xml:space="preserve">${escapeXml(r.text || '')}</w:t>
+    </w:r>`;
+  }).join('');
+
+  return `<w:p>
+    <w:pPr>
+      <w:spacing w:before="${spaceBefore}" w:after="${spaceAfter}" w:line="276" w:lineRule="auto"/>
+      ${indXml}
+      <w:jc w:val="${align}"/>
+    </w:pPr>
+    ${runsXml}
+  </w:p>`;
+}
+
+/**
+ * Export Administrative Narrative Report (Monthly / Semester 1 / Semester 2 / Annual) to Official .docx
+ */
+export async function exportAdminReportToWord(displayModel, _metadata = {}) {
+  const logoBytes = await loadOfficialLogoBytes();
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const NAVY = '002060';
+
+  const topKingdomParas = [
+    wParagraph('ព្រះរាជាណាចក្រកម្ពុជា', { font: FONT_MOUL, sizePt: 14, color: NAVY, align: 'center', spaceAfter: 20 }),
+    wParagraph('ជាតិ   សាសនា   ព្រះមហាក្សត្រ', { font: FONT_MOUL, sizePt: 12, color: NAVY, align: 'center', spaceAfter: 20 }),
+    wParagraph('~ ~ ~ ❁ ~ ~ ~', { font: FONT_SIEMREAP, sizePt: 10.5, color: NAVY, align: 'center', spaceAfter: 30 })
+  ].join('');
+
+  const leftSchoolParas = [
+    ...(hasLogo ? [wLogoParagraph(520000)] : []),
+    wParagraph('សាលាអនុគណក្រុងកំពង់ចាម', { font: FONT_MOUL, sizePt: 12, color: NAVY, align: 'center', spaceAfter: 20 }),
+    wParagraph('ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង', { font: FONT_MOUL, sizePt: 12, color: NAVY, align: 'center', spaceAfter: 20 }),
+    wParagraph('ក្រុងកំពង់ចាម', { font: FONT_MOUL, sizePt: 12, color: NAVY, align: 'center', spaceAfter: 20 }),
+    wParagraph(`លេខ ${displayModel.docNumber || '......................'}ព.ប.ហ.ណ`, { font: FONT_SIEMREAP, sizePt: 12, color: NAVY, align: 'center', spaceAfter: 20 })
+  ].join('');
+
+  const leftSchoolTableXml = wTable(
+    [5200, 5000],
+    [`<w:tr>${wCell(leftSchoolParas, { widthDxa: 5200, vAlign: 'top' })}${wCell(wParagraph('', { sizePt: 11 }), { widthDxa: 5000, vAlign: 'top' })}</w:tr>`],
+    { bordered: false }
+  );
+
+  // Signature Table at bottom right
+  const sigLeftXml = wParagraph('', { sizePt: 11, spaceAfter: 20 });
+  const sigRightXml = [
+    wParagraph(displayModel.lunarDateLine || '', { font: FONT_SIEMREAP, sizePt: 12, align: 'right', spaceAfter: 20 }),
+    wParagraph(displayModel.solarDateLine || '', { font: FONT_SIEMREAP, sizePt: 12, align: 'right', spaceAfter: 60 }),
+    wParagraph(displayModel.signerTitle || 'ព្រះនាយក', { font: FONT_MOUL, sizePt: 12, align: 'center', spaceAfter: 480 })
+  ].join('');
+
+  const signatureTableXml = wTable(
+    [4000, 6200],
+    [`<w:tr>${wCell(sigLeftXml, { widthDxa: 4000, vAlign: 'top' })}${wCell(sigRightXml, { widthDxa: 6200, vAlign: 'top' })}</w:tr>`],
+    { bordered: false }
+  );
+
+  const bodyParts = [
+    topKingdomParas,
+    leftSchoolTableXml,
+    wParagraph('សូមក្រាបថ្វាយបង្គំ', { font: FONT_MOUL, sizePt: 14, color: NAVY, align: 'center', spaceBefore: 80, spaceAfter: 30 }),
+    wParagraph(displayModel.recipientTitle, { font: FONT_MOUL, sizePt: 13, color: NAVY, align: 'center', spaceAfter: 30 }),
+    wParagraph('ជាទីគោរពសក្ការៈដ៏ខ្ពង់ខ្ពស់!', { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'right', spaceAfter: 100 }),
+
+    // Subject (កម្មវត្ថុ)
+    wMultiRunParagraph([
+      { text: 'កម្មវត្ថុ៖ ', font: FONT_MOUL, sizePt: 12 },
+      { text: displayModel.subjectText, font: FONT_SIEMREAP, sizePt: 12 }
+    ], { align: 'both', spaceAfter: 80 }),
+
+    // Intro Paragraph
+    wParagraph(`         ${displayModel.introParagraph}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', spaceAfter: 100 }),
+
+    // I. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
+    wParagraph('I.តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា', { font: FONT_MOUL, sizePt: 12, align: 'left', spaceBefore: 80, spaceAfter: 40 }),
+    wParagraph(`         ${displayModel.section1Intro}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', spaceAfter: 40 }),
+    ...(displayModel.managementRoles || []).map((m) =>
+      wMultiRunParagraph([
+        { text: '- ', font: FONT_SIEMREAP, sizePt: 12 },
+        { text: `${m.name}     `, font: FONT_MOUL, sizePt: 12 },
+        { text: m.role, font: FONT_SIEMREAP, sizePt: 12 }
+      ], { align: 'left', indentLeft: 360, spaceAfter: 30 })
+    ),
+
+    // II. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
+    wParagraph('II.ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស', { font: FONT_MOUL, sizePt: 12, align: 'left', spaceBefore: 100, spaceAfter: 40 }),
+    wParagraph('ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ', { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceAfter: 30 }),
+    ...(displayModel.staffStats || []).map(line =>
+      wParagraph(`- ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'left', indentLeft: 360, spaceAfter: 30 })
+    ),
+    wParagraph('ខ-ចំនួនថ្នាក់ សមណសិស្ស', { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceBefore: 40, spaceAfter: 30 }),
+    ...(displayModel.studentStatLines || []).map(line =>
+      wParagraph(`- ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'left', indentLeft: 360, spaceAfter: 30 })
+    ),
+
+    // III. វឌ្ឍនភាពការងារ
+    wParagraph(displayModel.section3Heading, { font: FONT_MOUL, sizePt: 12, align: 'left', spaceBefore: 100, spaceAfter: 40 }),
+    wParagraph(displayModel.section3SubAHeading, { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceAfter: 30 }),
+    ...(displayModel.activities || []).map(line =>
+      wParagraph(`❖ ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', indentLeft: 360, spaceAfter: 30 })
+    ),
+    wParagraph('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍', { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceBefore: 40, spaceAfter: 30 }),
+    ...(displayModel.adminDocLines || []).map(line =>
+      wParagraph(`- ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'left', indentLeft: 360, spaceAfter: 30 })
+    ),
+    wParagraph(displayModel.section3SubCHeading, { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceBefore: 40, spaceAfter: 30 }),
+    wParagraph(displayModel.section3SubDHeading, { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceAfter: 30 }),
+    ...(displayModel.appendixItems || []).map((line) =>
+      wParagraph(`- ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'left', indentLeft: 360, spaceAfter: 25 })
+    ),
+
+    // IV. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
+    wParagraph('IV.បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ', { font: FONT_MOUL, sizePt: 12, align: 'left', spaceBefore: 100, spaceAfter: 40 }),
+    wParagraph('១-បញ្ហាប្រឈម', { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceAfter: 30 }),
+    ...(displayModel.challenges || []).map(line =>
+      wParagraph(`- ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', indentLeft: 360, spaceAfter: 30 })
+    ),
+    wParagraph('២-ដំណោះស្រាយ', { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceBefore: 40, spaceAfter: 30 }),
+    ...(displayModel.solutions || []).map(line =>
+      wParagraph(`- ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', indentLeft: 360, spaceAfter: 30 })
+    ),
+    wParagraph('៣-សំណូមពរ', { font: FONT_SIEMREAP, sizePt: 12, bold: true, align: 'left', indentLeft: 240, spaceBefore: 40, spaceAfter: 30 }),
+    ...(displayModel.requests || []).map(line =>
+      wParagraph(`- ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', indentLeft: 360, spaceAfter: 30 })
+    ),
+
+    // V. ទិសដៅបន្ត
+    wParagraph('V.ទិសដៅបន្ត', { font: FONT_MOUL, sizePt: 12, align: 'left', spaceBefore: 100, spaceAfter: 40 }),
+    ...(displayModel.directions || []).map(line =>
+      wParagraph(`- ${line}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', indentLeft: 360, spaceAfter: 30 })
+    ),
+
+    // VI. សន្និដ្ឋាន
+    wParagraph('VI.សន្និដ្ឋាន', { font: FONT_MOUL, sizePt: 12, align: 'left', spaceBefore: 100, spaceAfter: 40 }),
+    wParagraph(`         ${displayModel.conclusionText}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', spaceAfter: 40 }),
+    wParagraph(`         ${displayModel.closingLine1}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', spaceAfter: 30 }),
+    wParagraph(`         ${displayModel.closingLine2}`, { font: FONT_SIEMREAP, sizePt: 12, align: 'both', spaceAfter: 100 }),
+    signatureTableXml
+  ];
+
+  downloadDocxDocument(
+    bodyParts.join(''),
+    `របាយការណ៍_${displayModel.shortFileNameTag}.docx`,
+    logoBytes
+  );
+}
+
