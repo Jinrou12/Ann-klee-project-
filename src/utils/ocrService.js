@@ -53,8 +53,10 @@ export {
   cropLeaveSlipNameLineZone
 };
 
-export const MOBILE_CAPTURE_MIN_BRIGHTNESS = 100;
-export const MOBILE_CAPTURE_MIN_EDGE_FRACTION = 0.03;
+// Indoor / evening phone photos of leave slips commonly have mean luminance 60-95,
+// so the gate only rejects genuinely black or featureless frames.
+export const MOBILE_CAPTURE_MIN_BRIGHTNESS = 55;
+export const MOBILE_CAPTURE_MIN_EDGE_FRACTION = 0.012;
 
 /**
  * Lightweight (~14 KB) AI Document Classifier & Upright Orientation Router.
@@ -67,27 +69,35 @@ export async function classifyAndOrientDocument(dataUrl, apiKey = '') {
     return { docType: 'leave', degrees: 0, confidence: 0, error: null };
   }
 
-  const thumbBase64 = makeRotatedThumbBase64(img, 0, 460, 0.62);
-  if (!thumbBase64) {
+  const angles = [0, 90, 180, 270];
+  const labels = ['A', 'B', 'C', 'D'];
+  let thumbs;
+  try {
+    thumbs = angles.map(a => makeRotatedThumbBase64(img, a, 360, 0.60));
+  } catch {
+    thumbs = null;
+  }
+  if (!thumbs || thumbs.some(t => !t)) {
     return { docType: 'leave', degrees: 0, confidence: 0, error: null };
   }
 
   const prompt = [
-    'Inspect this Cambodian school document thumbnail and classify BOTH its document type and upright orientation:',
+    'The next 4 images (A, B, C, D) are the SAME Cambodian school document rotated by 4 angles (A=0°, B=90°, C=180°, D=270°).',
     '1. "docType":',
     '   - "leave": Buddhist monastic school Student Leave Slip (លិខិតសុំច្បាប់ / ពាក្យសុំច្បាប់ / ព្រះរាជាណាចក្រកម្ពុជា / ជាតិ សាសនា ព្រះមហាក្សត្រ / ខ្ញុំបាទ/នាងខ្ញុំឈ្មោះ / មូលហេតុ).',
     '   - "finance": Financial receipt, cash bill, print-shop invoice, purchase slip, or income/expense voucher (វិក្កយបត្រ / INVOICE / ប៉ុង / បង្កាន់ដៃ / តារាង ឈ្មោះទំនិញ ចំនួន តម្លៃរាយ តម្លៃសរុប).',
-    '2. "rotateClockwiseDegrees":',
-    '   - 0 if text lines already run horizontally upright (normal reading position).',
-    '   - 90, 180, or 270 clockwise degrees needed to make the header stand at the TOP and text read horizontally left-to-right.',
-    'Return ONLY JSON: {"docType":"leave"|"finance","rotateClockwiseDegrees":0,"confidence":0.99}'
+    '2. "uprightImage": Pick the ONE image ("A", "B", "C", or "D") where the printed Khmer text lines run horizontally upright (header at the TOP, readable normally left-to-right).',
+    'Return ONLY JSON: {"docType":"leave"|"finance","uprightImage":"A"|"B"|"C"|"D","confidence":0.99}'
   ].join('\n');
 
+  const parts = [{ text: prompt }];
+  labels.forEach((label, i) => {
+    parts.push({ text: `Image ${label} (${angles[i]}°):` });
+    parts.push({ inlineData: { mimeType: 'image/jpeg', data: thumbs[i] } });
+  });
+
   const parsed = await callGeminiJsonWithResilience({
-    parts: [
-      { text: prompt },
-      { inlineData: { mimeType: 'image/jpeg', data: thumbBase64 } }
-    ],
+    parts,
     apiKey,
     thinkingBudget: 0,
     timeoutMs: 18000,
@@ -95,11 +105,16 @@ export async function classifyAndOrientDocument(dataUrl, apiKey = '') {
     models: GEMINI_ROUTER_MODELS
   });
 
-  const rawType = String(parsed?.docType || '').trim().toLowerCase();
+  const parsedObj = Array.isArray(parsed) ? (parsed[0] || {}) : (parsed || {});
+  const rawType = String(parsedObj?.docType || parsedObj?.detectedType || '').trim().toLowerCase();
   const docType = rawType === 'finance' ? 'finance' : 'leave';
-  const rawDeg = Number(parsed?.rotateClockwiseDegrees) || 0;
-  const degrees = [0, 90, 180, 270].includes(rawDeg) ? rawDeg : 0;
-  const confidence = Number(parsed?.confidence) || 0.9;
+
+  const pickIdx = labels.indexOf(String(parsedObj?.uprightImage || '').trim().toUpperCase());
+  const rawDeg = Number(parsedObj?.rotateClockwiseDegrees) || 0;
+  const degrees = pickIdx >= 0
+    ? angles[pickIdx]
+    : ([0, 90, 180, 270].includes(rawDeg) ? rawDeg : 0);
+  const confidence = Number(parsedObj?.confidence) || 0.95;
 
   return { docType, degrees, confidence, error: null };
 }
@@ -142,8 +157,9 @@ export async function detectUprightRotationWithAI(dataUrl, apiKey = '') {
       maxTimeoutAttempts: 1,
       models: GEMINI_ROUTER_MODELS
     });
-    const idx = labels.indexOf(String(parsed?.uprightImage || '').trim().toUpperCase());
-    const confidence = Number(parsed?.confidence);
+    const parsedObj = Array.isArray(parsed) ? (parsed[0] || {}) : (parsed || {});
+    const idx = labels.indexOf(String(parsedObj?.uprightImage || '').trim().toUpperCase());
+    const confidence = Number(parsedObj?.confidence);
     if (idx >= 0 && (Number.isNaN(confidence) || confidence >= 0.5)) {
       return { degrees: angles[idx], confidence: Number.isNaN(confidence) ? 0.85 : confidence };
     }
@@ -540,6 +556,14 @@ export async function processUploadedImage(
     };
   }
 
+  // Only abort early when the device is truly offline. A hiccup in the lightweight thumbnail router
+  // (timeout / single 429 / transient drop) must never block the main OCR engine from running.
+  const deviceOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (routerNetworkError && !deviceOffline) {
+    console.warn('[Router] Thumbnail router failed, continuing with main OCR engine:', routerNetworkError);
+    routerNetworkError = '';
+  }
+
   if (routerNetworkError) {
     const fallbackType = (await classifyAndOrientOfflineHeuristic(rawDataUrl, docTypeHint, file?.name)).detectedDocType;
     const blank = fallbackType === 'finance'
@@ -607,30 +631,16 @@ export async function processUploadedImage(
     processingMode = leaveOut.processingMode;
     extractionResult = leaveOut.extractionResult;
 
-    // Post-OCR orientation guard for Leave Slips
-    const leaveRotate = Number(extractionResult?.rotateClockwiseDegrees) || 0;
+    // Post-OCR orientation guard for Leave Slips (both Mobile and PC)
+    let leaveRotate = Number(extractionResult?.rotateClockwiseDegrees) || 0;
     if (!skipOrientRetry && processingMode === 'gemini_cloud' && [90, 180, 270].includes(leaveRotate)) {
-      if (isMobileCapture && docTypeHint === 'leave') {
-        const unrecognizedMsg = 'ប្រព័ន្ធមិនស្គាល់ទម្រង់រូបនេះទេ (រូបបញ្ច្រាស ឬខុសពី ២ ទម្រង់កំណត់)។ សូមចុចប៊ូតុងបង្វិល ↻ លើរូប ឬថតម្ដងទៀតតាមទម្រង់ទី ១ ឬទី ២។';
-        return {
-          id: `scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          fileName: file.name,
-          fileSize: file.size,
-          imageHash,
-          previewUrl: rawDataUrl,
-          processingMode: 'unrecognized_format',
-          unrecognizedFormat: true,
-          unrecognizedReason: unrecognizedMsg,
-          timestamp: new Date().toISOString(),
-          result: {
-            ...extractionResult,
-            detectedType: 'leave',
-            unrecognizedFormat: true,
-            unrecognizedReason: unrecognizedMsg
-          }
-        };
+      if (leaveRotate === 90) {
+        const imgCheck = await loadImageElement(rawDataUrl);
+        const mCheck = imgCheck ? computeDocumentLayoutMetrics(imgCheck) : null;
+        if (mCheck && isSidewaysLayout(mCheck)) {
+          leaveRotate = 270;
+        }
       }
-
       const fixed = await rotateImageDataUrl(rawDataUrl, leaveRotate);
       if (fixed?.dataUrl && fixed.rotatedDegrees) {
         return processUploadedImage(file, {

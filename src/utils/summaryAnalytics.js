@@ -9,7 +9,9 @@ import {
   combineCurrencyTotals,
   formatCurrencyTotals,
   formatExpenseTotals,
-  isFinanceDeficit
+  isFinanceDeficit,
+  normalizeRecordDateStr,
+  sortRecordsByDateAsc
 } from './khmerNumerals';
 import { KHMER_SOLAR_MONTHS } from './khmerCalendar';
 import { matchStudentName } from './studentMaster';
@@ -328,12 +330,19 @@ export function computePeriodSummary({
         id: rec.id || `${mKey}-${recIdx}`,
         name: rec.name || entry.name,
         grade: rec.grade || entry.grade,
+        date: normalizeRecordDateStr(rec.date),
         monthKey: mKey,
         studentId: entry.id
       };
       entry.records.push(enrichedRec);
       allLeaveRecords.push(enrichedRec);
     });
+  });
+
+  // Sort allLeaveRecords and each student's records chronologically by date (earliest date at top ល.រ ១, ២, ៣...)
+  const sortedAllLeaveRecords = sortRecordsByDateAsc(allLeaveRecords);
+  studentMap.forEach(entry => {
+    entry.records = sortRecordsByDateAsc(entry.records);
   });
 
   // 4. Build sorted lists
@@ -450,7 +459,8 @@ export function computePeriodSummary({
         id: rec.id || `idc-${mKey}-${recIdx}`,
         monthKey: mKey,
         price: priceVal,
-        qty: qtyVal
+        qty: qtyVal,
+        date: normalizeRecordDateStr(rec.date)
       };
       allIdCardRecords.push(enriched);
       totalIdCardAmount += priceVal;
@@ -489,6 +499,8 @@ export function computePeriodSummary({
     }
   });
 
+  const sortedAllIdCardRecords = sortRecordsByDateAsc(allIdCardRecords);
+
   return {
     periodMode,
     targetMonthKeys,
@@ -497,16 +509,16 @@ export function computePeriodSummary({
     withoutLeaveCount: studentsWithoutLeave.length,
     totalLeaveRequests,
     overallDurationTotals,
-    allLeaveRecords,
+    allLeaveRecords: sortedAllLeaveRecords,
     studentsWithLeave,
     studentsWithoutLeave,
     allStudentsSorted,
     idCardSummary: {
-      totalRecords: allIdCardRecords.length,
+      totalRecords: sortedAllIdCardRecords.length,
       uniqueBuyersCount: buyerNameSet.size,
       totalQty: totalIdCardQty,
       totalAmount: totalIdCardAmount,
-      allRecords: allIdCardRecords,
+      allRecords: sortedAllIdCardRecords,
       itemBreakdown,
       monthlyBreakdown: monthlyIdCardBreakdown
     },

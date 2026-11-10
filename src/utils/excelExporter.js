@@ -7,7 +7,9 @@ import {
   combineCurrencyTotals,
   formatCurrencyTotals,
   formatExpenseTotals,
-  isFinanceDeficit
+  isFinanceDeficit,
+  normalizeRecordDateStr,
+  sortRecordsByDateAsc
 } from './khmerNumerals.js';
 import { getMonthEndReportDates } from './khmerCalendar.js';
 import { buildFinanceSummaryModel } from './financeSummaryBuilder.js';
@@ -35,7 +37,7 @@ import { buildZipArchive, escapeXml, triggerBlobDownload, loadOfficialLogoBytes 
 function buildExcelStylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="11">
+  <fonts count="13">
     <font>
       <sz val="11"/>
       <color rgb="FF000000"/>
@@ -47,7 +49,7 @@ function buildExcelStylesXml() {
       <name val="Khmer OS Muol Light"/>
     </font>
     <font>
-      <sz val="12.5"/>
+      <sz val="12"/>
       <color rgb="FF000000"/>
       <name val="Khmer OS Muol Light"/>
     </font>
@@ -99,6 +101,16 @@ function buildExcelStylesXml() {
       <color rgb="FFB91C1C"/>
       <name val="Khmer OS Muol Light"/>
     </font>
+    <font>
+      <sz val="10"/>
+      <color rgb="FF000000"/>
+      <name val="Khmer OS Siemreap"/>
+    </font>
+    <font>
+      <sz val="22"/>
+      <color rgb="FF000000"/>
+      <name val="Tacteing"/>
+    </font>
   </fonts>
   <fills count="6">
     <fill><patternFill patternType="none"/></fill>
@@ -128,7 +140,7 @@ function buildExcelStylesXml() {
       </patternFill>
     </fill>
   </fills>
-  <borders count="2">
+  <borders count="3">
     <border>
       <left/><right/><top/><bottom/><diagonal/>
     </border>
@@ -139,11 +151,16 @@ function buildExcelStylesXml() {
       <bottom style="thin"><color rgb="FF000000"/></bottom>
       <diagonal/>
     </border>
+    <border>
+      <left/><right/><top/>
+      <bottom style="thin"><color rgb="FF000000"/></bottom>
+      <diagonal/>
+    </border>
   </borders>
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="22">
+  <cellXfs count="25">
     <!-- 0: Default -->
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment vertical="center"/>
@@ -152,17 +169,17 @@ function buildExcelStylesXml() {
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
     </xf>
-    <!-- 2: Moul Main Title 12.5pt Center -->
+    <!-- 2: Moul Main Title 12pt Center -->
     <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
     </xf>
-    <!-- 3: Moul Section Title 11.5pt Center Underline -->
-    <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
+    <!-- 3: Moul Section Title 11.5pt Center Underline with Bottom Thin Border -->
+    <xf numFmtId="0" fontId="3" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
     </xf>
-    <!-- 4: Table Header -->
-    <xf numFmtId="0" fontId="4" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
-      <alignment horizontal="center" vertical="center" wrapText="1"/>
+    <!-- 4: Table Header (Moul 11pt Clean White Fill) -->
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
     </xf>
     <!-- 5: Table Cell Center -->
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
@@ -170,7 +187,7 @@ function buildExcelStylesXml() {
     </xf>
     <!-- 6: Table Cell Left -->
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
-      <alignment horizontal="left" vertical="center" wrapText="1"/>
+      <alignment horizontal="left" vertical="center" wrapText="1" indent="1"/>
     </xf>
     <!-- 7: Table Cell Right -->
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
@@ -180,24 +197,24 @@ function buildExcelStylesXml() {
     <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
       <alignment horizontal="right" vertical="center"/>
     </xf>
-    <!-- 9: Subtotal Label (Moul Center Border Fill) -->
-    <xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+    <!-- 9: Subtotal Label (Moul Center Border Clean White) -->
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
     </xf>
     <!-- 10: Subtotal Value Right Bold -->
-    <xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
       <alignment horizontal="right" vertical="center"/>
     </xf>
     <!-- 11: Subtotal Note Center Bold -->
-    <xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center" wrapText="1"/>
     </xf>
     <!-- 12: Summary Bold Left -->
     <xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
     </xf>
-    <!-- 13: Center Normal (Dates / Divider) -->
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
+    <!-- 13: Center Normal 10pt (Dates / Divider) -->
+    <xf numFmtId="0" fontId="11" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
     </xf>
     <!-- 14: Balance Positive -->
@@ -231,6 +248,16 @@ function buildExcelStylesXml() {
     <!-- 21: Summary Balance Value Deficit (Moul Red Double Underline Right Border) -->
     <xf numFmtId="0" fontId="10" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
       <alignment horizontal="right" vertical="center"/>
+    </xf>
+    <!-- 22: Moul 12pt Center Bottom (for ព្រះរាជាណាចក្រកម្ពុជា in Row 1 with Logo) -->
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="bottom"/>
+    </xf>
+    <!-- 23: Spacer Row Bottom Thin Border (reinforces top border of table headers in Print Preview) -->
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="2" xfId="0" applyBorder="1"/>
+    <!-- 24: Tacteing 22pt Center (for character '3' ornamental divider) -->
+    <xf numFmtId="0" fontId="12" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
     </xf>
   </cellXfs>
 </styleSheet>`;
@@ -280,13 +307,15 @@ function downloadStyledXlsx({ sheetName = 'របាយការណ៍', colWidt
 
   const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
   <sheetViews>
     <sheetView workbookViewId="0" showGridLines="1"/>
   </sheetViews>
   <cols>${colsXml}</cols>
   <sheetData>${rowsXml}</sheetData>
   ${mergesXml}
-  <pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>
+  <printOptions horizontalCentered="1"/>
+  <pageMargins left="0.3" right="0.3" top="0.45" bottom="0.45" header="0.2" footer="0.2"/>
   <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>
   ${hasLogo ? '<drawing r:id="rId1"/>' : ''}
 </worksheet>`;
@@ -330,10 +359,10 @@ function downloadStyledXlsx({ sheetName = 'របាយការណ៍', colWidt
   ];
 
   if (hasLogo) {
-    // Calculate horizontal offset in Column B (index 1) so the 520,000 EMU logo is centered across A1:C1
+    // Calculate horizontal offset in Column B (index 1) so the 480,000 EMU logo is centered across A1:C1
     const totalLeftEmu = ((colWidths[0] || 8) + (colWidths[1] || 28) + (colWidths[2] || 12)) * 71437;
     const col0Emu = (colWidths[0] || 8) * 71437;
-    const logoSizeEmu = 520000;
+    const logoSizeEmu = 480000;
     const logoColOff = Math.max(0, Math.round((totalLeftEmu / 2) - (logoSizeEmu / 2) - col0Emu));
 
     const sheetRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -407,13 +436,11 @@ function downloadStyledXlsx({ sheetName = 'របាយការណ៍', colWidt
 function appendOfficialHeader(rows, merges, numCols, metadata = {}, includeSalaprefix = false, hasLogo = false) {
   const ministry = metadata.ministry || 'មន្ទីរធម្មការ និងសាសនា ខេត្តកំពង់ចាម';
   const rawSchool = metadata.school || 'ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង';
-  const school = includeSalaprefix && !String(rawSchool).startsWith('សាលា')
-    ? `សាលា${rawSchool}`
-    : rawSchool;
+  const school = String(rawSchool).replace(/^សាលា(?=ពុទ្ធិក)/, '');
   const location = metadata.location || 'ក្រុងកំពង់ចាម';
 
   const leftEndCol = 2; // Columns A..C (0..2)
-  const rightStartCol = Math.max(3, numCols - 3); // Right 3 columns
+  const rightStartCol = 3; // Merge D..lastCol so right-side header never clips
   const lastCol = numCols - 1;
 
   const makeHeaderRow = (leftText, rightText, rightStyle = 1, height = 24) => {
@@ -427,19 +454,29 @@ function appendOfficialHeader(rows, merges, numCols, metadata = {}, includeSalap
   };
 
   if (hasLogo) {
-    // Row 1: Left A1:C1 hosts the centered Logo (height = 46pt ~ 61px); Right has ព្រះរាជាណាចក្រកម្ពុជា
-    makeHeaderRow('', 'ព្រះរាជាណាចក្រកម្ពុជា', 1, 46);
-    makeHeaderRow(ministry, 'ជាតិ សាសនា ព្រះមហាក្សត្រ', 1, 24);
-    makeHeaderRow(school, '~ ~ ~ ❁ ~ ~ ~', 13, 24);
+    // Row 1: Left A1:C1 hosts the centered Logo; Right D1:lastCol has ព្រះរាជាណាចក្រកម្ពុជា bottom-aligned (s: 22) right above Row 2
+    makeHeaderRow('', 'ព្រះរាជាណាចក្រកម្ពុជា', 22, 44);
+    makeHeaderRow(ministry, 'ជាតិ សាសនា ព្រះមហាក្សត្រ', 1, 23);
+    makeHeaderRow(school, '3', 24, 24);
     makeHeaderRow(location, '', 1, 22);
   } else {
-    makeHeaderRow(ministry, 'ព្រះរាជាណាចក្រកម្ពុជា', 1, 24);
+    makeHeaderRow(ministry, 'ព្រះរាជាណាចក្រកម្ពុជា', 2, 24);
     makeHeaderRow(school, 'ជាតិ សាសនា ព្រះមហាក្សត្រ', 1, 24);
-    makeHeaderRow(location, '~ ~ ~ ❁ ~ ~ ~', 13, 22);
+    makeHeaderRow(location, '3', 24, 24);
   }
 
   // Blank spacer row
-  rows.push({ height: 14, cells: [] });
+  rows.push({ height: 10, cells: [] });
+}
+
+/**
+ * Helper to create a spacer row immediately above a bordered table header so its bottom border reinforces the table's top border in Print Preview
+ */
+function makeTableTopSpacerRow(numCols, height = 10) {
+  return {
+    height,
+    cells: new Array(numCols).fill(null).map(() => ({ v: '', s: 23 }))
+  };
 }
 
 /**
@@ -447,7 +484,7 @@ function appendOfficialHeader(rows, merges, numCols, metadata = {}, includeSalap
  */
 function appendOfficialSignatures(rows, merges, numCols, metadata = {}, reportDates = {}, isFinance = false) {
   const leftEndCol = 2; // A..C
-  const rightStartCol = Math.max(3, numCols - 3);
+  const rightStartCol = 3; // Merge D..lastCol so right-side lunar/solar dates fit on 1 line
   const lastCol = numCols - 1;
 
   const directorTitle = (!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
@@ -456,11 +493,11 @@ function appendOfficialSignatures(rows, merges, numCols, metadata = {}, reportDa
   const reporterTitle = metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍';
 
   const leftLunar = isFinance
-    ? `ថ្ងៃ………..…….ខែ………..….ឆ្នាំ${reportDates.zodiac || 'មមី'} ${reportDates.sak || 'អដ្ឋស័ក'} ព.ស.${reportDates.beYear || '២៥៧០'}`
-    : `ថ្ងៃ.......................ខែ..................ឆ្នាំ${reportDates.zodiac || 'មមី'}${reportDates.sak || 'អដ្ឋស័ក'} ព.ស ${reportDates.beYear || '២៥៧០'}`;
+    ? `ថ្ងៃ........ខែ........ឆ្នាំ${reportDates.zodiac || 'មមី'} ${reportDates.sak || 'អដ្ឋស័ក'} ព.ស.${reportDates.beYear || '២៥៧០'}`
+    : `ថ្ងៃ........ខែ........ឆ្នាំ${reportDates.zodiac || 'មមី'}${reportDates.sak || 'អដ្ឋស័ក'} ព.ស ${reportDates.beYear || '២៥៧០'}`;
   const leftSolar = isFinance
-    ? `ថ្ងៃទី………. ខែ……….. ឆ្នាំ${reportDates.yearKhmer || '២០២៦'}`
-    : `ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ${reportDates.yearKhmer || '២០២៦'}`;
+    ? `ថ្ងៃទី...... ខែ........ ឆ្នាំ${reportDates.yearKhmer || '២០២៦'}`
+    : `ត្រូវនឹងថ្ងៃទី..... ខែ........ ឆ្នាំ${reportDates.yearKhmer || '២០២៦'}`;
 
   const rightLunar = reportDates.lunarDateText || '';
   const rightSolar = isFinance ? (reportDates.solarDateTextFinance || '') : (reportDates.solarDateTextLeave || '');
@@ -475,8 +512,8 @@ function appendOfficialSignatures(rows, merges, numCols, metadata = {}, reportDa
     merges.push(`${cellRef(rNum, rightStartCol)}:${cellRef(rNum, lastCol)}`);
   };
 
-  rows.push({ height: 14, cells: [] });
-  addSigRow('បានឃើញ និង……………..', 1, rightLunar, 13, 24);
+  rows.push({ height: 12, cells: [] });
+  addSigRow('បានឃើញ និង...........', 1, rightLunar, 13, 24);
   addSigRow(leftLunar, 13, rightSolar, 13, 22);
   addSigRow(leftSolar, 13, reporterTitle, 1, 24);
   addSigRow(directorTitle, 1, '', 1, 24);
@@ -494,6 +531,7 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
   const monthKey = options.monthKey || metadata.currentMonth || '2026-07';
   const useKhmer = options.useKhmerNumerals !== false;
   const fmt = (n) => (useKhmer ? toKhmerDigits(n) : String(n));
+  const sortedRecords = sortRecordsByDateAsc(records);
 
   const reportDates = getMonthEndReportDates(monthKey, {
     watName: metadata.wat,
@@ -502,19 +540,23 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
   });
 
   // 1. Official Ministry & Kingdom Header
-  appendOfficialHeader(rows, merges, numCols, metadata, true, hasLogo);
+  appendOfficialHeader(rows, merges, numCols, metadata, false, hasLogo);
 
-  // 2. Centered Report Title
+  // 2. Centered 3-Line Report Title (matching OfficialLeaveDocument.jsx)
   const title1Row = rows.length + 1;
-  rows.push({ height: 26, cells: [{ v: 'របាយការណ៍ ស្ដីពី', s: 2 }] });
+  rows.push({ height: 24, cells: [{ v: 'របាយការណ៍', s: 2 }] });
   merges.push(`${cellRef(title1Row, 0)}:${cellRef(title1Row, numCols - 1)}`);
+
+  const titleMidRow = rows.length + 1;
+  rows.push({ height: 23, cells: [{ v: 'ស្ដីពី', s: 2 }] });
+  merges.push(`${cellRef(titleMidRow, 0)}:${cellRef(titleMidRow, numCols - 1)}`);
 
   const title2Text = options.customPeriodTitle || `ចំនួនសមណសិស្សសុំច្បាប់ ក្នុងខែ${monthLabel}`;
   const title2Row = rows.length + 1;
-  rows.push({ height: 26, cells: [{ v: title2Text, s: 2 }] });
+  rows.push({ height: 25, cells: [{ v: title2Text, s: 2 }] });
   merges.push(`${cellRef(title2Row, 0)}:${cellRef(title2Row, numCols - 1)}`);
 
-  rows.push({ height: 12, cells: [] });
+  rows.push(makeTableTopSpacerRow(numCols, 10));
 
   // 3. Table Header Row
   const headers = ['ល.រ', 'គោត្តនាម-និងនាម', 'ថ្នាក់', 'មូលហេតុ', 'ចំនួនឈប់', 'កាលបរិច្ឆេទ', 'ផ្សេងៗ'];
@@ -524,7 +566,7 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
   });
 
   // 4. Table Body Rows
-  if (records.length === 0) {
+  if (sortedRecords.length === 0) {
     const emptyRow = rows.length + 1;
     const cells = new Array(numCols).fill(null).map((_, idx) => ({
       v: idx === 0 ? 'មិនទាន់មានទិន្នន័យច្បាប់សម្រាប់ខែនេះនៅឡើយទេ។' : '',
@@ -533,15 +575,8 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
     rows.push({ height: 28, cells });
     merges.push(`${cellRef(emptyRow, 0)}:${cellRef(emptyRow, numCols - 1)}`);
   } else {
-    records.forEach((r, idx) => {
-      let cleanDate = String(r.date || '').trim();
-      cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
-      if (cleanDate.includes('ដល់') || cleanDate.includes('-')) {
-        const parts = cleanDate.split(/ដល់|-/);
-        if (parts[0] && parts[0].trim().length >= 6) {
-          cleanDate = parts[0].trim();
-        }
-      }
+    sortedRecords.forEach((r, idx) => {
+      const cleanDate = normalizeRecordDateStr(r.date || '', useKhmer);
       const cleanReasonText = String(r.reason || '').replace(/\s+/g, ' ').trim();
       const rowHeight = (options.compactReasonColumn && cleanReasonText.length > 26) ? 36 : 25;
       rows.push({
@@ -552,20 +587,21 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
           { v: useKhmer ? toKhmerDigits(r.grade || '') : (r.grade || ''), s: 5 },
           { v: cleanReasonText, s: 6 },
           { v: r.duration || '', s: 5 },
-          { v: useKhmer ? toKhmerDigits(cleanDate) : cleanDate, s: 5 },
+          { v: cleanDate, s: 5 },
           { v: r.note || '', s: 5 }
         ]
       });
     });
   }
 
-  // 5. Summary Count Line
+  // 5. Summary Count Line (Regular Khmer OS Siemreap matching original template)
   rows.push({ height: 10, cells: [] });
   const sumRowNum = rows.length + 1;
-  const sumText = options.customSummaryText || `ចំនួនសមណសិស្សសុំច្បាប់ក្នុងខែ${monthLabel} សរុប ${fmt(records.length)}អង្គ`;
+  const monthNameOnly = String(monthLabel || '').trim().split(/\s+/)[0] || monthLabel;
+  const sumText = options.customSummaryText || `ចំនួនសមណសិស្សសុំច្បាប់ក្នុងខែ${monthNameOnly} សរុប ${fmt(sortedRecords.length)}អង្គ`;
   rows.push({
     height: 24,
-    cells: [{ v: sumText, s: 12 }]
+    cells: [{ v: sumText, s: 0 }]
   });
   merges.push(`${cellRef(sumRowNum, 0)}:${cellRef(sumRowNum, numCols - 1)}`);
 
@@ -575,8 +611,8 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
   downloadStyledXlsx({
     sheetName: 'ច្បាប់សមណសិស្ស',
     colWidths: options.compactReasonColumn
-      ? [8, 25, 11, 25, 20, 15, 14]
-      : [8, 25, 11, 32, 15, 18, 16],
+      ? [6, 23, 9, 23, 16, 15, 10]
+      : [6, 23, 9, 26, 13, 15, 10],
     rows,
     merges,
     fileName: `របាយការណ៍ច្បាប់សមណសិស្ស_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
@@ -596,7 +632,8 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
   const monthKey = options.monthKey || metadata.currentMonth || '2026-07';
   const useKhmer = options.useKhmerNumerals !== false;
   const fmt = (n) => (useKhmer ? toKhmerDigits(n) : String(n));
-  const totalAmount = records.reduce((sum, r) => sum + (Number(r.price) || 0), 0);
+  const sortedRecords = sortRecordsByDateAsc(records);
+  const totalAmount = sortedRecords.reduce((sum, r) => sum + (Number(r.price) || 0), 0);
 
   const reportDates = getMonthEndReportDates(monthKey, {
     watName: metadata.wat,
@@ -605,19 +642,23 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
   });
 
   // 1. Official Ministry & Kingdom Header
-  appendOfficialHeader(rows, merges, numCols, metadata, true, hasLogo);
+  appendOfficialHeader(rows, merges, numCols, metadata, false, hasLogo);
 
-  // 2. Centered Report Title
+  // 2. Centered 3-Line Report Title (matching OfficialIdCardDocument.jsx)
   const title1Row = rows.length + 1;
-  rows.push({ height: 26, cells: [{ v: 'របាយការណ៍ ស្ដីពី', s: 2 }] });
+  rows.push({ height: 24, cells: [{ v: 'របាយការណ៍', s: 2 }] });
   merges.push(`${cellRef(title1Row, 0)}:${cellRef(title1Row, numCols - 1)}`);
+
+  const titleMidRow = rows.length + 1;
+  rows.push({ height: 23, cells: [{ v: 'ស្ដីពី', s: 2 }] });
+  merges.push(`${cellRef(titleMidRow, 0)}:${cellRef(titleMidRow, numCols - 1)}`);
 
   const title2Text = options.customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញកាតពាក់ក (ID) ក្នុងខែ${monthLabel}`;
   const title2Row = rows.length + 1;
-  rows.push({ height: 26, cells: [{ v: title2Text, s: 2 }] });
+  rows.push({ height: 25, cells: [{ v: title2Text, s: 2 }] });
   merges.push(`${cellRef(title2Row, 0)}:${cellRef(title2Row, numCols - 1)}`);
 
-  rows.push({ height: 12, cells: [] });
+  rows.push(makeTableTopSpacerRow(numCols, 10));
 
   // 3. Table Header Row
   const headers = ['ល.រ', 'គោត្តនាម-និងនាម', 'ថ្នាក់', 'បរិយាយ', 'ចំនួន', 'តម្លៃ', 'កាលបរិច្ឆេទ'];
@@ -627,7 +668,7 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
   });
 
   // 4. Table Body Rows
-  if (records.length === 0) {
+  if (sortedRecords.length === 0) {
     const emptyRow = rows.length + 1;
     const cells = new Array(numCols).fill(null).map((_, idx) => ({
       v: idx === 0 ? 'មិនទាន់មានទិន្នន័យសមណសិស្សទិញកាត ID សម្រាប់ខែនេះនៅឡើយទេ។' : '',
@@ -636,7 +677,7 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
     rows.push({ height: 28, cells });
     merges.push(`${cellRef(emptyRow, 0)}:${cellRef(emptyRow, numCols - 1)}`);
   } else {
-    records.forEach((r, idx) => {
+    sortedRecords.forEach((r, idx) => {
       rows.push({
         height: 25,
         cells: [
@@ -646,7 +687,7 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
           { v: r.item || '', s: 5 },
           { v: fmt(r.qty || 1), s: 5 },
           { v: formatKhmerCurrency(r.price || 0, useKhmer), s: 8 },
-          { v: useKhmer ? toKhmerDigits(r.date || '') : (r.date || ''), s: 5 }
+          { v: normalizeRecordDateStr(r.date || '', useKhmer), s: 5 }
         ]
       });
     });
@@ -672,11 +713,11 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
   rows.push({ height: 10, cells: [] });
   const sumRowNum = rows.length + 1;
   const sumText = options.customSummaryText || (
-    `សរុបសមណសិស្សទិញកាតពាក់ក (ID) ចំនួន ${fmt(records.length)} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmer)}។`
+    `សរុបសមណសិស្សទិញកាតពាក់ក (ID) ចំនួន ${fmt(sortedRecords.length)} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmer)}។`
   );
   rows.push({
     height: 24,
-    cells: [{ v: sumText, s: 12 }]
+    cells: [{ v: sumText, s: 0 }]
   });
   merges.push(`${cellRef(sumRowNum, 0)}:${cellRef(sumRowNum, numCols - 1)}`);
 
@@ -685,7 +726,7 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
 
   downloadStyledXlsx({
     sheetName: 'ទិញកាត ID',
-    colWidths: [8, 26, 12, 22, 11, 18, 18],
+    colWidths: [6, 22, 10, 19, 10, 16, 16],
     rows,
     merges,
     fileName: `តារាងបង់ថ្លៃទិញកាត_ID_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
@@ -734,7 +775,7 @@ export async function exportFinanceToExcel(financeData = { income: [], expense: 
   merges.push(`${cellRef(rTitle1, 0)}:${cellRef(rTitle1, numCols - 1)}`);
 
   const rTitle2 = rows.length + 1;
-  rows.push({ height: 22, cells: [{ v: 'ស្ដីពី', s: 1 }] });
+  rows.push({ height: 23, cells: [{ v: 'ស្ដីពី', s: 2 }] });
   merges.push(`${cellRef(rTitle2, 0)}:${cellRef(rTitle2, numCols - 1)}`);
 
   const title3Text = options.customPeriodTitle || `តារាងចំណូលចំណាយប្រចាំខែ${monthLabel}`;
@@ -742,18 +783,21 @@ export async function exportFinanceToExcel(financeData = { income: [], expense: 
   rows.push({ height: 25, cells: [{ v: title3Text, s: 2 }] });
   merges.push(`${cellRef(rTitle3, 0)}:${cellRef(rTitle3, numCols - 1)}`);
 
-  rows.push({ height: 10, cells: [] });
+  rows.push(makeTableTopSpacerRow(numCols, 10));
 
   const tableHeaders = ['ល.រ', 'បរិយាយ', 'ចំនួន', 'តម្លៃរាយ', 'តម្លៃសរុប', 'ផ្សេងៗ'];
 
-  // 3. Table 1: ចំណូល (Income)
+  // 3. Section 1: ចំណូល (Income) inside Unified 6-Column Table
   if (showIncomeTable) {
     const incSecRow = rows.length + 1;
-    rows.push({ height: 25, cells: [{ v: 'ចំណូល', s: 3 }] });
+    rows.push({
+      height: 25,
+      cells: new Array(numCols).fill(null).map((_, idx) => ({ v: idx === 0 ? 'ចំណូល' : '', s: 4 }))
+    });
     merges.push(`${cellRef(incSecRow, 0)}:${cellRef(incSecRow, numCols - 1)}`);
 
     rows.push({
-      height: 27,
+      height: 25,
       cells: tableHeaders.map(h => ({ v: h, s: 4 }))
     });
 
@@ -762,13 +806,13 @@ export async function exportFinanceToExcel(financeData = { income: [], expense: 
         ? (useKhmer ? toKhmerDigits(item.totalLabel) : item.totalLabel)
         : formatMoney(item.total, item.currency, useKhmer);
       rows.push({
-        height: 24,
+        height: 23,
         cells: [
           { v: fmt(idx + 1), s: 5 },
           { v: item.desc || '', s: 6 },
           { v: item.qty || '', s: 5 },
           { v: item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmer) : '', s: 7 },
-          { v: displayTotal, s: 8 },
+          { v: displayTotal, s: 7 },
           { v: item.note || '', s: 5 }
         ]
       });
@@ -780,28 +824,30 @@ export async function exportFinanceToExcel(financeData = { income: [], expense: 
       : '';
     const subIncRow = rows.length + 1;
     rows.push({
-      height: 27,
+      height: 25,
       cells: [
         { v: 'សរុបចំណូល', s: 9 },
         { v: '', s: 9 },
         { v: '', s: 9 },
         { v: '', s: 9 },
-        { v: formatCurrencyTotals(incomeTotals, useKhmer), s: 10 },
-        { v: inKindNote, s: 11 }
+        { v: formatCurrencyTotals(incomeTotals, useKhmer), s: 18 },
+        { v: inKindNote, s: 5 }
       ]
     });
     merges.push(`${cellRef(subIncRow, 0)}:${cellRef(subIncRow, 3)}`);
-    rows.push({ height: 12, cells: [] });
   }
 
-  // 4. Table 2: ចំណាយ (Expense)
+  // 4. Section 2: ចំណាយ (Expense) inside Unified 6-Column Table
   if (showExpenseTable) {
     const expSecRow = rows.length + 1;
-    rows.push({ height: 25, cells: [{ v: 'ចំណាយ', s: 3 }] });
+    rows.push({
+      height: 25,
+      cells: new Array(numCols).fill(null).map((_, idx) => ({ v: idx === 0 ? 'ចំណាយ' : '', s: 4 }))
+    });
     merges.push(`${cellRef(expSecRow, 0)}:${cellRef(expSecRow, numCols - 1)}`);
 
     rows.push({
-      height: 27,
+      height: 25,
       cells: tableHeaders.map(h => ({ v: h, s: 4 }))
     });
 
@@ -810,13 +856,13 @@ export async function exportFinanceToExcel(financeData = { income: [], expense: 
         ? (useKhmer ? toKhmerDigits(item.totalLabel) : item.totalLabel)
         : formatMoney(item.total, item.currency, useKhmer);
       rows.push({
-        height: 24,
+        height: 23,
         cells: [
           { v: fmt(idx + 1), s: 5 },
           { v: item.desc || '', s: 6 },
           { v: item.qty || '', s: 5 },
           { v: item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmer) : '', s: 7 },
-          { v: displayTotal, s: 8 },
+          { v: displayTotal, s: 7 },
           { v: item.note || '', s: 5 }
         ]
       });
@@ -825,43 +871,25 @@ export async function exportFinanceToExcel(financeData = { income: [], expense: 
     // Subtotal Expense Row (សរុបចំណាយ merged A..D)
     const subExpRow = rows.length + 1;
     rows.push({
-      height: 27,
+      height: 25,
       cells: [
         { v: 'សរុបចំណាយ', s: 9 },
         { v: '', s: 9 },
         { v: '', s: 9 },
         { v: '', s: 9 },
-        { v: formatExpenseTotals(expenseTotals, isDeficit, useKhmer), s: 10 },
+        { v: formatExpenseTotals(expenseTotals, isDeficit, useKhmer), s: isDeficit ? 19 : 18 },
         { v: '', s: 9 }
       ]
     });
     merges.push(`${cellRef(subExpRow, 0)}:${cellRef(subExpRow, 3)}`);
   }
 
-  // 5. Net Balance Row (នៅសល់ / ខ្វះថវិកា) when showing both Income & Expense
-  if (showIncomeTable && showExpenseTable) {
-    rows.push({ height: 8, cells: [] });
-    const balRow = rows.length + 1;
-    rows.push({
-      height: 27,
-      cells: [
-        { v: isDeficit ? 'ខ្វះថវិកា (ចំណូល - ចំណាយ)' : 'នៅសល់ (ចំណូល - ចំណាយ)', s: 9 },
-        { v: '', s: 9 },
-        { v: '', s: 9 },
-        { v: '', s: 9 },
-        { v: formatCurrencyTotals(balanceTotals, useKhmer), s: isDeficit ? 15 : 14 },
-        { v: '', s: 9 }
-      ]
-    });
-    merges.push(`${cellRef(balRow, 0)}:${cellRef(balRow, 3)}`);
-  }
-
-  // 6. Official Signatures & Dates Block
+  // 5. Official Signatures & Dates Block
   appendOfficialSignatures(rows, merges, numCols, metadata, reportDates, true);
 
   downloadStyledXlsx({
     sheetName: 'ចំណូល-ចំណាយ',
-    colWidths: [8, 42, 15, 16, 20, 22],
+    colWidths: [6, 38, 10, 14, 20, 12],
     rows,
     merges,
     fileName: `របាយការណ៍ចំណូលចំណាយ_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
@@ -914,14 +942,14 @@ export async function exportFinanceSummaryReportToExcel(
   merges.push(`${cellRef(rTitle1, 0)}:${cellRef(rTitle1, numCols - 1)}`);
 
   const rTitle2 = rows.length + 1;
-  rows.push({ height: 22, cells: [{ v: 'ស្ដីពី', s: 1 }] });
+  rows.push({ height: 23, cells: [{ v: 'ស្ដីពី', s: 2 }] });
   merges.push(`${cellRef(rTitle2, 0)}:${cellRef(rTitle2, numCols - 1)}`);
 
   const rTitle3 = rows.length + 1;
   rows.push({ height: 26, cells: [{ v: summaryModel.reportTitle, s: 2 }] });
   merges.push(`${cellRef(rTitle3, 0)}:${cellRef(rTitle3, numCols - 1)}`);
 
-  rows.push({ height: 12, cells: [] });
+  rows.push(makeTableTopSpacerRow(numCols, 10));
 
   // 3. Unified 5-Column Summary Table
   const tableHeaders = ['ល.រ', 'បរិយាយ', 'ចំនួន', 'ចំនួនថវិកា', 'ផ្សេងៗ'];
@@ -1005,7 +1033,7 @@ export async function exportFinanceSummaryReportToExcel(
 
   downloadStyledXlsx({
     sheetName: 'សង្ខេបចំណូលចំណាយ',
-    colWidths: [8, 44, 16, 20, 18],
+    colWidths: [7, 39, 15, 20, 18],
     rows,
     merges,
     fileName: `របាយការណ៍ចំណូលចំណាយសង្ខេប_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
@@ -1143,7 +1171,7 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
 
   downloadStyledXlsx({
     sheetName: 'របាយការណ៍រដ្ឋបាល',
-    colWidths: [14, 34, 22, 22, 22],
+    colWidths: [12, 30, 19, 19, 19],
     rows,
     merges,
     fileName: `របាយការណ៍_${displayModel.shortFileNameTag}.xlsx`,

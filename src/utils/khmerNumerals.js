@@ -315,3 +315,116 @@ export function getDurationSuggestions(rawInput) {
     options: merged.slice(0, 6)
   };
 }
+
+/**
+ * Parse a record date string (e.g. "03/11/2026", "៤/១១/២០២៦", "2026-11-03")
+ * into a numeric YYYYMMDD sort key so earlier dates always sort to the top (ល.រ ១, ២, ៣...).
+ * Returns null if the string is not a calendar date (e.g. "៣ លើក" or "—").
+ * @param {string} rawDate
+ * @returns {number|null}
+ */
+export function parseRecordDateSortKey(rawDate) {
+  if (!rawDate) return null;
+  let str = toArabicDigits(String(rawDate).replace(/\u200B/g, '').trim());
+  if (!str) return null;
+  str = str.replace(/2024/g, '2026');
+
+  if (str.includes('ដល់') || /to/i.test(str)) {
+    const parts = str.split(/ដល់|to/i);
+    if (parts[0] && parts[0].trim().length >= 5) {
+      str = parts[0].trim();
+    }
+  }
+
+  // Match DD/MM/YYYY, D/M/YYYY, DD-MM-YYYY, DD.MM.YYYY
+  const dmy = str.match(/^(\d{1,2})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{2,4})/);
+  if (dmy) {
+    const day = parseInt(dmy[1], 10);
+    const month = parseInt(dmy[2], 10);
+    let year = parseInt(dmy[3], 10);
+    if (year < 100) year += 2000;
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return year * 10000 + month * 100 + day;
+    }
+  }
+
+  // Match YYYY-MM-DD or YYYY/MM/DD
+  const ymd = str.match(/^(\d{4})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{1,2})/);
+  if (ymd) {
+    const year = parseInt(ymd[1], 10);
+    const month = parseInt(ymd[2], 10);
+    const day = parseInt(ymd[3], 10);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return year * 10000 + month * 100 + day;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Normalize a calendar date string into clean DD/MM/YYYY format (with 2-digit day & month)
+ * while leaving non-date summary strings (e.g. "៣ លើក", "—") untouched.
+ * @param {string} rawDate
+ * @returns {string}
+ */
+export function normalizeRecordDateStr(rawDate) {
+  if (rawDate === null || rawDate === undefined) return '';
+  let cleanDate = String(rawDate).replace(/\u200B/g, '').trim();
+  if (!cleanDate) return '';
+  cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
+
+  if (cleanDate.includes('ដល់') || (cleanDate.includes('-') && cleanDate.includes('/')) || /to/i.test(cleanDate)) {
+    const parts = cleanDate.split(/ដល់|-|\/to\//i);
+    if (parts[0] && parts[0].trim().length >= 5) {
+      cleanDate = parts[0].trim();
+    }
+  }
+
+  const arabic = toArabicDigits(cleanDate);
+  const dmy = arabic.match(/^(\d{1,2})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{2,4})$/);
+  if (dmy) {
+    const dd = String(parseInt(dmy[1], 10)).padStart(2, '0');
+    const mm = String(parseInt(dmy[2], 10)).padStart(2, '0');
+    let yyyy = parseInt(dmy[3], 10);
+    if (yyyy < 100) yyyy += 2000;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  const ymd = arabic.match(/^(\d{4})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{1,2})$/);
+  if (ymd) {
+    const yyyy = ymd[1];
+    const mm = String(parseInt(ymd[2], 10)).padStart(2, '0');
+    const dd = String(parseInt(ymd[3], 10)).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  return cleanDate;
+}
+
+/**
+ * Sort records chronologically by `date` ascending (priority 1: earliest date at top ល.រ ១, ២, ៣...),
+ * preserving original relative order for records with the same date or non-date summary strings.
+ * @param {Array} records
+ * @returns {Array}
+ */
+export function sortRecordsByDateAsc(records = []) {
+  if (!Array.isArray(records) || records.length <= 1) return Array.isArray(records) ? [...records] : [];
+  return records
+    .map((item, idx) => ({
+      item,
+      idx,
+      sortKey: parseRecordDateSortKey(item?.date)
+    }))
+    .sort((a, b) => {
+      if (a.sortKey !== null && b.sortKey !== null) {
+        if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
+        return a.idx - b.idx;
+      }
+      if (a.sortKey !== null && b.sortKey === null) return -1;
+      if (a.sortKey === null && b.sortKey !== null) return 1;
+      return a.idx - b.idx;
+    })
+    .map(entry => entry.item);
+}
+

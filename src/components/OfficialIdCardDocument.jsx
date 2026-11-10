@@ -1,6 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { Trash2 } from 'lucide-react';
-import { toKhmerDigits, toEnglishDigits, formatKhmerCurrency } from '../utils/khmerNumerals';
+import {
+  toKhmerDigits,
+  toEnglishDigits,
+  formatKhmerCurrency,
+  normalizeRecordDateStr,
+  sortRecordsByDateAsc
+} from '../utils/khmerNumerals';
 import { getMonthEndReportDates } from '../utils/khmerCalendar';
 import { recommendStudentsByPhoneticQuery } from '../utils/studentMaster';
 import { ID_CARD_ITEMS, computeIdCardTotalPrice, selectOrCombineIdCardItem } from '../utils/idCardCatalog';
@@ -20,16 +26,31 @@ export default function OfficialIdCardDocument({
   monthKey = '2026-07',
   isEditable = false,
   editingRowId = null,
-  setEditingRowId = () => {},
-  handleCellChange = () => {},
+  setEditingRowId = () => { },
+  handleCellChange = () => { },
   handleRowPatch = null,
-  handleDeleteRow = () => {},
+  handleDeleteRow = () => { },
   studentMaster = [],
   customPeriodTitle = '',
   customSummaryText = ''
 }) {
   const [showSuggestForRow, setShowSuggestForRow] = useState(null);
   const [combineModeRow, setCombineModeRow] = useState(false);
+  const lastSortedIdsRef = useRef([]);
+
+  const sortedRecords = useMemo(() => {
+    if (!editingRowId) {
+      const sorted = sortRecordsByDateAsc(records);
+      lastSortedIdsRef.current = sorted.map(r => r.id);
+      return sorted;
+    }
+    const orderMap = new Map(lastSortedIdsRef.current.map((id, i) => [id, i]));
+    return [...records].sort((a, b) => {
+      const idxA = orderMap.has(a.id) ? orderMap.get(a.id) : 999999;
+      const idxB = orderMap.has(b.id) ? orderMap.get(b.id) : 999999;
+      return idxA - idxB;
+    });
+  }, [records, editingRowId]);
 
   const reportDates = useMemo(() => getMonthEndReportDates(monthKey, {
     watName: metadata.wat,
@@ -72,7 +93,7 @@ export default function OfficialIdCardDocument({
             {metadata.ministry}
           </div>
           <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
-            {String(metadata.school || '').startsWith('សាលា') ? metadata.school : `សាលា${metadata.school || ''}`}
+            {String(metadata.school || '').replace(/^សាលា(?=ពុទ្ធិក)/, '')}
           </div>
           <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.location}
@@ -91,10 +112,13 @@ export default function OfficialIdCardDocument({
         </div>
       </div>
 
-      {/* Report Title */}
-      <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 18 }}>
-        <div className="font-moul" style={{ fontSize: 17.5, marginBottom: 4, whiteSpace: 'nowrap' }}>
-          របាយការណ៍ ស្ដីពី
+      {/* Report Title — 3 lines exactly like the original template (របាយការណ៍ / ស្ដីពី / title) */}
+      <div style={{ textAlign: 'center', marginTop: 10, marginBottom: 14, lineHeight: 1.6 }}>
+        <div className="font-moul" style={{ fontSize: 16, whiteSpace: 'nowrap' }}>
+          របាយការណ៍
+        </div>
+        <div className="font-moul" style={{ fontSize: 15, whiteSpace: 'nowrap' }}>
+          ស្ដីពី
         </div>
         <div className="font-moul" style={{ fontSize: 15.5, whiteSpace: 'nowrap' }}>
           {customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញកាតពាក់ក (ID) ក្នុងខែ${monthName} ឆ្នាំ${yearDisplay}`}
@@ -102,35 +126,35 @@ export default function OfficialIdCardDocument({
       </div>
 
       {/* Official Table */}
-      <table style={{
+      <table className="official-grid" style={{
         width: '100%',
-        borderCollapse: 'collapse',
-        border: '1px solid #000000',
-        fontSize: 13
+        borderCollapse: 'separate',
+        borderSpacing: 0,
+        fontSize: 12.5
       }}>
         <thead>
-          <tr style={{ background: '#ffffff', textAlign: 'center', height: 34 }}>
-            <th style={{ border: '1px solid #000', width: '6%', padding: '5px 4px', fontWeight: 700, whiteSpace: 'nowrap' }}>ល.រ</th>
-            <th style={{ border: '1px solid #000', width: '25%', padding: '5px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>គោត្តនាម-និងនាម</th>
-            <th style={{ border: '1px solid #000', width: '10%', padding: '5px 4px', fontWeight: 700, whiteSpace: 'nowrap' }}>ថ្នាក់</th>
-            <th style={{ border: '1px solid #000', width: '21%', padding: '5px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>បរិយាយ</th>
-            <th style={{ border: '1px solid #000', width: '9%', padding: '5px 4px', fontWeight: 700, whiteSpace: 'nowrap' }}>ចំនួន</th>
-            <th style={{ border: '1px solid #000', width: '15%', padding: '5px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>តម្លៃ</th>
-            <th style={{ border: '1px solid #000', width: '14%', padding: '5px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>កាលបរិច្ឆេទ</th>
+          <tr style={{ background: '#ffffff', textAlign: 'center', height: 28 }}>
+            <th style={{ border: '1px solid #000', width: '6%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ល.រ</th>
+            <th style={{ border: '1px solid #000', width: '25%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>គោត្តនាម-និងនាម</th>
+            <th style={{ border: '1px solid #000', width: '10%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ថ្នាក់</th>
+            <th style={{ border: '1px solid #000', width: '21%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>បរិយាយ</th>
+            <th style={{ border: '1px solid #000', width: '9%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ចំនួន</th>
+            <th style={{ border: '1px solid #000', width: '15%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>តម្លៃ</th>
+            <th style={{ border: '1px solid #000', width: '14%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>កាលបរិច្ឆេទ</th>
             {isEditable && (
               <th className="no-print" style={{ border: '1px solid #cbd5e1', width: 40, background: '#f8fafc' }}></th>
             )}
           </tr>
         </thead>
         <tbody>
-          {records.length === 0 ? (
+          {sortedRecords.length === 0 ? (
             <tr>
-              <td colSpan={isEditable ? 8 : 7} style={{ textAlign: 'center', padding: 20, color: '#64748b', border: '1px solid #000' }}>
+              <td colSpan={isEditable ? 8 : 7} style={{ textAlign: 'center', padding: 16, color: '#64748b', border: '1px solid #000' }}>
                 មិនទាន់មានទិន្នន័យសមណសិស្សទិញកាត ID សម្រាប់ខែនេះនៅឡើយទេ។
               </td>
             </tr>
           ) : (
-            records.map((r, index) => {
+            sortedRecords.map((r, index) => {
               const isEditing = isEditable && editingRowId === r.id;
               const rowNum = useKhmerNumerals ? toKhmerDigits(index + 1) : (index + 1);
               const suggestions = isEditing && showSuggestForRow === r.id
@@ -138,14 +162,14 @@ export default function OfficialIdCardDocument({
                 : [];
 
               return (
-                <tr key={r.id} style={{ height: 30 }}>
+                <tr key={r.id} style={{ height: 26 }}>
                   {/* Column 1: ល.រ */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>
                     {rowNum}
                   </td>
 
                   {/* Column 2: គោត្តនាម-និងនាម (with 80-student phonetic autocomplete) */}
-                  <td style={{ border: '1px solid #000', padding: '4px 8px', whiteSpace: 'nowrap', position: 'relative' }}>
+                  <td style={{ border: '1px solid #000', padding: '3px 7px', whiteSpace: 'nowrap', position: 'relative' }}>
                     {isEditing ? (
                       <div style={{ position: 'relative' }}>
                         <input
@@ -240,7 +264,7 @@ export default function OfficialIdCardDocument({
                   </td>
 
                   {/* Column 3: ថ្នាក់ */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px', whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px', whiteSpace: 'nowrap' }}>
                     {isEditing ? (
                       <select
                         value={r.grade || '១'}
@@ -260,7 +284,7 @@ export default function OfficialIdCardDocument({
                   </td>
 
                   {/* Column 4: បរិយាយ (ថង, ខ្សែ, ID, មួយឈុត) */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px 6px', whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: 'nowrap' }}>
                     {isEditing ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center' }}>
@@ -321,7 +345,7 @@ export default function OfficialIdCardDocument({
                   </td>
 
                   {/* Column 5: ចំនួន */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px', whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px', whiteSpace: 'nowrap' }}>
                     {isEditing ? (
                       <input
                         type="number"
@@ -342,7 +366,7 @@ export default function OfficialIdCardDocument({
                   </td>
 
                   {/* Column 6: តម្លៃ */}
-                  <td style={{ border: '1px solid #000', textAlign: 'right', padding: '4px 8px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 7px', fontWeight: 400, whiteSpace: 'nowrap' }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -361,7 +385,7 @@ export default function OfficialIdCardDocument({
                   </td>
 
                   {/* Column 7: កាលបរិច្ឆេទ */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px 6px', whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: 'nowrap' }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -372,7 +396,10 @@ export default function OfficialIdCardDocument({
                       />
                     ) : (
                       <div onClick={() => isEditable && setEditingRowId(r.id)} style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
-                        {useKhmerNumerals ? toKhmerDigits(r.date || '') : (r.date || '')}
+                        {(() => {
+                          const cleanDate = normalizeRecordDateStr(r.date || '');
+                          return useKhmerNumerals ? toKhmerDigits(cleanDate) : cleanDate;
+                        })()}
                       </div>
                     )}
                   </td>
@@ -416,12 +443,14 @@ export default function OfficialIdCardDocument({
           )}
 
           {/* Total Footer Row (សរុប) matching តារាងបង់ថ្លៃទិញកាត ID.xlsx */}
-          <tr style={{ height: 32, fontWeight: 700, background: '#fafafa' }}>
-            <td colSpan={5} style={{ border: '1px solid #000', textAlign: 'center', padding: '5px' }}>
-              <span className="font-moul" style={{ fontSize: 13 }}>សរុប</span>
+          <tr className="official-total" style={{ height: 27, background: '#ffffff' }}>
+            <td colSpan={5} style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 5px' }}>
+              <span className="font-moul" style={{ fontSize: 12 }}>សរុប</span>
             </td>
-            <td style={{ border: '1px solid #000', textAlign: 'right', padding: '5px 8px', fontSize: 13.5, whiteSpace: 'nowrap' }}>
-              {formatKhmerCurrency(totalAmount, useKhmerNumerals)}
+            <td className="font-moul" style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 7px', fontSize: 12, whiteSpace: 'nowrap' }}>
+              <span style={{ display: 'inline-block', borderBottom: '1px solid #000000', paddingBottom: 0.5 }}>
+                {formatKhmerCurrency(totalAmount, useKhmerNumerals)}
+              </span>
             </td>
             <td style={{ border: '1px solid #000' }}></td>
             {isEditable && <td className="no-print" style={{ border: '1px solid #cbd5e1' }}></td>}
@@ -433,16 +462,11 @@ export default function OfficialIdCardDocument({
       <div style={{
         marginTop: 12,
         marginBottom: 14,
-        fontSize: 13.5,
-        paddingLeft: 18
+        fontSize: 13,
+        fontWeight: 400
       }}>
         {customSummaryText || (
-          <>
-            សរុបសមណសិស្សទិញកាតពាក់ក (ID) ចំនួន{' '}
-            <strong>{useKhmerNumerals ? toKhmerDigits(records.length) : records.length} អង្គ</strong>{' '}
-            សរុបទឹកប្រាក់ចំនួន{' '}
-            <strong>{formatKhmerCurrency(totalAmount, useKhmerNumerals)}</strong>។
-          </>
+          `សរុបសមណសិស្សទិញកាតពាក់ក (ID) ចំនួន ${useKhmerNumerals ? toKhmerDigits(records.length) : records.length} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmerNumerals)}។`
         )}
       </div>
 

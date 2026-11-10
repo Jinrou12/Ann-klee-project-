@@ -1048,6 +1048,11 @@ export function parseAdminReportFromTextLines(rawLines = [], fallbackReport = {}
     const line = lines[i];
     const cleanBullet = line.replace(/^[-•❖▪◦\d+.)]+\s*/, '').trim();
 
+    // Skip stray running-header / appendix labels that are not list content
+    if (/^របាយការណ[៍៌]ប្រចាំខែ$/.test(line) || /^ឧបសម្ព័ន្ធ$/.test(line)) {
+      continue;
+    }
+
     // Detect section headers
     if (/^I\.\s*តួនាទី/i.test(line)) {
       currentSection = 'sec1';
@@ -1106,7 +1111,12 @@ export function parseAdminReportFromTextLines(rawLines = [], fallbackReport = {}
       if (line.includes('ព្រះធម្មសាលវង្ស') && line.includes('វីរៈ')) {
         next.recipientTitle = line;
       } else if (line.startsWith('កម្មវត្ថុ៖') || line.startsWith('កម្មវត្ថុ:')) {
-        next.customSubjectText = line.replace(/^កម្មវត្ថុ[៖:]\s*/, '').trim();
+        const subject = line.replace(/^កម្មវត្ថុ[៖:]\s*/, '').trim();
+        // Standard monthly subject is regenerated from the selected month (avoids importing typos such as a wrong month name)
+        const isStandardMonthlySubject = /^សូមប្រគេនរបាយការណ៍បូកសរុបលទ្ធផលការងារ|^របាយការណ៍បូកសរុបលទ្ធផលការងារ/.test(subject);
+        if (!isStandardMonthlySubject) {
+          next.customSubjectText = subject;
+        }
       }
       continue;
     }
@@ -1288,12 +1298,17 @@ async function extractDocxParagraphLines(arrayBuffer) {
     throw new Error('រកមិនឃើញអត្ថបទក្នុងឯកសារ Word (.docx) ឡើយ');
   }
 
+  // Drop legacy VML fallback copies of text boxes so their text is not imported twice
+  const cleanedXml = docXmlText.replace(/<mc:Fallback>[\s\S]*?<\/mc:Fallback>/g, '');
+
   const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(docXmlText, 'application/xml');
+  const xmlDoc = parser.parseFromString(cleanedXml, 'application/xml');
   const paragraphs = Array.from(xmlDoc.getElementsByTagNameNS('*', 'p'));
   const lines = [];
 
   paragraphs.forEach(p => {
+    // Skip container paragraphs that wrap text boxes (nested <w:p>); their leaf paragraphs are read individually
+    if (p.getElementsByTagNameNS('*', 'p').length > 0) return;
     const tNodes = Array.from(p.getElementsByTagNameNS('*', 't'));
     const txt = tNodes.map(n => n.textContent || '').join('').trim();
     if (txt) lines.push(txt);

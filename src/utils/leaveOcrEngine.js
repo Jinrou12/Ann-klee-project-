@@ -101,6 +101,48 @@ export async function cropLeaveSlipSignatureNameZone(dataUrl) {
 }
 
 /**
+ * Crisp crop of Reason & Date Zone ("កម្មវត្ថុ : សំណើសុំច្បាប់ចំនួន... គិតចាប់ពីថ្ងៃទី..." and "មូលហេតុ : ...")
+ * so cursive monastic words like "អាពាធ" are read with 100% clarity.
+ */
+export async function cropLeaveSlipReasonAndDateZone(dataUrl) {
+  const img = await loadImageElement(dataUrl);
+  if (!img) return '';
+  try {
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return '';
+
+    const sx = Math.round(w * 0.04);
+    const sy = Math.round(h * 0.44);
+    const sw = Math.max(1, Math.round(w * 0.88));
+    const sh = Math.max(1, Math.round(h * 0.22));
+
+    const targetW = Math.min(1280, Math.max(960, Math.round(sw * 1.5)));
+    const scale = targetW / sw;
+    const targetH = Math.max(1, Math.round(sh * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, targetW, targetH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.filter = 'contrast(1.12)';
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+
+    const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    canvas.width = 0;
+    canvas.height = 0;
+    return croppedDataUrl.split(',')[1] || '';
+  } catch (e) {
+    console.warn('Leave reason/date crop failed:', e);
+    return '';
+  }
+}
+
+/**
  * Honest Blank Leave Item when Offline or Network Failed (Strictly Leave Type — NEVER Finance)
  */
 export function createBlankLeaveResult(errorMessage = '', { isTrulyOffline } = {}) {
@@ -162,6 +204,7 @@ export async function extractLeaveSlipWithGemini({
   mimeType = 'image/jpeg',
   apiKey = '',
   nameLineCropBase64 = '',
+  reasonDateCropBase64 = '',
   signatureCropBase64 = '',
   studentMaster = []
 }) {
@@ -170,7 +213,7 @@ export async function extractLeaveSlipWithGemini({
     'You are an expert Khmer handwriting Paleographer reading a Cambodian Buddhist monastic primary school Student Leave Slip (លិខិតសុំច្បាប់).',
     'Your ONLY task is LITERAL, CHARACTER-BY-CHARACTER transcription of the blue/black ballpoint pen ink written on the form.',
     'CRITICAL RULES:',
-    '1. ORIENTATION ("rotateClockwiseDegrees"): 0 if text runs horizontally upright, or 90 / 180 / 270 clockwise degrees needed to make text upright.',
+    '1. ORIENTATION ("rotateClockwiseDegrees"): 0 if text runs horizontally upright, 270 if top header is on the RIGHT edge, 90 if top header is on the LEFT edge, or 180 if upside-down.',
     '2. LITERAL STUDENT NAME ON LINE 1 ("line1PenInkName"):',
     '   - Locate Line 1 right below "លិខិតសុំច្បាប់", starting after printed "ខ្ញុំបាទ/នាងខ្ញុំឈ្មោះ:" and reading ALL THE WAY UP TO printed "ភេទ:" (or "អាយុ").',
     '   - CRITICAL MULTI-SYLLABLE RULE: Do NOT stop after reading only 2 syllables! Many Khmer monastic students have 3 or 4 syllables (e.g., a 2-syllable surname PLUS a 2-syllable given name written slightly smaller right before printed "ភេទ:"). Read EVERY handwritten word/syllable on that dotted line before "ភេទ:"!',
@@ -188,15 +231,17 @@ export async function extractLeaveSlipWithGemini({
     '   - Read ONLY the start date after "គិតចាប់ពីថ្ងៃទី... ខែ... ឆ្នាំ..." (ignore end date after "រហូតដល់ថ្ងៃទី" and return date after "ចូលរៀនវិញនៅថ្ងៃទី").',
     '   - Output format "DD/MM/YYYY" (e.g. day 20, month "តុលា" = 10, year 2026 -> "20/10/2026").',
     '7. REASON ("reason"):',
-    '   - Read ONLY the exact handwritten Khmer words after printed "មូលហេតុ :" (e.g. "ឈឺក្បាលវិលមុខ"). Do not add extra words.',
+    '   - Read ONLY the exact handwritten Khmer words after printed "មូលហេតុ :".',
+    '   - CRITICAL MONASTIC REASON RULE: In Buddhist monastic schools, novices very frequently write "អាពាធ" (illness/sick: អ + ា + ព + ា + ធ). Carefully trace the 4 characters of cursive "អាពាធ" and NEVER misread "អាពាធ" as "រវល់ការ" or "រវល់ការផ្ទះ"!',
+    '   - Other common reasons: "ឈឺក្បាល", "ឈឺក្បាលវិលមុខ", "ឈឺពោះ", "គ្រុនក្ដៅ", "ទៅមន្ទីរពេទ្យ", "រវល់ការងារផ្ទាល់ខ្លួន", "ទៅស្រុកកំណើត". Do not add extra words.',
     ...(rosterBlock
       ? [
           '8. OFFICIAL ROSTER VISUAL CROSS-CHECK ("rosterMatchedName" + "rosterConfidence"):',
-          '   - FIRST finish the literal "line1PenInkName" and "signaturePenInkName" above WITHOUT looking at this roster.',
-          '   - THEN re-examine the ACTUAL pen-ink strokes of Line 1 AND the bottom-right signature against the official students below, prioritizing the grade you read.',
+          '   - CRITICAL: NEVER alter or replace "line1PenInkName" or "signaturePenInkName" using this roster! Those two fields MUST remain your 100% raw literal character-by-character pen-ink readings!',
+          '   - CRITICAL GRADE LOCK: When picking "rosterMatchedName", you MUST ONLY look inside the roster of the SAME GRADE written on the slip (e.g. if grade is "២", ONLY consider students in "ថ្នាក់ ២" — NEVER pick a student from "ថ្នាក់ ១", "ថ្នាក់ ៣", or "មត្តេយ្យ"!).',
           '   - Young novices often write ឆ/ឈ/ជ, គ/ឃ, ណ/ន, ល/ឡ, ិ/ី/ឹ interchangeably, squeeze the last syllable before "ភេទ:", or join surname + given name in fast cursive.',
-          '   - Output the EXACT official roster spelling ONLY when the visible ink strokes genuinely correspond to that student (same syllable count & stroke shapes).',
-          '   - If the name area is blank/unreadable or no student truly matches, output "" with rosterConfidence 0. NEVER pick a student just to fill the field.',
+          '   - Output the EXACT official roster spelling ONLY when the visible ink strokes genuinely correspond to that student in that grade.',
+          '   - If the name area is blank/unreadable or no student in that grade truly matches, output "" with rosterConfidence 0. NEVER pick a student just to fill the field.',
           '   OFFICIAL STUDENT ROSTER BY GRADE:',
           rosterBlock
         ]
@@ -215,6 +260,10 @@ export async function extractLeaveSlipWithGemini({
     parts.push({ text: 'Zoomed Line 1 (Student Name & Grade ONLY — ignore Line 2 school name at bottom edge):' });
     parts.push({ inlineData: { mimeType: 'image/jpeg', data: nameLineCropBase64 } });
   }
+  if (reasonDateCropBase64) {
+    parts.push({ text: 'Zoomed Duration, Start Date & Reason ("មូលហេតុ :") Zone:' });
+    parts.push({ inlineData: { mimeType: 'image/jpeg', data: reasonDateCropBase64 } });
+  }
   if (signatureCropBase64) {
     parts.push({ text: 'Zoomed Bottom-Right Student Signature & Written Name:' });
     parts.push({ inlineData: { mimeType: 'image/jpeg', data: signatureCropBase64 } });
@@ -224,7 +273,7 @@ export async function extractLeaveSlipWithGemini({
     parts,
     apiKey,
     thinkingBudget: 2048,
-    timeoutMs: 26000,
+    timeoutMs: 36000,
     maxTimeoutAttempts: 2
   });
 }
@@ -485,8 +534,9 @@ export async function runLeaveSlipOcrPipeline({
 
   try {
     onStageChange?.('ocr');
-    const [nameLineCropBase64, signatureCropBase64] = await Promise.all([
+    const [nameLineCropBase64, reasonDateCropBase64, signatureCropBase64] = await Promise.all([
       cropLeaveSlipNameLineZone(dataUrl),
+      cropLeaveSlipReasonAndDateZone(dataUrl),
       cropLeaveSlipSignatureNameZone(dataUrl)
     ]);
 
@@ -495,17 +545,21 @@ export async function runLeaveSlipOcrPipeline({
       mimeType,
       apiKey,
       nameLineCropBase64,
+      reasonDateCropBase64,
       signatureCropBase64,
       studentMaster
     });
 
     onStageChange?.('match');
-    const rawItemsList = Array.isArray(rawResult?.leaveItems)
-      ? rawResult.leaveItems
+    const rawObj = Array.isArray(rawResult)
+      ? (rawResult.find(el => el && typeof el === 'object' && Array.isArray(el.leaveItems)) || rawResult[0] || {})
+      : (rawResult || {});
+    const rawItemsList = Array.isArray(rawObj?.leaveItems)
+      ? rawObj.leaveItems
       : (Array.isArray(rawResult)
-        ? rawResult
-        : ((rawResult && (rawResult.line1PenInkName || rawResult.rawHandwrittenName || rawResult.grade || rawResult.reason))
-          ? [rawResult]
+        ? rawResult.flatMap(el => Array.isArray(el?.leaveItems) ? el.leaveItems : ((el && (el.line1PenInkName || el.rawHandwrittenName || el.grade || el.reason)) ? [el] : []))
+        : ((rawObj && (rawObj.line1PenInkName || rawObj.rawHandwrittenName || rawObj.grade || rawObj.reason))
+          ? [rawObj]
           : []));
     const resolvedLeaveItems = resolveLeaveSlipItems(rawItemsList, {
       studentMaster,
@@ -516,8 +570,8 @@ export async function runLeaveSlipOcrPipeline({
       processingMode: 'gemini_cloud',
       extractionResult: {
         detectedType: 'leave',
-        rotateClockwiseDegrees: Number(rawResult?.rotateClockwiseDegrees) || 0,
-        confidence: Number(rawResult?.confidence) || 0.96,
+        rotateClockwiseDegrees: Number(rawObj?.rotateClockwiseDegrees) || 0,
+        confidence: Number(rawObj?.confidence) || 0.96,
         leaveItems: resolvedLeaveItems,
         financeItems: [],
         initialOcrName: resolvedLeaveItems[0]?.initialOcrName || ''

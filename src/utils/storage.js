@@ -2,6 +2,7 @@
 import { DEFAULT_STUDENT_MASTER, matchStudentName, normalizeStudentGrade } from './studentMaster';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { INITIAL_ADMIN_REPORTS } from './adminReportBuilder';
+import { normalizeRecordDateStr, sortRecordsByDateAsc } from './khmerNumerals';
 
 // Helper to parse comma/newline/whitespace-separated API key strings or arrays into clean unique keys
 export function parseApiKeyList(raw) {
@@ -13,9 +14,38 @@ export function parseApiKeyList(raw) {
   return Array.from(new Set(cleaned));
 }
 
-// Default Gemini API Key Pool safely loaded from environment variables
+// Default Gemini API Key Pool safely loaded from environment variables (plus Supabase cloud pool hydration)
 const envKeys = import.meta.env?.VITE_GEMINI_KEYS;
 export const DEFAULT_GEMINI_KEYS = parseApiKeyList(envKeys);
+
+// Stray header strings that previously leaked into list sections during .docx import
+const STRAY_ADMIN_REPORT_LINES = new Set(['របាយការណ៍ប្រចាំខែ', 'របាយការណ៌ប្រចាំខែ']);
+
+/**
+ * Merge stored admin reports with defaults and heal any month whose list sections
+ * were polluted by stray header lines (e.g. 'របាយការណ៌ប្រចាំខែ') from a past import.
+ */
+export function sanitizeAdminReportsState(rawReports) {
+  const merged = { ...INITIAL_ADMIN_REPORTS, ...(rawReports || {}) };
+  const listKeys = ['solutions', 'challenges', 'requests', 'directions', 'activities', 'appendixItems'];
+  Object.keys(merged).forEach(month => {
+    const report = merged[month];
+    if (!report || typeof report !== 'object') return;
+    let changed = false;
+    const fixed = { ...report };
+    listKeys.forEach(key => {
+      if (!Array.isArray(report[key])) return;
+      const cleaned = report[key].filter(item => !STRAY_ADMIN_REPORT_LINES.has(String(item || '').trim()));
+      if (cleaned.length !== report[key].length) {
+        changed = true;
+        const fallback = INITIAL_ADMIN_REPORTS[month]?.[key];
+        fixed[key] = cleaned.length > 0 ? cleaned : (Array.isArray(fallback) ? fallback : cleaned);
+      }
+    });
+    if (changed) merged[month] = fixed;
+  });
+  return merged;
+}
 
 const STORAGE_KEYS = {
   APP_STATE: 'ann_klee_app_state_v1',
@@ -187,26 +217,21 @@ export function sanitizeLeaveState(rawLeaves = {}) {
     const records = rawLeaves[month];
     if (!Array.isArray(records)) return;
 
-    const cleaned = records
-      .filter(r => r && !TEST_LEAVE_IDS_TO_PURGE.has(r.id))
-      .map(r => {
-        let cleanDate = String(r.date || '').replace(/\u200B/g, '').trim();
-        cleanDate = cleanDate.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
-        if (cleanDate.includes('ដល់') || cleanDate.includes('-') || cleanDate.toLowerCase().includes('to')) {
-          const parts = cleanDate.split(/ដល់|-|\/to\//i);
-          if (parts[0] && parts[0].trim().length >= 6) {
-            cleanDate = parts[0].trim();
-          }
-        }
-        const cleanReason = String(r.reason || '').replace(/\u200B/g, '').replace(/\s+/g, ' ').trim();
-        const cleanGrade = normalizeStudentGrade(r.grade);
-        return {
-          ...r,
-          grade: cleanGrade || r.grade || '',
-          reason: cleanReason,
-          date: cleanDate
-        };
-      });
+    const cleaned = sortRecordsByDateAsc(
+      records
+        .filter(r => r && !TEST_LEAVE_IDS_TO_PURGE.has(r.id))
+        .map(r => {
+          const cleanDate = normalizeRecordDateStr(r.date);
+          const cleanReason = String(r.reason || '').replace(/\u200B/g, '').replace(/\s+/g, ' ').trim();
+          const cleanGrade = normalizeStudentGrade(r.grade);
+          return {
+            ...r,
+            grade: cleanGrade || r.grade || '',
+            reason: cleanReason,
+            date: cleanDate
+          };
+        })
+    );
 
     if (cleaned.length > 0 || Object.prototype.hasOwnProperty.call(result, month)) {
       result[month] = cleaned;
@@ -218,7 +243,9 @@ export function sanitizeLeaveState(rawLeaves = {}) {
     const official = INITIAL_LEAVE_DATA[mKey];
     if (Array.isArray(official) && official.length > 0) {
       if (!Array.isArray(result[mKey]) || result[mKey].length === 0) {
-        result[mKey] = official.map(item => ({ ...item }));
+        result[mKey] = sortRecordsByDateAsc(
+          official.map(item => ({ ...item, date: normalizeRecordDateStr(item.date) }))
+        );
       }
     }
   });
@@ -810,14 +837,16 @@ export function loadAppState() {
     const mergedIdCards = { ...INITIAL_ID_CARD_DATA };
     Object.keys(rawIdCards).forEach(month => {
       if (Array.isArray(rawIdCards[month]) && rawIdCards[month].length > 0) {
-        mergedIdCards[month] = rawIdCards[month];
+        mergedIdCards[month] = sortRecordsByDateAsc(rawIdCards[month]);
       } else if (rawIdCards[month] && !INITIAL_ID_CARD_DATA[month]) {
-        mergedIdCards[month] = rawIdCards[month];
+        mergedIdCards[month] = Array.isArray(rawIdCards[month])
+          ? sortRecordsByDateAsc(rawIdCards[month])
+          : rawIdCards[month];
       }
     });
 
     const syncedFinance = recomputeLinkedFinance(normalizedFinance, normalizedLeaves, mergedIdCards);
-    const mergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(parsed.adminReports || {}) };
+    const mergedAdminReports = sanitizeAdminReportsState(parsed.adminReports);
 
     return {
       leaves: normalizedLeaves,
@@ -869,19 +898,18 @@ export function getGeminiKeyPool() {
       ];
     }
 
-    const basePool = Array.from(new Set([
+    const merged = Array.from(new Set([
+      ...savedSingle,
       ...savedPool,
       ...stateKeys,
       ...DEFAULT_GEMINI_KEYS
     ]));
 
-    // Only prepend savedSingle ahead of basePool if it's a brand-new custom key not already in basePool
-    const customFirst = savedSingle.filter(k => !basePool.includes(k));
-    return Array.from(new Set([
-      ...customFirst,
-      ...basePool,
-      ...savedSingle
-    ]));
+    // Prioritize current-generation keys (AQ.*) so stale legacy keys never block the scan queue.
+    // Legacy keys stay at the end as a last-resort fallback (dead ones are skipped on 401/403).
+    const modern = merged.filter(k => k.startsWith('AQ.'));
+    const legacy = merged.filter(k => !k.startsWith('AQ.'));
+    return [...modern, ...legacy];
   } catch (err) {
     console.error('Error reading Gemini key pool from localStorage:', err);
     return DEFAULT_GEMINI_KEYS;
@@ -919,15 +947,17 @@ export function setStoredApiKey(key) {
 }
 
 let inflightKeyPoolPromise = null;
+let cloudKeyPoolFetchedThisSession = false;
 
 /**
  * Cold-start guard for Vercel / fresh browsers:
  * Ensures the multi-key pool from Supabase (`app_state.meta.geminiKeys`) is hydrated
- * before running OCR when local keys have not yet arrived.
+ * before running OCR. Fetches once per session (even when stale local keys exist)
+ * and merges cloud keys with the env-provided default pool.
  */
 export async function ensureCloudApiKeyPoolLoaded() {
   const existing = getGeminiKeyPool();
-  if (existing.length > 1) return existing;
+  if (cloudKeyPoolFetchedThisSession) return existing;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return existing;
   if (!supabase) return existing;
 
@@ -937,10 +967,12 @@ export async function ensureCloudApiKeyPoolLoaded() {
       new Promise(resolve => setTimeout(() => resolve(null), 4000))
     ]).then(cloudData => {
       inflightKeyPoolPromise = null;
+      if (cloudData) cloudKeyPoolFetchedThisSession = true;
       if (cloudData?.meta) {
         const cloudPool = Array.from(new Set([
           ...parseApiKeyList(cloudData.meta.geminiKeys),
           ...parseApiKeyList(cloudData.meta.geminiKey),
+          ...parseApiKeyList(localStorage.getItem(STORAGE_KEYS.API_KEY_POOL)),
           ...DEFAULT_GEMINI_KEYS
         ]));
         if (cloudPool.length > 0) {
@@ -1635,7 +1667,7 @@ export async function fetchCloudAppState() {
     if (data && data.data) {
       const cleanLeaves = sanitizeLeaveState(data.data.leaves);
       const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(data.data.idCards || {}) };
-      const mergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(data.data.adminReports || {}) };
+      const mergedAdminReports = sanitizeAdminReportsState(data.data.adminReports);
       return {
         ...data.data,
         leaves: cleanLeaves,
@@ -1686,7 +1718,7 @@ export function subscribeToCloudAppState(onRemoteUpdate) {
           if (payload.new && payload.new.data) {
             const cleanLeaves = sanitizeLeaveState(payload.new.data.leaves);
             const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(payload.new.data.idCards || {}) };
-            const mergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(payload.new.data.adminReports || {}) };
+            const mergedAdminReports = sanitizeAdminReportsState(payload.new.data.adminReports);
             onRemoteUpdate({
               ...payload.new.data,
               leaves: cleanLeaves,

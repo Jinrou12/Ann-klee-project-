@@ -82,7 +82,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
             pdf.addPage('a4', 'portrait');
           }
           pdf.setPage(idx + 1);
-          const imgData = canvas.toDataURL('image/jpeg', 0.98);
+          const imgData = canvas.toDataURL('image/jpeg', 0.9);
           pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
         } finally {
           sheet.style.boxShadow = prevShadow;
@@ -147,7 +147,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
   const opt = {
     margin: pdfMargins,
     filename: filename.endsWith('.pdf') ? filename : `${filename}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
+    image: { type: 'jpeg', quality: 0.9 }, // 0.9 keeps text crisp while cutting file size ~3x
     html2canvas: {
       scale: 2, // 2x scale guarantees high-res rendering for Khmer diacritics
       useCORS: true,

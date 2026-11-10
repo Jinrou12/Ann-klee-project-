@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, FileText,
   Calendar, Search, Download, Loader2, CreditCard, CheckCircle2
 } from 'lucide-react';
-import { toKhmerDigits, toEnglishDigits, formatKhmerCurrency } from '../../utils/khmerNumerals';
+import { toKhmerDigits, toEnglishDigits, formatKhmerCurrency, normalizeRecordDateStr, sortRecordsByDateAsc } from '../../utils/khmerNumerals';
 import { exportIdCardToExcel } from '../../utils/excelExporter';
 import { exportIdCardToWord } from '../../utils/wordExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
@@ -124,7 +124,7 @@ export default function IdCardMobileView({
       return;
     }
 
-    const finalDate = (quickDate || '').trim() || autoDateInfo.entryDateStr;
+    const finalDate = normalizeRecordDateStr((quickDate || '').trim() || autoDateInfo.entryDateStr, useKhmerNumerals);
     const targetMonth = extractMonthKeyFromDate(finalDate, monthKey);
 
     const newRecord = {
@@ -141,7 +141,7 @@ export default function IdCardMobileView({
     if (onAddRecordToMonth && targetMonth !== monthKey) {
       onAddRecordToMonth(targetMonth, newRecord);
     } else {
-      onUpdateRecords([...records, newRecord]);
+      onUpdateRecords(sortRecordsByDateAsc([...records, newRecord]));
     }
 
     const [, targetM] = targetMonth.split('-');
@@ -163,7 +163,10 @@ export default function IdCardMobileView({
       alert('សូមបញ្ចូលព្រះនាម ឬឈ្មោះសមណសិស្ស');
       return;
     }
-    const updated = records.map(r => r.id === editingId ? { ...editForm } : r);
+    const normalizedDate = normalizeRecordDateStr(editForm.date || '', useKhmerNumerals);
+    const updated = sortRecordsByDateAsc(
+      records.map(r => r.id === editingId ? { ...editForm, date: normalizedDate } : r)
+    );
     onUpdateRecords(updated);
     setEditingId(null);
     setEditForm({});
@@ -197,7 +200,7 @@ export default function IdCardMobileView({
     }
   };
 
-  const filteredRecords = records.filter(r => {
+  const filteredRecords = sortRecordsByDateAsc(records).filter(r => {
     const matchesSearch = !searchQuery.trim() ||
       (r.name && r.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (r.item && r.item.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -753,7 +756,7 @@ export default function IdCardMobileView({
                           </span>
                         </div>
                         <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>
-                          មុខទំនិញ៖ <strong style={{ color: '#0284c7' }}>{r.item}</strong> ({useKhmerNumerals ? toKhmerDigits(r.qty || 1) : (r.qty || 1)}) • ថ្ងៃទី៖ {useKhmerNumerals ? toKhmerDigits(r.date || '') : (r.date || '')}
+                          មុខទំនិញ៖ <strong style={{ color: '#0284c7' }}>{r.item}</strong> ({useKhmerNumerals ? toKhmerDigits(r.qty || 1) : (r.qty || 1)}) • ថ្ងៃទី៖ {normalizeRecordDateStr(r.date || '', useKhmerNumerals)}
                         </div>
                       </div>
                     </div>

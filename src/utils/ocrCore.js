@@ -65,11 +65,11 @@ export const GEMINI_VISION_MODELS = [
   'gemini-3.5-flash'
 ];
 
-// Lightweight Router & Orientation models: preserve `gemini-3-flash-preview` 20 RPD quota exclusively for deep OCR
+// Router & Orientation models: use `gemini-3-flash-preview` first for accurate 90° vs 270° rotation detection
 export const GEMINI_ROUTER_MODELS = [
+  'gemini-3-flash-preview',
   'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3-flash-preview'
+  'gemini-3.5-flash'
 ];
 
 export function isKeyUsable(key, model = '') {
@@ -86,6 +86,8 @@ export function isKeyUsable(key, model = '') {
   return true;
 }
 
+let roundRobinKeyCursor = 0;
+
 export function getCandidateApiKeys(explicitApiKey = '', targetModel = '') {
   const pool = getGeminiKeyPool();
   const explicitList = parseApiKeyList(explicitApiKey);
@@ -100,6 +102,17 @@ export function getCandidateApiKeys(explicitApiKey = '', targetModel = '') {
   const primaryModel = targetModel || GEMINI_VISION_MODELS[0];
   const readyKeys = merged.filter(k => isKeyUsable(k, primaryModel));
   const coolingKeys = merged.filter(k => !isKeyUsable(k, primaryModel));
+
+  if (readyKeys.length > 1) {
+    const offset = roundRobinKeyCursor % readyKeys.length;
+    roundRobinKeyCursor = (roundRobinKeyCursor + 1) % readyKeys.length;
+    const rotatedReady = [
+      ...readyKeys.slice(offset),
+      ...readyKeys.slice(0, offset)
+    ];
+    return [...rotatedReady, ...coolingKeys];
+  }
+
   return [...readyKeys, ...coolingKeys];
 }
 
@@ -136,9 +149,38 @@ export function formatKhmerScanError(err) {
   return 'មិនអាចស្កេនដោយ AI បានបណ្ដោះអាសន្ន — សូមសាកល្បងម្ដងទៀត';
 }
 
+function unwrapTopLevelJsonEnvelope(parsed) {
+  let current = parsed;
+  while (Array.isArray(current) && current.length > 0) {
+    const first = current[0];
+    if (
+      current.length === 1 &&
+      first &&
+      typeof first === 'object' &&
+      !Array.isArray(first)
+    ) {
+      current = first;
+    } else if (
+      first &&
+      typeof first === 'object' &&
+      !Array.isArray(first) &&
+      ('leaveItems' in first ||
+        'financeItems' in first ||
+        'detectedType' in first ||
+        'docType' in first ||
+        'uprightImage' in first)
+    ) {
+      current = first;
+    } else {
+      break;
+    }
+  }
+  return current;
+}
+
 /**
  * Extract JSON payload from Gemini response parts, safely skipping internal `{ thought: true }` parts
- * when `thinkingBudget > 0` is enabled.
+ * when `thinkingBudget > 0` is enabled, and unwrapping top-level `[ {...} ]` array envelopes.
  */
 function parseGeminiJsonCandidate(result) {
   const parts = result?.candidates?.[0]?.content?.parts || [];
@@ -153,12 +195,12 @@ function parseGeminiJsonCandidate(result) {
   }
   const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
   try {
-    return JSON.parse(cleaned);
+    return unwrapTopLevelJsonEnvelope(JSON.parse(cleaned));
   } catch {
     const firstBrace = cleaned.indexOf('{');
     const lastBrace = cleaned.lastIndexOf('}');
     if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1));
+      return unwrapTopLevelJsonEnvelope(JSON.parse(cleaned.slice(firstBrace, lastBrace + 1)));
     }
     throw new Error('Invalid JSON from Gemini');
   }
@@ -180,21 +222,23 @@ export async function callGeminiJsonWithResilience({
   models = GEMINI_VISION_MODELS
 }) {
   const modelList = Array.isArray(models) && models.length > 0 ? models : GEMINI_VISION_MODELS;
-  let keysToTry = getCandidateApiKeys(apiKey, modelList[0]);
-  if (keysToTry.length <= 1 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+  let initialKeys = getCandidateApiKeys(apiKey, modelList[0]);
+  if (initialKeys.length <= 1 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
     const hydratedPool = await ensureCloudApiKeyPoolLoaded();
     if (hydratedPool.length > 0) {
-      keysToTry = getCandidateApiKeys(apiKey, modelList[0]);
+      initialKeys = getCandidateApiKeys(apiKey, modelList[0]);
     }
   }
-  if (keysToTry.length === 0) {
+  if (initialKeys.length === 0) {
     throw new Error('មិនទាន់មាន AI Key — សូមបញ្ចូល AI Key ដើម្បីដំណើរការស្កេន');
   }
 
   let lastError = null;
   let timeoutCount = 0;
 
-  for (const model of modelList) {
+  for (let mIdx = 0; mIdx < modelList.length; mIdx++) {
+    const model = modelList[mIdx];
+    const keysToTry = mIdx === 0 ? initialKeys : getCandidateApiKeys(apiKey, model);
     let emptyResponseCount = 0;
     const supportsThinking = !model.includes('lite');
     const supportsThinkingLevel = Boolean(thinkingLevel) && model === 'gemini-3-flash-preview';
@@ -247,14 +291,31 @@ export async function callGeminiJsonWithResilience({
             continue;
           }
           if (response.status === 400 || response.status === 401 || response.status === 403) {
-            // Note: 400 with INVALID_ARGUMENT on thinkingConfig could be model-specific, check message
-            if (response.status === 400 && errText.toLowerCase().includes('thinking')) {
-              lastError = new Error('400 thinkingConfig unsupported');
-              break;
+            const lowerErr = errText.toLowerCase();
+            const isKeyProblem =
+              response.status === 401 ||
+              response.status === 403 ||
+              lowerErr.includes('api_key_invalid') ||
+              lowerErr.includes('api key not valid') ||
+              lowerErr.includes('key not valid') ||
+              lowerErr.includes('api key expired');
+            if (isKeyProblem) {
+              // Only genuinely dead/revoked keys are blacklisted for the session
+              sessionBadKeys.add(activeKey);
+              lastError = new Error(`${response.status} API Key error`);
+              continue;
             }
-            sessionBadKeys.add(activeKey);
-            lastError = new Error(`${response.status} API Key error`);
-            continue;
+            // Request-level 400 (thinkingConfig / schema / payload) is model-specific — never poison the key pool.
+            // Retry once on the same model without thinkingConfig, then move to the next model.
+            if (generationConfig.thinkingConfig && !transientRetriedOnModel) {
+              transientRetriedOnModel = true;
+              delete generationConfig.thinkingConfig;
+              console.warn(`⚠️ [400 Retry] ${model} rejected request config → retrying without thinkingConfig...`);
+              kIdx--;
+              continue;
+            }
+            lastError = new Error(`Gemini API Error (${response.status})`);
+            break;
           }
           if (response.status === 404 || response.status === 503 || response.status >= 500) {
             lastError = new Error(`Gemini API Error (${response.status})`);

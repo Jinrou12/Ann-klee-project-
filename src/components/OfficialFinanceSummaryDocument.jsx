@@ -101,29 +101,30 @@ export default function OfficialFinanceSummaryDocument({
 
       {/* Unified 5-Column Summary Table */}
       <table
+        className="official-grid"
         style={{
           width: '100%',
           tableLayout: 'fixed',
-          borderCollapse: 'collapse',
-          border: '1px solid #000000',
-          fontSize: 13.5
+          borderCollapse: 'separate',
+          borderSpacing: 0,
+          fontSize: 12
         }}
       >
         <thead>
-          <tr style={{ background: '#ffffff', textAlign: 'center', height: 38 }}>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '6%', padding: '7px 4px', fontSize: 12.5 }}>
+          <tr style={{ background: '#ffffff', textAlign: 'center', height: 28 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '6%', padding: '3px 4px', fontSize: 12 }}>
               ល.រ
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '44%', padding: '7px 8px', fontSize: 12.5 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '44%', padding: '3px 8px', fontSize: 12 }}>
               បរិយាយ
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '15%', padding: '7px 6px', fontSize: 12.5 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '15%', padding: '3px 6px', fontSize: 12 }}>
               ចំនួន
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '19%', padding: '7px 6px', fontSize: 12.5 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '19%', padding: '3px 6px', fontSize: 12 }}>
               ចំនួនថវិកា
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '16%', padding: '7px 6px', fontSize: 12.5 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '16%', padding: '3px 6px', fontSize: 12 }}>
               ផ្សេងៗ
             </th>
           </tr>
@@ -131,31 +132,31 @@ export default function OfficialFinanceSummaryDocument({
         <tbody>
           {/* Income Rows (1 & 2) */}
           {summaryModel.incomeRows.map((row, idx) => (
-            <tr key={`inc-sum-${idx}`} style={{ height: 36 }}>
-              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '7px 4px' }}>{row.no}</td>
-              <td style={{ border: '1px solid #000', textAlign: 'left', padding: '7px 10px' }}>{row.desc}</td>
-              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '7px 6px', whiteSpace: 'nowrap' }}>
+            <tr key={`inc-sum-${idx}`} style={{ height: 26 }}>
+              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>{row.no}</td>
+              <td style={{ border: '1px solid #000', textAlign: 'left', padding: '3px 8px' }}>{row.desc}</td>
+              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: 'nowrap' }}>
                 {row.qty}
               </td>
-              <td style={{ border: '1px solid #000', textAlign: 'right', padding: '7px 8px', whiteSpace: 'nowrap' }}>
+              <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 8px', whiteSpace: 'nowrap' }}>
                 {row.amountText}
               </td>
-              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '7px 6px', fontSize: 12 }}>
+              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', fontSize: 11.5 }}>
                 {row.note}
               </td>
             </tr>
           ))}
 
           {/* Subtotal Income Row */}
-          <tr style={{ height: 38 }}>
+          <tr className="official-total" style={{ height: 27 }}>
             <td
               colSpan={3}
               style={{
                 border: '1px solid #000',
                 textAlign: 'center',
-                padding: '7px 8px',
-                fontWeight: 700,
-                fontSize: 13.5
+                padding: '3px 8px',
+                fontWeight: 600,
+                fontSize: 12.5
               }}
             >
               {summaryModel.totalIncomeLabel}
@@ -165,45 +166,45 @@ export default function OfficialFinanceSummaryDocument({
               style={{
                 border: '1px solid #000',
                 textAlign: 'right',
-                padding: '7px 8px',
-                fontSize: 13,
+                padding: '3px 8px',
+                fontSize: 12,
                 whiteSpace: 'nowrap'
               }}
             >
-              <span style={{ display: 'inline-block', borderBottom: '1.5px solid #000000', paddingBottom: 1 }}>
+              <span style={{ display: 'inline-block', borderBottom: '1px solid #000000', paddingBottom: 0.5 }}>
                 {summaryModel.totalIncomeText}
               </span>
             </td>
-            <td style={{ border: '1px solid #000', padding: '7px 6px' }}></td>
+            <td style={{ border: '1px solid #000', padding: '3px 6px' }}></td>
           </tr>
 
           {/* Expense Rows (1 & 2) */}
           {summaryModel.expenseRows.map((row, idx) => (
-            <tr key={`exp-sum-${idx}`} style={{ height: 36 }}>
-              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '7px 4px' }}>{row.no}</td>
-              <td style={{ border: '1px solid #000', textAlign: 'left', padding: '7px 10px' }}>{row.desc}</td>
-              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '7px 6px', whiteSpace: 'nowrap' }}>
+            <tr key={`exp-sum-${idx}`} style={{ height: 26 }}>
+              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>{row.no}</td>
+              <td style={{ border: '1px solid #000', textAlign: 'left', padding: '3px 8px' }}>{row.desc}</td>
+              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: 'nowrap' }}>
                 {row.qty}
               </td>
-              <td style={{ border: '1px solid #000', textAlign: 'right', padding: '7px 8px', whiteSpace: 'nowrap' }}>
+              <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 8px', whiteSpace: 'nowrap' }}>
                 {row.amountText}
               </td>
-              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '7px 6px', fontSize: 12 }}>
+              <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', fontSize: 11.5 }}>
                 {row.note}
               </td>
             </tr>
           ))}
 
           {/* Subtotal Expense Row */}
-          <tr style={{ height: 38 }}>
+          <tr className="official-total" style={{ height: 27 }}>
             <td
               colSpan={3}
               style={{
                 border: '1px solid #000',
                 textAlign: 'center',
-                padding: '7px 8px',
-                fontWeight: 700,
-                fontSize: 13.5,
+                padding: '3px 8px',
+                fontWeight: 600,
+                fontSize: 12.5,
                 color: isDeficit ? '#b91c1c' : '#000000'
               }}
             >
@@ -214,8 +215,8 @@ export default function OfficialFinanceSummaryDocument({
               style={{
                 border: '1px solid #000',
                 textAlign: 'right',
-                padding: '7px 8px',
-                fontSize: 13,
+                padding: '3px 8px',
+                fontSize: 12,
                 color: isDeficit ? '#b91c1c' : '#000000',
                 whiteSpace: 'nowrap'
               }}
@@ -223,26 +224,26 @@ export default function OfficialFinanceSummaryDocument({
               <span
                 style={{
                   display: 'inline-block',
-                  borderBottom: `1.5px solid ${isDeficit ? '#b91c1c' : '#000000'}`,
-                  paddingBottom: 1
+                  borderBottom: `1px solid ${isDeficit ? '#b91c1c' : '#000000'}`,
+                  paddingBottom: 0.5
                 }}
               >
                 {summaryModel.totalExpenseText}
               </span>
             </td>
-            <td style={{ border: '1px solid #000', padding: '7px 6px' }}></td>
+            <td style={{ border: '1px solid #000', padding: '3px 6px' }}></td>
           </tr>
 
           {/* Final Net Balance Row (Double Underlined) */}
-          <tr style={{ height: 40 }}>
+          <tr className="official-total" style={{ height: 29 }}>
             <td
               colSpan={3}
               className="font-moul"
               style={{
                 border: '1px solid #000',
                 textAlign: 'center',
-                padding: '8px 8px',
-                fontSize: 13.5,
+                padding: '4px 8px',
+                fontSize: 12.5,
                 color: isDeficit ? '#b91c1c' : '#000000'
               }}
             >
@@ -253,8 +254,8 @@ export default function OfficialFinanceSummaryDocument({
               style={{
                 border: '1px solid #000',
                 textAlign: 'right',
-                padding: '8px 8px',
-                fontSize: 13.5,
+                padding: '4px 8px',
+                fontSize: 12.5,
                 color: isDeficit ? '#b91c1c' : '#000000',
                 whiteSpace: 'nowrap'
               }}
@@ -262,14 +263,14 @@ export default function OfficialFinanceSummaryDocument({
               <span
                 style={{
                   display: 'inline-block',
-                  borderBottom: `3px double ${isDeficit ? '#b91c1c' : '#000000'}`,
-                  paddingBottom: 2
+                  borderBottom: `2.5px double ${isDeficit ? '#b91c1c' : '#000000'}`,
+                  paddingBottom: 1
                 }}
               >
                 {summaryModel.balanceText}
               </span>
             </td>
-            <td style={{ border: '1px solid #000', padding: '8px 6px' }}></td>
+            <td style={{ border: '1px solid #000', padding: '4px 6px' }}></td>
           </tr>
         </tbody>
       </table>

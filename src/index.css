@@ -1,4 +1,31 @@
 /* Global Design System & Administrative Monastic Styling */
+
+/* Authentic official template fonts (same as the original .docx/.pdf templates),
+   bundled so Mobile renders identically to PC even when the fonts are not installed */
+@font-face {
+  font-family: 'Khmer OS Muol Light';
+  src: local('Khmer OS Muol Light'), url('/fonts/KhmerOSmuollight.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Khmer OS Siemreap';
+  src: local('Khmer OS Siemreap'), url('/fonts/KhmerOSsiemreap.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tacteing';
+  src: local('Tacteing'), local('Tacteng'), url('/fonts/Tacteing.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --primary: #b45309;
   --primary-hover: #92400e;
@@ -111,6 +138,89 @@ input:focus, select:focus, textarea:focus {
   -webkit-text-size-adjust: 100%;
   -moz-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* Official documents use the authentic template fonts (scoped: UI fonts elsewhere stay unchanged) */
+  --font-moul: 'Khmer OS Muol Light', 'Moul', 'Kantumruy Pro', cursive;
+  --font-content: 'Khmer OS Siemreap', 'Siemreap', 'Battambang', 'Kantumruy Pro', sans-serif;
+}
+
+/* Muol Light is a display face: never apply faux-bold (it makes PDFs look dark & heavy) */
+.printable-document .font-moul {
+  font-weight: 400 !important;
+}
+
+/* Official data grids: single-edge hairline borders so html2canvas NEVER double-draws shared row/column borders */
+.printable-document table.official-grid {
+  border: none !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.printable-document table.official-grid th:not(.no-print),
+.printable-document table.official-grid td:not(.no-print) {
+  border-top: none !important;
+  border-left: none !important;
+  border-right: 0.6px solid #475569 !important;
+  border-bottom: 0.6px solid #475569 !important;
+  line-height: 1.35;
+}
+
+.printable-document table.official-grid > thead > tr:first-child > th:not(.no-print),
+.printable-document table.official-grid > thead > tr:first-child > td:not(.no-print),
+.printable-document table.official-grid:not(:has(> thead)) > tbody > tr:first-child > th:not(.no-print),
+.printable-document table.official-grid:not(:has(> thead)) > tbody > tr:first-child > td:not(.no-print) {
+  border-top: 0.6px solid #475569 !important;
+}
+
+.printable-document table.official-grid tr > th:first-child:not(.no-print),
+.printable-document table.official-grid tr > td:first-child:not(.no-print) {
+  border-left: 0.6px solid #475569 !important;
+}
+
+.printable-document table.official-grid th.no-print,
+.printable-document table.official-grid td.no-print {
+  border-top: none !important;
+  border-left: none !important;
+  border-right: 0.6px solid #cbd5e1 !important;
+  border-bottom: 0.6px solid #cbd5e1 !important;
+}
+
+.printable-document table.official-grid > thead > tr:first-child > th.no-print,
+.printable-document table.official-grid:not(:has(> thead)) > tbody > tr:first-child > th.no-print,
+.printable-document table.official-grid:not(:has(> thead)) > tbody > tr:first-child > td.no-print {
+  border-top: 0.6px solid #cbd5e1 !important;
+}
+
+.printable-document.pdf-rendering-active table.official-grid th:not(.no-print),
+.printable-document.pdf-rendering-active table.official-grid td:not(.no-print) {
+  border-right: 0.5px solid #4b5563 !important;
+  border-bottom: 0.5px solid #4b5563 !important;
+}
+
+.printable-document.pdf-rendering-active table.official-grid > thead > tr:first-child > th:not(.no-print),
+.printable-document.pdf-rendering-active table.official-grid > thead > tr:first-child > td:not(.no-print),
+.printable-document.pdf-rendering-active table.official-grid:not(:has(> thead)) > tbody > tr:first-child > th:not(.no-print),
+.printable-document.pdf-rendering-active table.official-grid:not(:has(> thead)) > tbody > tr:first-child > td:not(.no-print) {
+  border-top: 0.5px solid #4b5563 !important;
+}
+
+.printable-document.pdf-rendering-active table.official-grid tr > th:first-child:not(.no-print),
+.printable-document.pdf-rendering-active table.official-grid tr > td:first-child:not(.no-print) {
+  border-left: 0.5px solid #4b5563 !important;
+}
+
+.printable-document table.official-grid th:not(.no-print) {
+  font-family: var(--font-moul);
+  font-weight: 400 !important;
+  font-size: 12px !important;
+  background: #ffffff !important;
+}
+
+.printable-document table.official-grid td:not(.no-print) {
+  font-weight: 400 !important;
+}
+
+.printable-document table.official-grid tr {
+  background: #ffffff !important;
 }
 
 /* Authentic A4 Paper Sheet Simulation (Screen Display) */
@@ -171,8 +281,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* Single-Page Fit Mode (when rows <= 16 and content fits on 1 A4 sheet) */
-.printable-document.pdf-single-page-fit td,
-.printable-document.pdf-single-page-fit th {
+.printable-document.pdf-single-page-fit td:not(.no-print),
+.printable-document.pdf-single-page-fit th:not(.no-print) {
   padding-top: 2.5px !important;
   padding-bottom: 2.5px !important;
 }

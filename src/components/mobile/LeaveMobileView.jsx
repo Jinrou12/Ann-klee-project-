@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Edit3, Check, X, FileSpreadsheet, FileText, Eye, 
   Calendar, Clock, AlertCircle, UserCheck, Search, Download, Loader2, Printer 
 } from 'lucide-react';
-import { toKhmerDigits, parseDurationShorthand, formatKhmerCurrency } from '../../utils/khmerNumerals';
+import { toKhmerDigits, parseDurationShorthand, formatKhmerCurrency, normalizeRecordDateStr, sortRecordsByDateAsc } from '../../utils/khmerNumerals';
 import { exportLeaveToExcel } from '../../utils/excelExporter';
 import { exportLeaveToWord } from '../../utils/wordExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
@@ -63,7 +63,10 @@ export default function LeaveMobileView({
       return;
     }
     const formattedDuration = parseDurationShorthand(editForm.duration) || '១ថ្ងៃ';
-    const updated = records.map(r => r.id === editingId ? { ...editForm, duration: formattedDuration } : r);
+    const normalizedDate = normalizeRecordDateStr(editForm.date || '', useKhmerNumerals);
+    const updated = sortRecordsByDateAsc(
+      records.map(r => r.id === editingId ? { ...editForm, duration: formattedDuration, date: normalizedDate } : r)
+    );
     onUpdateRecords(updated);
     setEditingId(null);
     setEditForm({});
@@ -84,9 +87,10 @@ export default function LeaveMobileView({
     const newRecord = {
       id: `leave-${Date.now()}`,
       ...newLeave,
+      date: normalizeRecordDateStr(newLeave.date || '', useKhmerNumerals),
       duration: parseDurationShorthand(newLeave.duration) || '១ថ្ងៃ'
     };
-    onUpdateRecords([...records, newRecord]);
+    onUpdateRecords(sortRecordsByDateAsc([...records, newRecord]));
     setShowAddModal(false);
     setNewLeave({
       name: '',
@@ -120,8 +124,8 @@ export default function LeaveMobileView({
     }
   };
 
-  // Filter records
-  const filteredRecords = records.filter(r => {
+  // Filter and sort records chronologically by date (earliest -> latest)
+  const filteredRecords = sortRecordsByDateAsc(records).filter(r => {
     const matchesSearch = !searchQuery.trim() || 
       (r.name && r.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (r.reason && r.reason.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -580,7 +584,7 @@ export default function LeaveMobileView({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Calendar size={13} color="#94a3b8" />
-                      <span>{record.date}</span>
+                      <span>{normalizeRecordDateStr(record.date || '', useKhmerNumerals)}</span>
                     </span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Clock size={13} color="#94a3b8" />

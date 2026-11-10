@@ -150,7 +150,7 @@ export default function OfficialAdminReportDocument({
           <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, letterSpacing: 0.5 }}>
             ជាតិ &nbsp; សាសនា &nbsp; ព្រះមហាក្សត្រ
           </div>
-          <KhmerRoyalDivider width={95} height={11} color={NAVY_HEADER_COLOR} />
+          <KhmerRoyalDivider width={120} height={8} color={NAVY_HEADER_COLOR} />
         </div>
 
         {/* 2. Left Monastic School Header with Official Logo on top (Navy Blue #002060) */}
@@ -186,11 +186,8 @@ export default function OfficialAdminReportDocument({
             <div style={{ fontFamily: MOUL_FONT, fontSize: 15 }}>
               សាលាអនុគណក្រុងកំពង់ចាម
             </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 15 }}>
-              ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង
-            </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 15 }}>
-              ក្រុងកំពង់ចាម
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, whiteSpace: 'nowrap' }}>
+              ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម
             </div>
             <div style={{ fontFamily: SIEMREAP_FONT, fontSize: 15 }}>
               លេខ {displayModel.docNumber || '......................'}ព.ប.ហ.ណ
@@ -412,7 +409,7 @@ export default function OfficialAdminReportDocument({
       node: (
         <div key="sec3-head" style={{ paddingTop: 6, marginBottom: 4 }}>
           <div style={{ paddingLeft: 28, marginBottom: 3 }}>
-            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>III.. </span>
+            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>III. </span>
             <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
               {String(displayModel.section3Heading || '').replace(/^III\.+\s*/, '')}
             </span>

@@ -335,9 +335,9 @@ export async function extractFinanceReceiptWithGemini({
   return callGeminiJsonWithResilience({
     parts,
     apiKey,
-    thinkingLevel: 'MEDIUM',
-    thinkingBudget: 2048,
-    timeoutMs: 32000,
+    thinkingLevel: 'HIGH',
+    thinkingBudget: 4096,
+    timeoutMs: 65000,
     maxTimeoutAttempts: 2
   });
 }
@@ -375,14 +375,19 @@ export async function runFinanceReceiptOcrPipeline({
       trainingDataset
     });
 
-    const rawItemsList = Array.isArray(rawResult?.financeItems)
-      ? rawResult.financeItems
-      : (Array.isArray(rawResult) ? rawResult : (rawResult?.desc ? [rawResult] : []));
+    const rawObj = Array.isArray(rawResult)
+      ? (rawResult.find(el => el && typeof el === 'object' && Array.isArray(el.financeItems)) || rawResult[0] || {})
+      : (rawResult || {});
+    const rawItemsList = Array.isArray(rawObj?.financeItems)
+      ? rawObj.financeItems
+      : (Array.isArray(rawResult)
+        ? rawResult.flatMap(el => Array.isArray(el?.financeItems) ? el.financeItems : (el?.desc ? [el] : []))
+        : (rawObj?.desc ? [rawObj] : []));
     const normalizedItems = normalizeFinanceItems(rawItemsList);
     const finalItems = normalizedItems.length > 0 ? normalizedItems : createBlankFinanceResult('').financeItems;
 
     // Attach merchant/seller prefix to row note if item has empty note
-    const merchantPrefix = [rawResult?.seller, rawResult?.invoiceNo, rawResult?.invoiceDate].filter(Boolean).join(', ');
+    const merchantPrefix = [rawObj?.seller, rawObj?.invoiceNo, rawObj?.invoiceDate].filter(Boolean).join(', ');
     if (merchantPrefix) {
       finalItems.forEach(item => {
         if (!item.note) item.note = merchantPrefix;
@@ -393,19 +398,19 @@ export async function runFinanceReceiptOcrPipeline({
       processingMode: 'gemini_cloud',
       extractionResult: {
         detectedType: 'finance',
-        rotateClockwiseDegrees: Number(rawResult?.rotateClockwiseDegrees) || 0,
-        confidence: Number(rawResult?.confidence) || 0.98,
+        rotateClockwiseDegrees: Number(rawObj?.rotateClockwiseDegrees) || 0,
+        confidence: Number(rawObj?.confidence) || 0.98,
         leaveItems: [],
         financeItems: finalItems,
-        seller: rawResult?.seller || '',
-        invoiceNo: rawResult?.invoiceNo || '',
-        invoiceDate: rawResult?.invoiceDate || '',
-        customer: rawResult?.customer || '',
-        subtotal: Number(rawResult?.subtotal) || 0,
-        subtotalCurrency: rawResult?.subtotalCurrency || '',
-        exchangeRate: Number(rawResult?.exchangeRate) || 0,
-        grandTotalKhr: Number(rawResult?.grandTotalKhr) || 0,
-        grandTotalUsd: Number(rawResult?.grandTotalUsd) || 0,
+        seller: rawObj?.seller || '',
+        invoiceNo: rawObj?.invoiceNo || '',
+        invoiceDate: rawObj?.invoiceDate || '',
+        customer: rawObj?.customer || '',
+        subtotal: Number(rawObj?.subtotal) || 0,
+        subtotalCurrency: rawObj?.subtotalCurrency || '',
+        exchangeRate: Number(rawObj?.exchangeRate) || 0,
+        grandTotalKhr: Number(rawObj?.grandTotalKhr) || 0,
+        grandTotalUsd: Number(rawObj?.grandTotalUsd) || 0,
         initialFinanceItems: finalItems.map(it => ({
           desc: it.desc,
           qty: it.qty,
