@@ -70,23 +70,23 @@ export default function OfficialLeaveDocument({
             alt="Logo"
             style={{ width: 50, height: 50, objectFit: 'contain', marginBottom: 3 }}
           />
-          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.ministry}
           </div>
-          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {String(metadata.school || '').replace(/^សាលា(?=ពុទ្ធិក)/, '')}
           </div>
-          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.location}
           </div>
         </div>
 
         {/* Right: National Kingdom & Motto */}
         <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 15.5, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
-          <div className="font-moul" style={{ fontSize: 14.5, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', whiteSpace: 'nowrap' }}>
             ជាតិ សាសនា ព្រះមហាក្សត្រ
           </div>
           <KhmerRoyalDivider />
@@ -95,13 +95,13 @@ export default function OfficialLeaveDocument({
 
       {/* Report Title — 3 lines exactly like the original template (របាយការណ៍ / ស្ដីពី / title) */}
       <div style={{ textAlign: 'center', marginTop: 10, marginBottom: 14, lineHeight: 1.6 }}>
-        <div className="font-moul" style={{ fontSize: 16, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
           របាយការណ៍
         </div>
-        <div className="font-moul" style={{ fontSize: 15, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
           ស្ដីពី
         </div>
-        <div className="font-moul" style={{ fontSize: 15.5, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
           {customPeriodTitle || `ចំនួនសមណសិស្សសុំច្បាប់ ក្នុងខែ${monthName} ឆ្នាំ${yearDisplay}`}
         </div>
       </div>
@@ -112,17 +112,17 @@ export default function OfficialLeaveDocument({
         tableLayout: compactReasonColumn ? 'fixed' : 'auto',
         borderCollapse: 'separate',
         borderSpacing: 0,
-        fontSize: 12.5
+        fontSize: '11pt'
       }}>
         <thead>
           <tr style={{ background: '#ffffff', textAlign: 'center', height: 28 }}>
             <th style={{ border: '1px solid #000', width: compactReasonColumn ? '6%' : '5%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ល.រ</th>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '21%' : '19%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>គោត្តនាម-និងនាម</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '21%' : '20%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>គោត្តនាម-និងនាម</th>
             <th style={{ border: '1px solid #000', width: compactReasonColumn ? '8%' : '7%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ថ្នាក់</th>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '26%' : '34%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>មូលហេតុ</th>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '17%' : '11%', padding: '3px 5px', fontWeight: 400, whiteSpace: 'nowrap' }}>ចំនួនឈប់</th>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '12%' : '14%', padding: '3px 5px', fontWeight: 400, whiteSpace: 'nowrap' }}>កាលបរិច្ឆេទ</th>
-            <th style={{ border: '1px solid #000', width: '10%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ផ្សេងៗ</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '22%' : '31%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>មូលហេតុ</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '20%' : '13%', padding: '3px 5px', fontWeight: 400, whiteSpace: 'nowrap' }}>ចំនួនឈប់</th>
+            <th style={{ border: '1px solid #000', width: '14%', padding: '3px 5px', fontWeight: 400, whiteSpace: 'nowrap' }}>កាលបរិច្ឆេទ</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '9%' : '10%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ផ្សេងៗ</th>
             {isEditable && (
               <th className="no-print" style={{ border: '1px solid #cbd5e1', width: 40, background: '#f8fafc' }}></th>
             )}
@@ -148,7 +148,7 @@ export default function OfficialLeaveDocument({
                   </td>
 
                   {/* Column 2: Name */}
-                  <td style={{ border: '1px solid #000', padding: '3px 7px', whiteSpace: compactReasonColumn ? 'normal' : 'nowrap', wordBreak: 'break-word' }}>
+                  <td style={{ border: '1px solid #000', padding: '3px 7px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -161,7 +161,7 @@ export default function OfficialLeaveDocument({
                     ) : (
                       <div
                         onClick={() => isEditable && setEditingRowId(r.id)}
-                        style={{ cursor: isEditable ? 'pointer' : 'default', minHeight: 20, whiteSpace: compactReasonColumn ? 'normal' : 'nowrap' }}
+                        style={{ cursor: isEditable ? 'pointer' : 'default', minHeight: 20, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                         title={isEditable ? "ចុចដើម្បីកែប្រែ" : ""}
                       >
                         {r.name || <span style={{ color: '#cbd5e1' }}>--</span>}
@@ -189,9 +189,9 @@ export default function OfficialLeaveDocument({
                   <td style={{
                     border: '1px solid #000',
                     padding: '3px 8px',
-                    whiteSpace: compactReasonColumn ? 'normal' : 'nowrap',
-                    wordBreak: compactReasonColumn ? 'break-word' : 'normal',
-                    overflowWrap: compactReasonColumn ? 'anywhere' : 'normal'
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis'
                   }}>
                     {isEditing ? (
                       <input
@@ -205,8 +205,9 @@ export default function OfficialLeaveDocument({
                         onClick={() => isEditable && setEditingRowId(r.id)}
                         style={{
                           cursor: isEditable ? 'pointer' : 'default',
-                          whiteSpace: compactReasonColumn ? 'normal' : 'nowrap',
-                          lineHeight: compactReasonColumn ? 1.4 : undefined
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
                         }}
                         title={isEditable ? "ចុចដើម្បីកែប្រែ" : ""}
                       >
@@ -216,7 +217,7 @@ export default function OfficialLeaveDocument({
                   </td>
 
                   {/* Column 5: Duration */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: compactReasonColumn ? 'normal' : 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: 'nowrap' }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -234,7 +235,7 @@ export default function OfficialLeaveDocument({
                         style={{ width: '100%', textAlign: 'center', border: '1px solid #b45309', padding: '2px 4px', fontSize: 13 }}
                       />
                     ) : (
-                      <div onClick={() => isEditable && setEditingRowId(r.id)} style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: compactReasonColumn ? 'normal' : 'nowrap' }}>
+                      <div onClick={() => isEditable && setEditingRowId(r.id)} style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
                         {r.duration}
                       </div>
                     )}
@@ -319,7 +320,7 @@ export default function OfficialLeaveDocument({
       )}
 
       {/* Summary Count Row */}
-      <div style={{ marginTop: 14, fontSize: 13, fontWeight: 400 }}>
+      <div style={{ marginTop: 14, fontSize: '11pt', fontWeight: 400 }}>
         {customSummaryText || `ចំនួនសមណសិស្សសុំច្បាប់ក្នុងខែ${monthName} សរុប ${useKhmerNumerals ? toKhmerDigits(records.length) : records.length}អង្គ`}
       </div>
 
@@ -332,18 +333,18 @@ export default function OfficialLeaveDocument({
           alignItems: 'flex-start',
           marginTop: 16,
           marginBottom: 10,
-          fontSize: 12,
-          lineHeight: 1.5
+          fontSize: '11pt',
+          lineHeight: 1.6
         }}
       >
         {/* Left Signature: School Director */}
-        <div style={{ textAlign: 'center', flex: '0 0 43%', maxWidth: '43%' }}>
-          <div className="font-moul" style={{ fontSize: 12.5, marginBottom: 3, whiteSpace: 'nowrap' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 46%', maxWidth: '46%' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
             បានឃើញ និង..................
           </div>
-          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ.......................ខែ..................ឆ្នាំ{reportDates.zodiac || 'មមី'}{reportDates.sak || 'អដ្ឋស័ក'} ព.ស {reportDates.beYear || '២៥៧០'}</div>
+          <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ..............ខែ...........ឆ្នាំ{reportDates.zodiac || 'មមី'}{reportDates.sak || 'អដ្ឋស័ក'} ព.ស {reportDates.beYear || '២៥៧០'}</div>
           <div style={{ whiteSpace: 'nowrap' }}>ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ{reportDates.yearKhmer}</div>
-          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
               : metadata.directorTitle}
@@ -351,10 +352,10 @@ export default function OfficialLeaveDocument({
         </div>
 
         {/* Right Signature: Reporter (Automatically calculated last working day, excluding Sat/Sun) */}
-        <div style={{ textAlign: 'center', flex: '0 0 55%', maxWidth: '55%' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 53%', maxWidth: '53%' }}>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.lunarDateText}</div>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.solarDateTextLeave}</div>
-          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>
         </div>

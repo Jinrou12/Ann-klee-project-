@@ -89,23 +89,23 @@ export default function OfficialIdCardDocument({
             alt="Logo"
             style={{ width: 50, height: 50, objectFit: 'contain', marginBottom: 3 }}
           />
-          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.ministry}
           </div>
-          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {String(metadata.school || '').replace(/^សាលា(?=ពុទ្ធិក)/, '')}
           </div>
-          <div className="font-moul" style={{ fontSize: 14, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.location}
           </div>
         </div>
 
         {/* Right: National Kingdom & Motto */}
         <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 15.5, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
-          <div className="font-moul" style={{ fontSize: 14.5, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', whiteSpace: 'nowrap' }}>
             ជាតិ សាសនា ព្រះមហាក្សត្រ
           </div>
           <KhmerRoyalDivider />
@@ -114,13 +114,13 @@ export default function OfficialIdCardDocument({
 
       {/* Report Title — 3 lines exactly like the original template (របាយការណ៍ / ស្ដីពី / title) */}
       <div style={{ textAlign: 'center', marginTop: 10, marginBottom: 14, lineHeight: 1.6 }}>
-        <div className="font-moul" style={{ fontSize: 16, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
           របាយការណ៍
         </div>
-        <div className="font-moul" style={{ fontSize: 15, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
           ស្ដីពី
         </div>
-        <div className="font-moul" style={{ fontSize: 15.5, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
           {customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញកាតពាក់ក (ID) ក្នុងខែ${monthName} ឆ្នាំ${yearDisplay}`}
         </div>
       </div>
@@ -130,7 +130,7 @@ export default function OfficialIdCardDocument({
         width: '100%',
         borderCollapse: 'separate',
         borderSpacing: 0,
-        fontSize: 12.5
+        fontSize: '11pt'
       }}>
         <thead>
           <tr style={{ background: '#ffffff', textAlign: 'center', height: 28 }}>
@@ -445,9 +445,9 @@ export default function OfficialIdCardDocument({
           {/* Total Footer Row (សរុប) matching តារាងបង់ថ្លៃទិញកាត ID.xlsx */}
           <tr className="official-total" style={{ height: 27, background: '#ffffff' }}>
             <td colSpan={5} style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 5px' }}>
-              <span className="font-moul" style={{ fontSize: 12 }}>សរុប</span>
+              <span className="font-moul" style={{ fontSize: '11pt' }}>សរុប</span>
             </td>
-            <td className="font-moul" style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 7px', fontSize: 12, whiteSpace: 'nowrap' }}>
+            <td className="font-moul" style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 7px', fontSize: '11pt', whiteSpace: 'nowrap' }}>
               <span style={{ display: 'inline-block', borderBottom: '1px solid #000000', paddingBottom: 0.5 }}>
                 {formatKhmerCurrency(totalAmount, useKhmerNumerals)}
               </span>
@@ -462,7 +462,7 @@ export default function OfficialIdCardDocument({
       <div style={{
         marginTop: 12,
         marginBottom: 14,
-        fontSize: 13,
+        fontSize: '11pt',
         fontWeight: 400
       }}>
         {customSummaryText || (
@@ -476,12 +476,12 @@ export default function OfficialIdCardDocument({
         justifyContent: 'space-between',
         alignItems: 'flex-start',
         marginTop: 8,
-        fontSize: 12,
-        lineHeight: 1.55
+        fontSize: '11pt',
+        lineHeight: 1.6
       }}>
         {/* Left: Director Approval */}
-        <div style={{ textAlign: 'center', flex: '0 0 43%', maxWidth: '43%' }}>
-          <div className="font-moul" style={{ fontSize: 12.5, marginBottom: 4, whiteSpace: 'nowrap' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 46%', maxWidth: '46%' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
             បានឃើញ និង……………..
           </div>
           <div style={{ whiteSpace: 'nowrap' }}>
@@ -490,20 +490,20 @@ export default function OfficialIdCardDocument({
           <div style={{ whiteSpace: 'nowrap' }}>
             {reportDates.leftBlankSolar}
           </div>
-          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 6, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 6, whiteSpace: 'nowrap' }}>
             {metadata.directorTitle || 'នាយកសាលា'}
           </div>
         </div>
 
         {/* Right: Reporter Date & Signature */}
-        <div style={{ textAlign: 'center', flex: '0 0 55%', maxWidth: '55%' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 53%', maxWidth: '53%' }}>
           <div style={{ whiteSpace: 'nowrap' }}>
             {reportDates.lunarHeader}
           </div>
           <div style={{ whiteSpace: 'nowrap' }}>
             {reportDates.solarHeader}
           </div>
-          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 6, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 6, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>
         </div>

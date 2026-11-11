@@ -128,16 +128,19 @@ input:focus, select:focus, textarea:focus {
 }
 
 .printable-document,
-.printable-document * {
+.printable-document *,
+.admin-a4-page-sheet,
+.admin-a4-page-sheet * {
   letter-spacing: 0 !important;
 }
 
 /* Prevent mobile browsers (Chrome font boosting) from inflating text in the A4 document,
    so mobile PDF renders at the exact same font sizes as PC PDF */
-.printable-document {
-  -webkit-text-size-adjust: 100%;
-  -moz-text-size-adjust: 100%;
-  text-size-adjust: 100%;
+.printable-document,
+.admin-a4-page-sheet {
+  -webkit-text-size-adjust: 100% !important;
+  -moz-text-size-adjust: 100% !important;
+  text-size-adjust: 100% !important;
   /* Official documents use the authentic template fonts (scoped: UI fonts elsewhere stay unchanged) */
   --font-moul: 'Khmer OS Muol Light', 'Moul', 'Kantumruy Pro', cursive;
   --font-content: 'Khmer OS Siemreap', 'Siemreap', 'Battambang', 'Kantumruy Pro', sans-serif;
@@ -211,7 +214,7 @@ input:focus, select:focus, textarea:focus {
 .printable-document table.official-grid th:not(.no-print) {
   font-family: var(--font-moul);
   font-weight: 400 !important;
-  font-size: 12px !important;
+  font-size: 11pt !important;
   background: #ffffff !important;
 }
 
@@ -265,15 +268,15 @@ input:focus, select:focus, textarea:focus {
   display: table-header-group;
 }
 
-/* Temporary PDF Rendering Guard */
+/* Temporary PDF Rendering Guard (703px matches 186mm printable A4 width at 96 DPI for 1:1 pt font fidelity) */
 .printable-document.pdf-rendering-active {
   padding: 0 !important;
   margin: 0 !important;
   box-shadow: none !important;
   border: none !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
+  width: 703px !important;
+  max-width: 703px !important;
+  min-width: 703px !important;
   box-sizing: border-box !important;
   min-height: auto !important;
   display: block !important;

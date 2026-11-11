@@ -69,6 +69,7 @@ export default function SummaryTableView({
   const [selectedYear, setSelectedYear] = useState(() => (currentMonthKey || '2026-07').split('-')[0] || '2026');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [viewFormatMode, setViewFormatMode] = useState('official_a4'); // 'official_a4' | 'analytics'
+  const [financeViewType, setFinanceViewType] = useState('full'); // 'full' (ពេញ) | 'summary' (សង្ខេប)
 
   // Keep selectedMonth in sync when user changes top MonthSelector bar
   useEffect(() => {
@@ -299,9 +300,7 @@ export default function SummaryTableView({
       name: s.name,
       grade: s.grade,
       reason: s.leaveCount > 0
-        ? (isMultiMonthPeriod
-          ? formatCondensedReasons(s.records, { maxReasons: 2, useKhmerNumerals })
-          : Array.from(new Set(s.records.map(r => r.reason).filter(Boolean))).join(', '))
+        ? formatCondensedReasons(s.records, { maxReasons: 1, useKhmerNumerals })
         : 'មករៀនទៀងទាត់ (គ្មានច្បាប់)',
       duration: s.leaveCount > 0
         ? formatDurationTotals(s.durationTotals, useKhmerNumerals)
@@ -452,12 +451,17 @@ export default function SummaryTableView({
       setIsExportingPdf(true);
       const safePeriodSlug = String(periodTitleLabel || activeMonthName).replace(/\s+/g, '_');
       if (sectionMode === 'finance') {
-        await exportDualElementsToPdf(
-          '#printable-summary-finance-document',
-          `របាយការណ៍ហិរញ្ញវត្ថុ_${safePeriodSlug}`,
-          '#printable-summary-finance-brief-document',
-          `របាយការណ៍ចំណូលចំណាយសង្ខេប_${safePeriodSlug}`
-        );
+        if (viewFormatMode === 'official_a4' && financeViewType === 'summary') {
+          await exportElementToPdf(
+            '#printable-summary-finance-brief-document',
+            `របាយការណ៍ចំណូលចំណាយសង្ខេប_${safePeriodSlug}`
+          );
+        } else {
+          await exportElementToPdf(
+            '#printable-summary-finance-document',
+            `របាយការណ៍ហិរញ្ញវត្ថុ_${safePeriodSlug}`
+          );
+        }
       } else if (sectionMode === 'idcards') {
         await exportElementToPdf(
           '#printable-summary-idcard-document',
@@ -2045,21 +2049,63 @@ export default function SummaryTableView({
 
             {/* OFFICIAL MINISTRY A4 FINANCE DOCUMENT VIEW (Default - Exact replica of PDF 1) */}
             {viewFormatMode === 'official_a4' ? (
-              <div style={{ padding: '20px 16px', background: '#f1f5f9' }}>
+              <div style={{ padding: '20px 16px', background: '#f1f5f9', position: 'relative' }}>
+                {/* Toggle Button: ពេញ ⇄ សង្ខេប — Floating on top-right of paper BG */}
+                <button
+                  type="button"
+                  onClick={() => setFinanceViewType(financeViewType === 'full' ? 'summary' : 'full')}
+                  style={{
+                    position: 'absolute',
+                    top: 28,
+                    right: 24,
+                    zIndex: 10,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '6px 14px',
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    border: '1.5px solid #d97706',
+                    background: financeViewType === 'summary' ? '#b45309' : '#fffbeb',
+                    color: financeViewType === 'summary' ? '#ffffff' : '#b45309',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(180,83,9,0.18)',
+                    transition: 'all 0.15s'
+                  }}
+                  title={financeViewType === 'full' ? 'ប្ដូរមើលតារាងសង្ខេប' : 'ប្ដូរមើលតារាងពេញ'}
+                >
+                  <FileText size={14} />
+                  <span>{financeViewType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
+                </button>
                 <A4SheetScaler>
-                  <OfficialFinanceDocument
-                    id="printable-summary-finance-document"
-                    financeData={financeDataForOfficialDoc}
-                    metadata={metadata}
-                    monthName={activeMonthName}
-                    yearDisplay={yearDisplay}
-                    useKhmerNumerals={useKhmerNumerals}
-                    monthKey={effectiveReportMonthKey}
-                    isEditable={false}
-                    customPeriodTitle={financeCustomPeriodTitle}
-                    isDeficitOverride={isOverallDeficit}
-                    categoryFilter={financeCategoryFilter}
-                  />
+                  {financeViewType === 'summary' ? (
+                    <OfficialFinanceSummaryDocument
+                      id="printable-summary-finance-brief-document"
+                      financeData={fullPeriodFinanceDataForSummary}
+                      metadata={metadata}
+                      monthName={activeMonthName}
+                      yearDisplay={yearDisplay}
+                      useKhmerNumerals={useKhmerNumerals}
+                      monthKey={effectiveReportMonthKey}
+                      periodMode={periodMode}
+                      isDeficitOverride={isOverallDeficit}
+                    />
+                  ) : (
+                    <OfficialFinanceDocument
+                      id="printable-summary-finance-document"
+                      financeData={financeDataForOfficialDoc}
+                      metadata={metadata}
+                      monthName={activeMonthName}
+                      yearDisplay={yearDisplay}
+                      useKhmerNumerals={useKhmerNumerals}
+                      monthKey={effectiveReportMonthKey}
+                      isEditable={false}
+                      customPeriodTitle={financeCustomPeriodTitle}
+                      isDeficitOverride={isOverallDeficit}
+                      categoryFilter={financeCategoryFilter}
+                    />
+                  )}
                 </A4SheetScaler>
               </div>
             ) : (
@@ -2089,6 +2135,17 @@ export default function SummaryTableView({
                     customPeriodTitle={financeCustomPeriodTitle}
                     isDeficitOverride={isOverallDeficit}
                     categoryFilter={financeCategoryFilter}
+                  />
+                  <OfficialFinanceSummaryDocument
+                    id="printable-summary-finance-brief-document"
+                    financeData={fullPeriodFinanceDataForSummary}
+                    metadata={metadata}
+                    monthName={activeMonthName}
+                    yearDisplay={yearDisplay}
+                    useKhmerNumerals={useKhmerNumerals}
+                    monthKey={effectiveReportMonthKey}
+                    periodMode={periodMode}
+                    isDeficitOverride={isOverallDeficit}
                   />
                 </div>
 
@@ -2169,35 +2226,7 @@ export default function SummaryTableView({
               </table>
             </div>
               </>
-            )}
-
-            {/* Offscreen Summary Document for Dual PDF Export in PC Summary Finance Section */}
-            <div
-              className="no-print"
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: -9999,
-                width: 794,
-                minWidth: 794,
-                maxWidth: 794,
-                pointerEvents: 'none'
-              }}
-              aria-hidden="true"
-            >
-              <OfficialFinanceSummaryDocument
-                id="printable-summary-finance-brief-document"
-                financeData={fullPeriodFinanceDataForSummary}
-                metadata={metadata}
-                monthName={activeMonthName}
-                yearDisplay={yearDisplay}
-                useKhmerNumerals={useKhmerNumerals}
-                monthKey={effectiveReportMonthKey}
-                periodMode={periodMode}
-                isDeficitOverride={isOverallDeficit}
-              />
-            </div>
-          </div>
+            )}          </div>
         </>
       )}
     </div>

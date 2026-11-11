@@ -72,23 +72,23 @@ export default function OfficialFinanceDocument({
             alt="Logo"
             style={{ width: 50, height: 50, objectFit: 'contain', marginBottom: 3 }}
           />
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.ministry}
           </div>
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.school}
           </div>
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.location}
           </div>
         </div>
 
         {/* Right: National Kingdom & Motto */}
         <div style={{ textAlign: 'center', lineHeight: 1.45 }}>
-          <div className="font-moul" style={{ fontSize: 13.5, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
-          <div className="font-moul" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', whiteSpace: 'nowrap' }}>
             ជាតិ សាសនា ព្រះមហាក្សត្រ
           </div>
           <KhmerRoyalDivider />
@@ -97,13 +97,13 @@ export default function OfficialFinanceDocument({
 
       {/* Report Title */}
       <div style={{ textAlign: 'center', marginTop: 4, marginBottom: 10 }}>
-        <div className="font-moul" style={{ fontSize: 14.5, marginBottom: 2, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', marginBottom: 2, whiteSpace: 'nowrap' }}>
           របាយការណ៍
         </div>
-        <div className="font-moul" style={{ fontSize: 13, marginBottom: 2, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', marginBottom: 2, whiteSpace: 'nowrap' }}>
           ស្ដីពី
         </div>
-        <div className="font-moul" style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
           {customPeriodTitle || `តារាងចំណូលចំណាយប្រចាំខែ${monthName} ឆ្នាំ${yearDisplay}`}
         </div>
       </div>
@@ -118,7 +118,7 @@ export default function OfficialFinanceDocument({
               tableLayout: 'fixed',
               borderCollapse: 'separate',
               borderSpacing: 0,
-              fontSize: 12
+              fontSize: '11pt'
             }}
           >
             <colgroup>
@@ -528,18 +528,18 @@ export default function OfficialFinanceDocument({
           justifyContent: 'space-between',
           alignItems: 'flex-start',
           marginTop: 14,
-          fontSize: 12,
-          lineHeight: 1.5
+          fontSize: '11pt',
+          lineHeight: 1.6
         }}
       >
         {/* Left Signature: School Director */}
-        <div style={{ textAlign: 'center', flex: '0 0 43%', maxWidth: '43%' }}>
-          <div className="font-moul" style={{ fontSize: 12.5, marginBottom: 3, whiteSpace: 'nowrap' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 46%', maxWidth: '46%' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
             បានឃើញ និង……………..
           </div>
           <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃ………..…….ខែ………..….ឆ្នាំ{reportDates.zodiac || 'មមី'} {reportDates.sak || 'អដ្ឋស័ក'} ព.ស.{reportDates.beYear || '២៥៧០'}</div>
           <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃទី………. ខែ……….. ឆ្នាំ{reportDates.yearKhmer}</div>
-          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
               : metadata.directorTitle}
@@ -547,10 +547,10 @@ export default function OfficialFinanceDocument({
         </div>
 
         {/* Right Signature: Reporter (Automatically calculated last working day, excluding Sat/Sun) */}
-        <div style={{ textAlign: 'center', flex: '0 0 55%', maxWidth: '55%' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 53%', maxWidth: '53%' }}>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.lunarDateText}</div>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.solarDateTextFinance}</div>
-          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 6, paddingBottom: 20, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>
         </div>

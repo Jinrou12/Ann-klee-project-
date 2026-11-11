@@ -160,6 +160,28 @@ export default function LeaveTableView({
           </button>
 
           <button
+            onClick={handleDownloadPdf}
+            disabled={isExportingPdf}
+            style={{
+              background: '#b91c1c',
+              color: '#ffffff',
+              padding: '7px 14px',
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              border: 'none',
+              cursor: isExportingPdf ? 'not-allowed' : 'pointer',
+              opacity: isExportingPdf ? 0.7 : 1
+            }}
+          >
+            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
+          </button>
+
+          <button
             onClick={onPrint}
             style={{
               background: '#0f172a',

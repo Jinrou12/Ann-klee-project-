@@ -229,8 +229,8 @@ function buildWordOfficialHeader(metadata = {}, _includeSalaPrefix = false, hasL
   ].join('');
 
   const rightParas = [
-    wParagraph('ព្រះរាជាណាចក្រកម្ពុជា', { font: FONT_MOUL, sizePt: 12, align: 'center' }),
-    wParagraph('ជាតិ សាសនា ព្រះមហាក្សត្រ', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
+    wParagraph('ព្រះរាជាណាចក្រកម្ពុជា', { font: FONT_MOUL, sizePt: 14, align: 'center' }),
+    wParagraph('ជាតិ សាសនា ព្រះមហាក្សត្រ', { font: FONT_MOUL, sizePt: 12, align: 'center' }),
     wTacteingDividerParagraph({ color: '000000', sizePt: 28 })
   ].join('');
 
@@ -248,9 +248,9 @@ function buildWordOfficialHeader(metadata = {}, _includeSalaPrefix = false, hasL
  */
 function buildWordReportTitle(titleText) {
   return [
-    wParagraph('របាយការណ៍', { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: 120 }),
-    wParagraph('ស្ដីពី', { font: FONT_MOUL, sizePt: 12, align: 'center' }),
-    wParagraph(titleText, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceAfter: 120 })
+    wParagraph('របាយការណ៍', { font: FONT_MOUL, sizePt: 14, align: 'center', spaceBefore: 120 }),
+    wParagraph('ស្ដីពី', { font: FONT_MOUL, sizePt: 14, align: 'center' }),
+    wParagraph(titleText, { font: FONT_MOUL, sizePt: 14, align: 'center', spaceAfter: 120 })
   ].join('');
 }
 
@@ -265,7 +265,7 @@ function buildWordOfficialSignatures(metadata = {}, reportDates = {}, isFinance 
 
   const leftLunar = isFinance
     ? `ថ្ងៃ………..…….ខែ………..….ឆ្នាំ${reportDates.zodiac || 'មមី'} ${reportDates.sak || 'អដ្ឋស័ក'} ព.ស.${reportDates.beYear || '២៥៧០'}`
-    : `ថ្ងៃ.................ខែ..............ឆ្នាំ${reportDates.zodiac || 'មមី'}${reportDates.sak || 'អដ្ឋស័ក'} ព.ស ${reportDates.beYear || '២៥៧០'}`;
+    : `ថ្ងៃ..............ខែ...........ឆ្នាំ${reportDates.zodiac || 'មមី'}${reportDates.sak || 'អដ្ឋស័ក'} ព.ស ${reportDates.beYear || '២៥៧០'}`;
   const leftSolar = isFinance
     ? `ថ្ងៃទី………. ខែ……….. ឆ្នាំ${reportDates.yearKhmer || '២០២៦'}`
     : `ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ${reportDates.yearKhmer || '២០២៦'}`;
@@ -274,19 +274,19 @@ function buildWordOfficialSignatures(metadata = {}, reportDates = {}, isFinance 
   const rightSolar = isFinance ? (reportDates.solarDateTextFinance || '') : (reportDates.solarDateTextLeave || '');
 
   const leftParas = [
-    wParagraph('បានឃើញ និង……………..', { font: FONT_MOUL, sizePt: 10.5, align: 'center', keepNext: true }),
-    wParagraph(leftLunar, { font: FONT_SIEMREAP, sizePt: 10, align: 'center', keepNext: true }),
-    wParagraph(leftSolar, { font: FONT_SIEMREAP, sizePt: 10, align: 'center', keepNext: true }),
-    wParagraph(directorTitle, { font: FONT_MOUL, sizePt: 10.5, align: 'center', spaceBefore: 30, spaceAfter: 0 })
+    wParagraph('បានឃើញ និង……………..', { font: FONT_MOUL, sizePt: 11, align: 'center', keepNext: true }),
+    wParagraph(leftLunar, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', keepNext: true }),
+    wParagraph(leftSolar, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', keepNext: true }),
+    wParagraph(directorTitle, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: 30, spaceAfter: 0 })
   ].join('');
 
   const rightParas = [
-    wParagraph(rightLunar, { font: FONT_SIEMREAP, sizePt: 10, align: 'center', keepNext: true }),
-    wParagraph(rightSolar, { font: FONT_SIEMREAP, sizePt: 10, align: 'center', keepNext: true }),
-    wParagraph(reporterTitle, { font: FONT_MOUL, sizePt: 10.5, align: 'center', spaceBefore: 30, spaceAfter: 0 })
+    wParagraph(rightLunar, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', keepNext: true }),
+    wParagraph(rightSolar, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', keepNext: true }),
+    wParagraph(reporterTitle, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: 30, spaceAfter: 0 })
   ].join('');
 
-  const widths = [5300, OFFICIAL_CONTENT_DXA - 5300];
+  const widths = [5000, OFFICIAL_CONTENT_DXA - 5000];
   const rowXml = `<w:tr>
     <w:trPr><w:cantSplit/></w:trPr>
     ${wCell(leftParas, { widthDxa: widths[0], vAlign: 'top', marginsDxa: ZERO_MARGINS })}
@@ -547,13 +547,13 @@ export async function exportLeaveToWord(records = [], monthLabel = 'កក្ក
   });
 
   const colWidths = fitColumns(options.compactReasonColumn
-    ? [580, 2150, 900, 2300, 1750, 1680, 1040] // compact reason box for Semester/Year
+    ? [580, 2150, 860, 2220, 2050, 1500, 1040] // 1-line reason & 1-line duration for Semester/Year
     : [580, 2150, 920, 2550, 1480, 1680, 1040]);
   const headers = ['ល.រ', 'គោត្តនាម-និងនាម', 'ថ្នាក់', 'មូលហេតុ', 'ចំនួនឈប់', 'កាលបរិច្ឆេទ', 'ផ្សេងៗ'];
 
   const headerRowXml = `<w:tr>
     ${headers.map((h, i) => wCell(
-      wParagraph(h, { font: FONT_MOUL, sizePt: 10, align: 'center' }),
+      wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
       { widthDxa: colWidths[i] }
     )).join('')}
   </w:tr>`;
@@ -561,7 +561,7 @@ export async function exportLeaveToWord(records = [], monthLabel = 'កក្ក
   const dataRowsXml = sortedRecords.length === 0
     ? [
       `<w:tr>${wCell(
-        wParagraph('មិនទាន់មានទិន្នន័យច្បាប់សម្រាប់ខែនេះនៅឡើយទេ។', { font: FONT_SIEMREAP, sizePt: 10.5, align: 'center' }),
+        wParagraph('មិនទាន់មានទិន្នន័យច្បាប់សម្រាប់ខែនេះនៅឡើយទេ។', { font: FONT_SIEMREAP, sizePt: 11, align: 'center' }),
         { widthDxa: OFFICIAL_CONTENT_DXA, gridSpan: 7 }
       )}</w:tr>`
     ]
@@ -577,7 +577,7 @@ export async function exportLeaveToWord(records = [], monthLabel = 'កក្ក
         { text: r.note || '', align: 'center' }
       ];
       return `<w:tr>${vals.map((v, i) => wCell(
-        wParagraph(v.text, { font: FONT_SIEMREAP, sizePt: 10.5, align: v.align }),
+        wParagraph(v.text, { font: FONT_SIEMREAP, sizePt: 11, align: v.align }),
         { widthDxa: colWidths[i] }
       )).join('')}</w:tr>`;
     });
@@ -590,7 +590,7 @@ export async function exportLeaveToWord(records = [], monthLabel = 'កក្ក
     buildWordOfficialHeader(metadata, false, hasLogo),
     buildWordReportTitle(titleText),
     wTable(colWidths, [headerRowXml, ...dataRowsXml], { bordered: true }),
-    wParagraph(sumText, { font: FONT_SIEMREAP, sizePt: 10.5, bold: false, align: 'left', indentLeft: 0, spaceBefore: 100, spaceAfter: 80, keepNext: true }),
+    wParagraph(sumText, { font: FONT_SIEMREAP, sizePt: 11, bold: false, align: 'left', indentLeft: 0, spaceBefore: 100, spaceAfter: 80, keepNext: true }),
     buildWordOfficialSignatures(metadata, reportDates, false)
   ].join('');
 
@@ -623,7 +623,7 @@ export async function exportIdCardToWord(records = [], monthLabel = 'កក្�
 
   const headerRowXml = `<w:tr>
     ${headers.map((h, i) => wCell(
-      wParagraph(h, { font: FONT_MOUL, sizePt: 10, align: 'center' }),
+      wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
       { widthDxa: colWidths[i] }
     )).join('')}
   </w:tr>`;
@@ -631,7 +631,7 @@ export async function exportIdCardToWord(records = [], monthLabel = 'កក្�
   const dataRowsXml = sortedRecords.length === 0
     ? [
       `<w:tr>${wCell(
-        wParagraph('មិនទាន់មានទិន្នន័យសមណសិស្សទិញកាត ID សម្រាប់ខែនេះនៅឡើយទេ។', { font: FONT_SIEMREAP, sizePt: 10.5, align: 'center' }),
+        wParagraph('មិនទាន់មានទិន្នន័យសមណសិស្សទិញកាត ID សម្រាប់ខែនេះនៅឡើយទេ។', { font: FONT_SIEMREAP, sizePt: 11, align: 'center' }),
         { widthDxa: OFFICIAL_CONTENT_DXA, gridSpan: 7 }
       )}</w:tr>`
     ]
@@ -646,16 +646,16 @@ export async function exportIdCardToWord(records = [], monthLabel = 'កក្�
         { text: normalizeRecordDateStr(r.date || '', useKhmer), align: 'center' }
       ];
       return `<w:tr>${vals.map((v, i) => wCell(
-        wParagraph(v.text, { font: FONT_SIEMREAP, sizePt: 10.5, align: v.align }),
+        wParagraph(v.text, { font: FONT_SIEMREAP, sizePt: 11, align: v.align }),
         { widthDxa: colWidths[i] }
       )).join('')}</w:tr>`;
     });
 
   const firstFiveWidth = colWidths.slice(0, 5).reduce((s, w) => s + w, 0);
   const totalRowXml = `<w:tr>
-    ${wCell(wParagraph('សរុប', { font: FONT_MOUL, sizePt: 10.5, align: 'center' }), { widthDxa: firstFiveWidth, gridSpan: 5 })}
-    ${wCell(wParagraph(formatKhmerCurrency(totalAmount, useKhmer), { font: FONT_SIEMREAP, sizePt: 10.5, bold: true, align: 'right' }), { widthDxa: colWidths[5] })}
-    ${wCell(wParagraph('', { font: FONT_SIEMREAP, sizePt: 10.5, align: 'center' }), { widthDxa: colWidths[6] })}
+    ${wCell(wParagraph('សរុប', { font: FONT_MOUL, sizePt: 11, align: 'center' }), { widthDxa: firstFiveWidth, gridSpan: 5 })}
+    ${wCell(wParagraph(formatKhmerCurrency(totalAmount, useKhmer), { font: FONT_SIEMREAP, sizePt: 11, bold: true, align: 'right' }), { widthDxa: colWidths[5] })}
+    ${wCell(wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center' }), { widthDxa: colWidths[6] })}
   </w:tr>`;
 
   const titleText = options.customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញកាតពាក់ក (ID) ក្នុងខែ${monthLabel}`;
@@ -665,7 +665,7 @@ export async function exportIdCardToWord(records = [], monthLabel = 'កក្�
     buildWordOfficialHeader(metadata, false, hasLogo),
     buildWordReportTitle(titleText),
     wTable(colWidths, [headerRowXml, ...dataRowsXml, totalRowXml], { bordered: true }),
-    wParagraph(sumText, { font: FONT_SIEMREAP, sizePt: 10.5, bold: false, align: 'left', indentLeft: 0, spaceBefore: 100, spaceAfter: 80, keepNext: true }),
+    wParagraph(sumText, { font: FONT_SIEMREAP, sizePt: 11, bold: false, align: 'left', indentLeft: 0, spaceBefore: 100, spaceAfter: 80, keepNext: true }),
     buildWordOfficialSignatures(metadata, reportDates, false)
   ].join('');
 
@@ -821,7 +821,7 @@ export async function exportFinanceSummaryReportToWord(
 
   const headerRowXml = `<w:tr>
     ${headers.map((h, i) => wCell(
-      wParagraph(h, { font: FONT_MOUL, sizePt: 11.5, align: 'center', spaceBefore: 30, spaceAfter: 30 }),
+      wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center', spaceBefore: 30, spaceAfter: 30 }),
       { widthDxa: colWidths[i] }
     )).join('')}
   </w:tr>`;
@@ -835,7 +835,7 @@ export async function exportFinanceSummaryReportToWord(
       { text: row.note || '', align: 'center' }
     ];
     return `<w:tr>${cells.map((c, i) => wCell(
-      wParagraph(c.text, { font: FONT_SIEMREAP, sizePt: 11.5, align: c.align, spaceBefore: 30, spaceAfter: 30 }),
+      wParagraph(c.text, { font: FONT_SIEMREAP, sizePt: 11, align: c.align, spaceBefore: 30, spaceAfter: 30 }),
       { widthDxa: colWidths[i] }
     )).join('')}</w:tr>`;
   };

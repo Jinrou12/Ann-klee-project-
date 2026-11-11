@@ -161,7 +161,7 @@ export function getMonthEndReportDates(monthKey = '2026-07', options = {}) {
   }
 
   const lunarDateText = `${dayNameKhmer}${lunarBody} ឆ្នាំ${zodiac} ${sak} ព.ស ${beYear}`;
-  const leftBlankLunar = `ថ្ងៃ.......................ខែ..................ឆ្នាំ${zodiac}${sak} ព.ស ${beYear}`;
+  const leftBlankLunar = `ថ្ងៃ..............ខែ...........ឆ្នាំ${zodiac}${sak} ព.ស ${beYear}`;
   const leftBlankSolar = `ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ${yearKhmer}`;
 
   return {

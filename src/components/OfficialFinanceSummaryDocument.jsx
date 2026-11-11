@@ -63,23 +63,23 @@ export default function OfficialFinanceSummaryDocument({
             alt="Logo"
             style={{ width: 52, height: 52, objectFit: 'contain', marginBottom: 4 }}
           />
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.ministry}
           </div>
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.school}
           </div>
-          <div className="font-moul" style={{ fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.location}
           </div>
         </div>
 
         {/* Right: National Kingdom & Motto */}
         <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
-          <div className="font-moul" style={{ fontSize: 13.5, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
-          <div className="font-moul" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', whiteSpace: 'nowrap' }}>
             ជាតិ សាសនា ព្រះមហាក្សត្រ
           </div>
           <KhmerRoyalDivider />
@@ -88,13 +88,13 @@ export default function OfficialFinanceSummaryDocument({
 
       {/* Report Title */}
       <div style={{ textAlign: 'center', marginTop: 8, marginBottom: 18 }}>
-        <div className="font-moul" style={{ fontSize: 14.5, marginBottom: 4, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
           របាយការណ៍
         </div>
-        <div className="font-moul" style={{ fontSize: 13.5, marginBottom: 4, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
           ស្ដីពី
         </div>
-        <div className="font-moul" style={{ fontSize: 14, whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
           {summaryModel.reportTitle}
         </div>
       </div>
@@ -107,24 +107,24 @@ export default function OfficialFinanceSummaryDocument({
           tableLayout: 'fixed',
           borderCollapse: 'separate',
           borderSpacing: 0,
-          fontSize: 12
+          fontSize: '11pt'
         }}
       >
         <thead>
           <tr style={{ background: '#ffffff', textAlign: 'center', height: 28 }}>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '6%', padding: '3px 4px', fontSize: 12 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '6%', padding: '3px 4px', fontSize: '11pt' }}>
               ល.រ
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '44%', padding: '3px 8px', fontSize: 12 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '44%', padding: '3px 8px', fontSize: '11pt' }}>
               បរិយាយ
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '15%', padding: '3px 6px', fontSize: 12 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '15%', padding: '3px 6px', fontSize: '11pt' }}>
               ចំនួន
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '19%', padding: '3px 6px', fontSize: 12 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '19%', padding: '3px 6px', fontSize: '11pt' }}>
               ចំនួនថវិកា
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '16%', padding: '3px 6px', fontSize: 12 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '16%', padding: '3px 6px', fontSize: '11pt' }}>
               ផ្សេងៗ
             </th>
           </tr>
@@ -283,20 +283,20 @@ export default function OfficialFinanceSummaryDocument({
           justifyContent: 'space-between',
           alignItems: 'flex-start',
           marginTop: 28,
-          fontSize: 12.5,
+          fontSize: '11pt',
           lineHeight: 1.6
         }}
       >
         {/* Left Signature: School Director */}
-        <div style={{ textAlign: 'center', flex: '0 0 43%', maxWidth: '43%' }}>
-          <div className="font-moul" style={{ fontSize: 12.5, marginBottom: 4, whiteSpace: 'nowrap' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 46%', maxWidth: '46%' }}>
+          <div className="font-moul" style={{ fontSize: '11pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
             បានឃើញ និង……………..
           </div>
           <div style={{ whiteSpace: 'nowrap' }}>
             ថ្ងៃ………..…….ខែ………..….ឆ្នាំ{reportDates.zodiac || 'មមី'} {reportDates.sak || 'អដ្ឋស័ក'} ព.ស.{reportDates.beYear || '២៥៧០'}
           </div>
           <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃទី………. ខែ……….. ឆ្នាំ{reportDates.yearKhmer}</div>
-          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 8, paddingBottom: 24, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 8, paddingBottom: 24, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
               : metadata.directorTitle}
@@ -304,10 +304,10 @@ export default function OfficialFinanceSummaryDocument({
         </div>
 
         {/* Right Signature: Reporter */}
-        <div style={{ textAlign: 'center', flex: '0 0 55%', maxWidth: '55%' }}>
+        <div style={{ textAlign: 'center', flex: '0 0 53%', maxWidth: '53%' }}>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.lunarDateText}</div>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.solarDateTextFinance}</div>
-          <div className="font-moul" style={{ fontSize: 12.5, marginTop: 8, paddingBottom: 24, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 8, paddingBottom: 24, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>
         </div>

@@ -3,7 +3,7 @@ import { Plus, Trash2, Printer, FileSpreadsheet, FileText, DollarSign, ArrowDown
 import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals } from '../utils/khmerNumerals';
 import { exportFinanceDualExcel } from '../utils/excelExporter';
 import { exportFinanceDualWord } from '../utils/wordExporter';
-import { exportDualElementsToPdf } from '../utils/pdfExporter';
+import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 import A4SheetScaler from './A4SheetScaler';
 import OfficialFinanceDocument from './OfficialFinanceDocument';
@@ -19,6 +19,7 @@ export default function FinanceTableView({
 }) {
   const [editingId, setEditingId] = useState(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [financeViewType, setFinanceViewType] = useState('full'); // 'full' (ពេញ) | 'summary' (សង្ខេប)
 
   const [yearStr, monthStr] = monthKey.split('-');
   const monthNames = [
@@ -126,12 +127,18 @@ export default function FinanceTableView({
   const handleDownloadPdf = async () => {
     try {
       setIsExportingPdf(true);
-      await exportDualElementsToPdf(
-        '#printable-finance-document',
-        `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`,
-        '#printable-finance-summary-document',
-        `របាយការណ៍ចំណូលចំណាយសង្ខេប_${monthName}_${yearDisplay}`
-      );
+      // Download only the format currently being viewed (ពេញ or សង្ខេប)
+      if (financeViewType === 'summary') {
+        await exportElementToPdf(
+          '#printable-finance-summary-document',
+          `របាយការណ៍ចំណូលចំណាយសង្ខេប_${monthName}_${yearDisplay}`
+        );
+      } else {
+        await exportElementToPdf(
+          '#printable-finance-document',
+          `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`
+        );
+      }
     } catch (err) {
       alert('មិនអាចទាញយក PDF បានទេ៖ ' + (err.message || 'Error'));
     } finally {
@@ -292,25 +299,70 @@ export default function FinanceTableView({
         </div>
       </div>
 
-      {/* Authentic A4 Paper Sheet (100% Exact PDF 1 Replica) */}
-      <A4SheetScaler>
-        <OfficialFinanceDocument
-          id="printable-finance-document"
-          financeData={financeData}
-          metadata={metadata}
-          monthName={monthName}
-          yearDisplay={yearDisplay}
-          useKhmerNumerals={useKhmerNumerals}
-          monthKey={monthKey}
-          isEditable={true}
-          editingId={editingId}
-          setEditingId={setEditingId}
-          handleCellChange={handleCellChange}
-          handleDeleteRow={handleDeleteRow}
-        />
-      </A4SheetScaler>
+      {/* Authentic A4 Paper Sheet (100% Exact PDF 1 Replica) + ពេញ ⇄ សង្ខេប Toggle */}
+      <div style={{ position: 'relative' }}>
+        {/* Toggle Button: floating on the gray paper BG, top-right of the sheet header */}
+        <button
+          type="button"
+          className="no-print"
+          onClick={() => setFinanceViewType(financeViewType === 'full' ? 'summary' : 'full')}
+          style={{
+            position: 'absolute',
+            top: 12,
+            right: 14,
+            zIndex: 10,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '6px 14px',
+            borderRadius: 8,
+            fontSize: 12.5,
+            fontWeight: 700,
+            border: '1.5px solid #d97706',
+            background: financeViewType === 'summary' ? '#b45309' : '#fffbeb',
+            color: financeViewType === 'summary' ? '#ffffff' : '#b45309',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(180,83,9,0.18)',
+            transition: 'all 0.15s'
+          }}
+          title={financeViewType === 'full' ? 'ប្ដូរមើលតារាងសង្ខេប' : 'ប្ដូរមើលតារាងពេញ'}
+        >
+          <FileText size={14} />
+          <span>{financeViewType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
+        </button>
 
-      {/* Offscreen Summary Document for Dual PDF Export (Hidden on Screen & Native Print) */}
+        <A4SheetScaler>
+          {financeViewType === 'summary' ? (
+            <OfficialFinanceSummaryDocument
+              id="preview-finance-summary-document"
+              financeData={financeData}
+              metadata={metadata}
+              monthName={monthName}
+              yearDisplay={yearDisplay}
+              useKhmerNumerals={useKhmerNumerals}
+              monthKey={monthKey}
+              periodMode="month"
+            />
+          ) : (
+            <OfficialFinanceDocument
+              id="printable-finance-document"
+              financeData={financeData}
+              metadata={metadata}
+              monthName={monthName}
+              yearDisplay={yearDisplay}
+              useKhmerNumerals={useKhmerNumerals}
+              monthKey={monthKey}
+              isEditable={true}
+              editingId={editingId}
+              setEditingId={setEditingId}
+              handleCellChange={handleCellChange}
+              handleDeleteRow={handleDeleteRow}
+            />
+          )}
+        </A4SheetScaler>
+      </div>
+
+      {/* Offscreen Unscaled Summary Document for Crisp Summary PDF Export (Hidden on Screen & Native Print) */}
       <div
         className="no-print"
         style={{

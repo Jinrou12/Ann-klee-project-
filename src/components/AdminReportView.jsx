@@ -1141,6 +1141,8 @@ export default function AdminReportView({
             left: '-9999px',
             top: 0,
             width: '794px',
+            minWidth: '794px',
+            maxWidth: '794px',
             zIndex: -1,
             pointerEvents: 'none'
           }}

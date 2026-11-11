@@ -9,7 +9,6 @@ const NAVY_HEADER_COLOR = '#002060';
 
 // Content box height inside 1123px A4 sheet (1123 - 36px top padding - 48px bottom footer area = 1039px)
 const MAX_PAGE_CONTENT_PX = 1035;
-const TARGET_FULL_PAGE_PX = 1016;
 
 /**
  * Splits a monk's full title+name into (titlePrefix in Siemreap) + (personalName in Muol Light)
@@ -125,14 +124,13 @@ export default function OfficialAdminReportDocument({
     const page2CarryStudentLines = studentLines.slice(3);
 
     // PAGE 1: Official Header + Salutation + Subject + Intro + Section I + Section II (up to ថ្នាក់ទី១)
+    // Matches authentic Word template layout: natural flowing vertical rhythm without artificial flexbox stretching
     const p1Node = (
       <div
         key="page-1-body"
         style={{
           display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          minHeight: 1008
+          flexDirection: 'column'
         }}
       >
         {/* 1. Top Centered Kingdom & Motto (Navy Blue #002060) */}
@@ -421,7 +419,7 @@ export default function OfficialAdminReportDocument({
       )
     });
 
-    // Section III (ក) Activities with ❖ bullet
+    // Section III (ក) Activities with ❖ bullet (Word template uses Wingdings bullet U+F076 = ❖)
     (displayModel.activities || []).forEach((line, idx) => {
       blocks.push({
         id: `act-${idx}`,
@@ -808,52 +806,13 @@ export default function OfficialAdminReportDocument({
     const blockHeights = flowBlocks.map((blk, i) =>
       measuredHeights && measuredHeights[i] ? measuredHeights[i] : blk.estPx
     );
-    const totalFlowPx = blockHeights.reduce((acc, h) => acc + h, 0);
 
     let pagedBuckets = [];
 
-    // When all flowBlocks fit across Page 2 and Page 3 (<= 2 * MAX_PAGE_CONTENT_PX),
-    // pick the optimal split point so both Page 2 and Page 3 are balanced and full,
-    // without leaving an orphan heading at the bottom of Page 2.
-    if (flowBlocks.length > 1 && totalFlowPx <= MAX_PAGE_CONTENT_PX * 2) {
-      let bestSplitIdx = -1;
-      let bestScore = Infinity;
-      let runningP2 = 0;
-
-      for (let splitIdx = 1; splitIdx < flowBlocks.length; splitIdx++) {
-        runningP2 += blockHeights[splitIdx - 1];
-        const p3Px = totalFlowPx - runningP2;
-
-        // Never leave a section/subsection heading alone at the bottom of Page 2
-        if (flowBlocks[splitIdx - 1].isHeading) continue;
-
-        if (runningP2 <= MAX_PAGE_CONTENT_PX && p3Px <= MAX_PAGE_CONTENT_PX) {
-          // Prefer balanced pages, with a small bonus when Page 3 starts cleanly on a heading
-          const headingBonus = flowBlocks[splitIdx].isHeading ? -32 : 0;
-          const score = Math.abs(runningP2 - p3Px) + headingBonus;
-          if (score < bestScore) {
-            bestScore = score;
-            bestSplitIdx = splitIdx;
-          }
-        }
-      }
-
-      if (bestSplitIdx > 0) {
-        pagedBuckets = [
-          {
-            items: flowBlocks.slice(0, bestSplitIdx),
-            heightPx: blockHeights.slice(0, bestSplitIdx).reduce((a, b) => a + b, 0)
-          },
-          {
-            items: flowBlocks.slice(bestSplitIdx),
-            heightPx: blockHeights.slice(bestSplitIdx).reduce((a, b) => a + b, 0)
-          }
-        ];
-      }
-    }
-
-    // Fallback greedy multi-page packing if custom text exceeds 2 flow pages
-    if (pagedBuckets.length === 0) {
+    // Word-style greedy page filling: each page holds as many paragraphs as fit (like MS Word),
+    // so Page 2 ends after the challenges that fit and Page 3 continues from the next paragraph —
+    // matching the authentic របាយការណ៍ .docx. A heading is never left alone at a page bottom.
+    {
       let currentItems = [];
       let currentPx = 0;
 
@@ -882,18 +841,13 @@ export default function OfficialAdminReportDocument({
       page1Node,
       ...pagedBuckets.map((bucketObj, pIdx) => {
         const items = bucketObj.items;
-        const bucketPx = bucketObj.heightPx || 0;
-        const extraCap = Math.max(0, (items.length - 1) * 7.5);
-        const targetFillPx = Math.min(TARGET_FULL_PAGE_PX, Math.round(bucketPx + extraCap));
 
         return (
           <div
             key={`page-body-${pIdx + 2}`}
             style={{
               display: 'flex',
-              flexDirection: 'column',
-              justifyContent: items.length > 3 ? 'space-between' : 'flex-start',
-              minHeight: items.length > 3 ? targetFillPx : 'auto'
+              flexDirection: 'column'
             }}
           >
             {items.map(b => b.node)}

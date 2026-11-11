@@ -134,10 +134,10 @@ export function formatDurationTotals(totals, useKhmerNumerals = true) {
 }
 
 /**
- * Condense multiple leave reasons for Semester & Full-Year summary tables:
- * Keeps up to `maxReasons` distinct original reasons and appends `(+N ទៀត)` for remaining distinct reasons.
+ * Condense multiple leave reasons for Semester & Full-Year summary tables into a single short 1-line phrase:
+ * e.g., "អាពាធ...", "ទៅបុណ្យ...", "គ្រុនផ្តាសាយ..." so the Reason column never wraps onto 2 lines.
  */
-export function formatCondensedReasons(records = [], { maxReasons = 2, useKhmerNumerals = true } = {}) {
+export function formatCondensedReasons(records = []) {
   const distinctReasons = [];
   const seen = new Set();
 
@@ -152,14 +152,36 @@ export function formatCondensedReasons(records = [], { maxReasons = 2, useKhmerN
   });
 
   if (distinctReasons.length === 0) return '—';
-  if (distinctReasons.length <= maxReasons) {
-    return distinctReasons.join(', ');
+
+  const firstRaw = distinctReasons[0];
+  const hasMoreRecords = (records || []).length > 1 || distinctReasons.length > 1;
+
+  // Strip parenthetical details or secondary clauses for a crisp 1-line label
+  let shortLabel = firstRaw
+    .replace(/\s*\([^)]*\)/g, '')
+    .split(/[,，/]/)[0]
+    .trim();
+
+  if (/^អាពាធ/.test(shortLabel) && (shortLabel.length > 5 || hasMoreRecords || firstRaw !== shortLabel)) {
+    return 'អាពាធ...';
+  }
+  if (/^ទៅបុណ្យ/.test(shortLabel) && (shortLabel.length > 7 || hasMoreRecords || firstRaw !== shortLabel)) {
+    return 'ទៅបុណ្យ...';
   }
 
-  const shown = distinctReasons.slice(0, maxReasons).join(', ');
-  const extraCount = distinctReasons.length - maxReasons;
-  const extraLabel = useKhmerNumerals ? toKhmerDigits(extraCount) : String(extraCount);
-  return `${shown} (+${extraLabel} ទៀត)`;
+  // Keep only the first word/phrase if it contains spaces and is long
+  const words = shortLabel.split(/\s+/);
+  if (words.length > 1 && shortLabel.length > 12) {
+    shortLabel = words[0];
+  } else if (shortLabel.length > 14) {
+    shortLabel = shortLabel.slice(0, 12).trim();
+  }
+
+  if (hasMoreRecords || shortLabel !== firstRaw) {
+    return `${shortLabel.replace(/\.+$/, '')}...`;
+  }
+
+  return shortLabel;
 }
 
 /**

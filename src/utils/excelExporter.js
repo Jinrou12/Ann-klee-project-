@@ -37,7 +37,7 @@ import { buildZipArchive, escapeXml, triggerBlobDownload, loadOfficialLogoBytes 
 function buildExcelStylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="13">
+  <fonts count="14">
     <font>
       <sz val="11"/>
       <color rgb="FF000000"/>
@@ -49,7 +49,7 @@ function buildExcelStylesXml() {
       <name val="Khmer OS Muol Light"/>
     </font>
     <font>
-      <sz val="12"/>
+      <sz val="14"/>
       <color rgb="FF000000"/>
       <name val="Khmer OS Muol Light"/>
     </font>
@@ -102,7 +102,7 @@ function buildExcelStylesXml() {
       <name val="Khmer OS Muol Light"/>
     </font>
     <font>
-      <sz val="10"/>
+      <sz val="11"/>
       <color rgb="FF000000"/>
       <name val="Khmer OS Siemreap"/>
     </font>
@@ -110,6 +110,11 @@ function buildExcelStylesXml() {
       <sz val="22"/>
       <color rgb="FF000000"/>
       <name val="Tacteing"/>
+    </font>
+    <font>
+      <sz val="12"/>
+      <color rgb="FF000000"/>
+      <name val="Khmer OS Muol Light"/>
     </font>
   </fonts>
   <fills count="6">
@@ -160,7 +165,7 @@ function buildExcelStylesXml() {
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="25">
+  <cellXfs count="26">
     <!-- 0: Default -->
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment vertical="center"/>
@@ -257,6 +262,10 @@ function buildExcelStylesXml() {
     <xf numFmtId="0" fontId="0" fillId="0" borderId="2" xfId="0" applyBorder="1"/>
     <!-- 24: Tacteing 22pt Center (for character '3' ornamental divider) -->
     <xf numFmtId="0" fontId="12" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
+    </xf>
+    <!-- 25: Moul 12pt Center (for ជាតិ សាសនា ព្រះមហាក្សត្រ, នាយកសាលា, អ្នកធ្វើរបាយការណ៍) -->
+    <xf numFmtId="0" fontId="13" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
     </xf>
   </cellXfs>
@@ -454,14 +463,14 @@ function appendOfficialHeader(rows, merges, numCols, metadata = {}, includeSalap
   };
 
   if (hasLogo) {
-    // Row 1: Left A1:C1 hosts the centered Logo; Right D1:lastCol has ព្រះរាជាណាចក្រកម្ពុជា bottom-aligned (s: 22) right above Row 2
+    // Row 1: Left A1:C1 hosts the centered Logo; Right D1:lastCol has ព្រះរាជាណាចក្រកម្ពុជា bottom-aligned (s: 22 = 14pt) right above Row 2
     makeHeaderRow('', 'ព្រះរាជាណាចក្រកម្ពុជា', 22, 44);
-    makeHeaderRow(ministry, 'ជាតិ សាសនា ព្រះមហាក្សត្រ', 1, 23);
+    makeHeaderRow(ministry, 'ជាតិ សាសនា ព្រះមហាក្សត្រ', 25, 24);
     makeHeaderRow(school, '3', 24, 24);
     makeHeaderRow(location, '', 1, 22);
   } else {
     makeHeaderRow(ministry, 'ព្រះរាជាណាចក្រកម្ពុជា', 2, 24);
-    makeHeaderRow(school, 'ជាតិ សាសនា ព្រះមហាក្សត្រ', 1, 24);
+    makeHeaderRow(school, 'ជាតិ សាសនា ព្រះមហាក្សត្រ', 25, 24);
     makeHeaderRow(location, '3', 24, 24);
   }
 
@@ -514,9 +523,9 @@ function appendOfficialSignatures(rows, merges, numCols, metadata = {}, reportDa
 
   rows.push({ height: 12, cells: [] });
   addSigRow('បានឃើញ និង...........', 1, rightLunar, 13, 24);
-  addSigRow(leftLunar, 13, rightSolar, 13, 22);
-  addSigRow(leftSolar, 13, reporterTitle, 1, 24);
-  addSigRow(directorTitle, 1, '', 1, 24);
+  addSigRow(leftLunar, 13, rightSolar, 13, 23);
+  addSigRow(leftSolar, 13, reporterTitle, 25, 25);
+  addSigRow(directorTitle, 25, '', 25, 25);
 }
 
 /**
@@ -578,9 +587,8 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
     sortedRecords.forEach((r, idx) => {
       const cleanDate = normalizeRecordDateStr(r.date || '', useKhmer);
       const cleanReasonText = String(r.reason || '').replace(/\s+/g, ' ').trim();
-      const rowHeight = (options.compactReasonColumn && cleanReasonText.length > 26) ? 36 : 25;
       rows.push({
-        height: rowHeight,
+        height: 25,
         cells: [
           { v: fmt(idx + 1), s: 5 },
           { v: r.name || '', s: 6 },
@@ -611,7 +619,7 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
   downloadStyledXlsx({
     sheetName: 'ច្បាប់សមណសិស្ស',
     colWidths: options.compactReasonColumn
-      ? [6, 23, 9, 23, 16, 15, 10]
+      ? [6, 23, 9, 22, 19, 15, 10]
       : [6, 23, 9, 26, 13, 15, 10],
     rows,
     merges,

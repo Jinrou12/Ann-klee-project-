@@ -6,7 +6,7 @@ import {
 import { toKhmerDigits, formatKhmerCurrency, parseKhmerNumber, formatMoney, sumByCurrency, combineCurrencyTotals, formatCurrencyTotals, formatExpenseTotals, isFinanceDeficit, getCurrencySymbol, normalizeCurrency } from '../../utils/khmerNumerals';
 import { exportFinanceDualExcel } from '../../utils/excelExporter';
 import { exportFinanceDualWord } from '../../utils/wordExporter';
-import { exportDualElementsToPdf } from '../../utils/pdfExporter';
+import { exportElementToPdf } from '../../utils/pdfExporter';
 import A4SheetScaler from '../A4SheetScaler';
 import OfficialFinanceDocument from '../OfficialFinanceDocument';
 import OfficialFinanceSummaryDocument from '../OfficialFinanceSummaryDocument';
@@ -28,6 +28,7 @@ export default function FinanceMobileView({
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [financeViewType, setFinanceViewType] = useState('full'); // 'full' (ពេញ) | 'summary' (សង្ខេប)
 
   // Month derivation
   const [yearStr, monthStr] = (monthKey || '2026-07').split('-');
@@ -179,12 +180,18 @@ export default function FinanceMobileView({
   const handleDownloadPdf = async () => {
     try {
       setIsExportingPdf(true);
-      await exportDualElementsToPdf(
-        '#printable-finance-document',
-        `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`,
-        '#printable-mobile-finance-summary-document',
-        `របាយការណ៍ចំណូលចំណាយសង្ខេប_${monthName}_${yearDisplay}`
-      );
+      // Download only the format currently being viewed on the A4 preview (ពេញ or សង្ខេប)
+      if (mobilePreviewA4 && financeViewType === 'summary') {
+        await exportElementToPdf(
+          '#printable-mobile-finance-summary-document',
+          `របាយការណ៍ចំណូលចំណាយសង្ខេប_${monthName}_${yearDisplay}`
+        );
+      } else {
+        await exportElementToPdf(
+          '#printable-finance-document',
+          `របាយការណ៍ហិរញ្ញវត្ថុ_${monthName}_${yearDisplay}`
+        );
+      }
     } catch (err) {
       alert('មិនអាចទាញយក PDF បានទេ៖ ' + (err.message || 'Error'));
     } finally {
@@ -402,17 +409,55 @@ export default function FinanceMobileView({
 
       {/* 4. List Cards or Official A4 Preview */}
       {mobilePreviewA4 ? (
-        <div style={{ background: '#ffffff', padding: 8, borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+        <div style={{ background: '#ffffff', padding: 8, borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden', position: 'relative' }}>
+          {/* Toggle Button: ពេញ ⇄ សង្ខេប — floating top-right of the paper BG */}
+          <button
+            type="button"
+            onClick={() => setFinanceViewType(financeViewType === 'full' ? 'summary' : 'full')}
+            style={{
+              position: 'absolute',
+              top: 12,
+              right: 12,
+              zIndex: 10,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              borderRadius: 7,
+              fontSize: 11.5,
+              fontWeight: 700,
+              border: '1.5px solid #d97706',
+              background: financeViewType === 'summary' ? '#b45309' : '#fffbeb',
+              color: financeViewType === 'summary' ? '#ffffff' : '#b45309',
+              boxShadow: '0 2px 6px rgba(180,83,9,0.18)'
+            }}
+          >
+            <FileText size={12} />
+            <span>{financeViewType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
+          </button>
           <A4SheetScaler>
-            <OfficialFinanceDocument
-              id="preview-mobile-finance-document"
-              financeData={financeData}
-              metadata={metadata}
-              monthName={monthName}
-              yearDisplay={yearDisplay}
-              useKhmerNumerals={useKhmerNumerals}
-              monthKey={monthKey}
-            />
+            {financeViewType === 'summary' ? (
+              <OfficialFinanceSummaryDocument
+                id="preview-mobile-finance-summary-document"
+                financeData={financeData}
+                metadata={metadata}
+                monthName={monthName}
+                yearDisplay={yearDisplay}
+                useKhmerNumerals={useKhmerNumerals}
+                monthKey={monthKey}
+                periodMode="month"
+              />
+            ) : (
+              <OfficialFinanceDocument
+                id="preview-mobile-finance-document"
+                financeData={financeData}
+                metadata={metadata}
+                monthName={monthName}
+                yearDisplay={yearDisplay}
+                useKhmerNumerals={useKhmerNumerals}
+                monthKey={monthKey}
+              />
+            )}
           </A4SheetScaler>
         </div>
       ) : filteredList.length === 0 ? (

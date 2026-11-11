@@ -65,6 +65,7 @@ export default function SummaryMobileView({
   const [selectedYear, setSelectedYear] = useState(() => (currentMonthKey || '2026-07').split('-')[0] || '2026');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const viewFormatMode = mobilePreviewA4 ? 'official_a4' : 'analytics';
+  const [financeViewType, setFinanceViewType] = useState('full'); // 'full' (ពេញ) | 'summary' (សង្ខេប)
 
   useEffect(() => {
     if (currentMonthKey) {
@@ -286,9 +287,7 @@ export default function SummaryMobileView({
       name: s.name,
       grade: s.grade,
       reason: s.leaveCount > 0
-        ? (isMultiMonthPeriod
-          ? formatCondensedReasons(s.records, { maxReasons: 2, useKhmerNumerals })
-          : Array.from(new Set(s.records.map(r => r.reason).filter(Boolean))).join(', '))
+        ? formatCondensedReasons(s.records, { maxReasons: 1, useKhmerNumerals })
         : 'មករៀនទៀងទាត់ (គ្មានច្បាប់)',
       duration: s.leaveCount > 0
         ? formatDurationTotals(s.durationTotals, useKhmerNumerals)
@@ -439,12 +438,17 @@ export default function SummaryMobileView({
       setIsExportingPdf(true);
       const safePeriodSlug = String(periodTitleLabel || activeMonthName).replace(/\s+/g, '_');
       if (sectionMode === 'finance') {
-        await exportDualElementsToPdf(
-          '#printable-mobile-summary-finance-document',
-          `របាយការណ៍ហិរញ្ញវត្ថុ_${safePeriodSlug}`,
-          '#printable-mobile-summary-finance-brief-document',
-          `របាយការណ៍ចំណូលចំណាយសង្ខេប_${safePeriodSlug}`
-        );
+        if (viewFormatMode === 'official_a4' && financeViewType === 'summary') {
+          await exportElementToPdf(
+            '#printable-mobile-summary-finance-brief-document',
+            `របាយការណ៍ចំណូលចំណាយសង្ខេប_${safePeriodSlug}`
+          );
+        } else {
+          await exportElementToPdf(
+            '#printable-mobile-summary-finance-document',
+            `របាយការណ៍ហិរញ្ញវត្ថុ_${safePeriodSlug}`
+          );
+        }
       } else if (sectionMode === 'idcards') {
         await exportElementToPdf(
           '#printable-mobile-summary-idcard-document',
@@ -1381,21 +1385,60 @@ export default function SummaryMobileView({
             </div>
 
             {viewFormatMode === 'official_a4' ? (
-              <div style={{ marginTop: 4, background: '#f8fafc', padding: 6, borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ marginTop: 4, background: '#f8fafc', padding: 6, borderRadius: 10, overflow: 'hidden', position: 'relative' }}>
+                {/* Toggle Button: ពេញ ⇄ សង្ខេប — Floating on top-right of paper BG */}
+                <button
+                  type="button"
+                  onClick={() => setFinanceViewType(financeViewType === 'full' ? 'summary' : 'full')}
+                  style={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    zIndex: 10,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '4px 10px',
+                    borderRadius: 7,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    border: '1.5px solid #d97706',
+                    background: financeViewType === 'summary' ? '#b45309' : '#fffbeb',
+                    color: financeViewType === 'summary' ? '#ffffff' : '#b45309',
+                    boxShadow: '0 2px 6px rgba(180,83,9,0.18)'
+                  }}
+                >
+                  <FileText size={12} />
+                  <span>{financeViewType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
+                </button>
                 <A4SheetScaler>
-                  <OfficialFinanceDocument
-                    id="preview-mobile-summary-finance-document"
-                    financeData={financeDataForOfficialDoc}
-                    metadata={metadata}
-                    monthName={activeMonthName}
-                    yearDisplay={yearDisplay}
-                    useKhmerNumerals={useKhmerNumerals}
-                    monthKey={effectiveReportMonthKey}
-                    isEditable={false}
-                    customPeriodTitle={financeCustomPeriodTitle}
-                    isDeficitOverride={isOverallDeficit}
-                    categoryFilter={financeCategoryFilter}
-                  />
+                  {financeViewType === 'summary' ? (
+                    <OfficialFinanceSummaryDocument
+                      id="preview-mobile-summary-finance-brief-document"
+                      financeData={fullPeriodFinanceDataForSummary}
+                      metadata={metadata}
+                      monthName={activeMonthName}
+                      yearDisplay={yearDisplay}
+                      useKhmerNumerals={useKhmerNumerals}
+                      monthKey={effectiveReportMonthKey}
+                      periodMode={periodMode}
+                      isDeficitOverride={isOverallDeficit}
+                    />
+                  ) : (
+                    <OfficialFinanceDocument
+                      id="preview-mobile-summary-finance-document"
+                      financeData={financeDataForOfficialDoc}
+                      metadata={metadata}
+                      monthName={activeMonthName}
+                      yearDisplay={yearDisplay}
+                      useKhmerNumerals={useKhmerNumerals}
+                      monthKey={effectiveReportMonthKey}
+                      isEditable={false}
+                      customPeriodTitle={financeCustomPeriodTitle}
+                      isDeficitOverride={isOverallDeficit}
+                      categoryFilter={financeCategoryFilter}
+                    />
+                  )}
                 </A4SheetScaler>
               </div>
             ) : (
