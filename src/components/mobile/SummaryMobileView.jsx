@@ -257,7 +257,7 @@ export default function SummaryMobileView({
           grade: s.grade,
           reason: formatCondensedReasons(s.records, { maxReasons: 2, useKhmerNumerals }),
           duration: formatDurationTotals(s.durationTotals, useKhmerNumerals),
-          date: `${fmtNum(s.leaveCount)} លើក`,
+          date: `${fmtNum(s.leaveCount)} ដង`,
           note: ''
         }));
       }
@@ -287,12 +287,12 @@ export default function SummaryMobileView({
       name: s.name,
       grade: s.grade,
       reason: s.leaveCount > 0
-        ? formatCondensedReasons(s.records, { maxReasons: 1, useKhmerNumerals })
+        ? formatCondensedReasons(s.records, { maxReasons: 2, useKhmerNumerals })
         : 'មករៀនទៀងទាត់ (គ្មានច្បាប់)',
       duration: s.leaveCount > 0
         ? formatDurationTotals(s.durationTotals, useKhmerNumerals)
         : '០ថ្ងៃ',
-      date: s.leaveCount > 0 ? `${fmtNum(s.leaveCount)} លើក` : '—',
+      date: s.leaveCount > 0 ? `${fmtNum(s.leaveCount)} ដង` : '—',
       note: ''
     }));
   }, [summary.allLeaveRecords, filterMode, gradeFilter, searchTerm, displayedStudents, useKhmerNumerals, isMultiMonthPeriod, fmtNum]);
@@ -319,11 +319,11 @@ export default function SummaryMobileView({
   }, [filterMode, leaveRecordsForOfficialDoc.length, periodShortPhrase, summary.withLeaveCount, summary.withoutLeaveCount, fmtNum]);
 
   const idCardCustomPeriodTitle = useMemo(() => {
-    return `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញកាតពាក់ក (ID) ${periodPhraseForReport}`;
+    return `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញ (ID) កាត${periodPhraseForReport}`;
   }, [periodPhraseForReport]);
 
   const idCardCustomSummaryText = useMemo(() => {
-    return `ចំនួនសមណសិស្សបានបង់ថ្លៃទិញកាតពាក់ក (ID)${periodShortPhrase} សរុប ${fmtNum(displayedIdCardRecords.length)}អង្គ ស្មើនឹងទឹកប្រាក់ ${formatKhmerCurrency(displayedIdCardTotalAmount, useKhmerNumerals)}`;
+    return `ចំនួនសមណសិស្សបានបង់ថ្លៃទិញ (ID) កាត${periodShortPhrase} សរុប ${fmtNum(displayedIdCardRecords.length)}អង្គ ស្មើនឹងទឹកប្រាក់ ${formatKhmerCurrency(displayedIdCardTotalAmount, useKhmerNumerals)}`;
   }, [displayedIdCardRecords.length, displayedIdCardTotalAmount, periodShortPhrase, fmtNum, useKhmerNumerals]);
 
   const financeDataForOfficialDoc = useMemo(() => {
@@ -392,12 +392,14 @@ export default function SummaryMobileView({
         customSummaryText: idCardCustomSummaryText
       });
     } else {
+      const isStudentAggregateView = isMultiMonthPeriod || filterMode !== 'has_leave';
       exportLeaveToExcel(leaveRecordsForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: leaveCustomPeriodTitle,
         customSummaryText: leaveCustomSummaryText,
-        compactReasonColumn: isMultiMonthPeriod
+        compactReasonColumn: isStudentAggregateView,
+        dateColumnHeader: isStudentAggregateView ? 'ចំនួនឈប់សរុប' : 'កាលបរិច្ឆេទ'
       });
     }
   };
@@ -423,12 +425,14 @@ export default function SummaryMobileView({
         customSummaryText: idCardCustomSummaryText
       });
     } else {
+      const isStudentAggregateView = isMultiMonthPeriod || filterMode !== 'has_leave';
       exportLeaveToWord(leaveRecordsForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: leaveCustomPeriodTitle,
         customSummaryText: leaveCustomSummaryText,
-        compactReasonColumn: isMultiMonthPeriod
+        compactReasonColumn: isStudentAggregateView,
+        dateColumnHeader: isStudentAggregateView ? 'ចំនួនឈប់សរុប' : 'កាលបរិច្ឆេទ'
       });
     }
   };
@@ -654,7 +658,7 @@ export default function SummaryMobileView({
                 {fmtNum(summary.withLeaveCount)}
               </div>
               <div style={{ fontSize: 10, fontWeight: 600, color: '#92400e' }}>
-                {fmtNum(summary.totalLeaveRequests)} លើក
+                {fmtNum(summary.totalLeaveRequests)} ដង
               </div>
             </button>
 
@@ -793,7 +797,8 @@ export default function SummaryMobileView({
                     studentMaster={studentMaster}
                     customPeriodTitle={leaveCustomPeriodTitle}
                     customSummaryText={leaveCustomSummaryText}
-                    compactReasonColumn={isMultiMonthPeriod}
+                    compactReasonColumn={isMultiMonthPeriod || filterMode !== 'has_leave'}
+                    dateColumnHeader={(isMultiMonthPeriod || filterMode !== 'has_leave') ? 'ចំនួនឈប់សរុប' : 'កាលបរិច្ឆេទ'}
                   />
                 </A4SheetScaler>
               </div>
@@ -1539,7 +1544,8 @@ export default function SummaryMobileView({
           studentMaster={studentMaster}
           customPeriodTitle={leaveCustomPeriodTitle}
           customSummaryText={leaveCustomSummaryText}
-          compactReasonColumn={isMultiMonthPeriod}
+          compactReasonColumn={isMultiMonthPeriod || filterMode !== 'has_leave'}
+          dateColumnHeader={(isMultiMonthPeriod || filterMode !== 'has_leave') ? 'ចំនួនឈប់សរុប' : 'កាលបរិច្ឆេទ'}
         />
         <OfficialIdCardDocument
           id="printable-mobile-summary-idcard-document"

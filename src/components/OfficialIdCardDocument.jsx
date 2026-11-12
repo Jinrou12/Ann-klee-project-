@@ -5,7 +5,8 @@ import {
   toEnglishDigits,
   formatKhmerCurrency,
   normalizeRecordDateStr,
-  sortRecordsByDateAsc
+  sortRecordsByDateAsc,
+  getAdaptiveMoneyFontSize
 } from '../utils/khmerNumerals';
 import { getMonthEndReportDates } from '../utils/khmerCalendar';
 import { recommendStudentsByPhoneticQuery } from '../utils/studentMaster';
@@ -121,7 +122,7 @@ export default function OfficialIdCardDocument({
           ស្ដីពី
         </div>
         <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
-          {customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញកាតពាក់ក (ID) ក្នុងខែ${monthName} ឆ្នាំ${yearDisplay}`}
+          {customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញ (ID) កាតក្នុងខែ${monthName} ឆ្នាំ${yearDisplay}`}
         </div>
       </div>
 
@@ -378,7 +379,14 @@ export default function OfficialIdCardDocument({
                         style={{ width: '100%', textAlign: 'right', border: '1px solid #b45309', padding: '2px 4px', fontSize: 12.5 }}
                       />
                     ) : (
-                      <div onClick={() => isEditable && setEditingRowId(r.id)} style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+                      <div
+                        onClick={() => isEditable && setEditingRowId(r.id)}
+                        style={{
+                          cursor: isEditable ? 'pointer' : 'default',
+                          whiteSpace: 'nowrap',
+                          fontSize: getAdaptiveMoneyFontSize(formatKhmerCurrency(r.price || 0, useKhmerNumerals), 11, 8.5)
+                        }}
+                      >
                         {formatKhmerCurrency(r.price || 0, useKhmerNumerals)}
                       </div>
                     )}
@@ -447,7 +455,16 @@ export default function OfficialIdCardDocument({
             <td colSpan={5} style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 5px' }}>
               <span className="font-moul" style={{ fontSize: '11pt' }}>សរុប</span>
             </td>
-            <td className="font-moul" style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 7px', fontSize: '11pt', whiteSpace: 'nowrap' }}>
+            <td
+              className="font-moul"
+              style={{
+                border: '1px solid #000',
+                textAlign: 'right',
+                padding: '3px 7px',
+                fontSize: getAdaptiveMoneyFontSize(formatKhmerCurrency(totalAmount, useKhmerNumerals), 11, 8.5),
+                whiteSpace: 'nowrap'
+              }}
+            >
               <span style={{ display: 'inline-block', borderBottom: '1px solid #000000', paddingBottom: 0.5 }}>
                 {formatKhmerCurrency(totalAmount, useKhmerNumerals)}
               </span>
@@ -466,7 +483,7 @@ export default function OfficialIdCardDocument({
         fontWeight: 400
       }}>
         {customSummaryText || (
-          `សរុបសមណសិស្សទិញកាតពាក់ក (ID) ចំនួន ${useKhmerNumerals ? toKhmerDigits(records.length) : records.length} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmerNumerals)}។`
+          `សរុបសមណសិស្សទិញ (ID) កាត ចំនួន ${useKhmerNumerals ? toKhmerDigits(records.length) : records.length} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmerNumerals)}។`
         )}
       </div>
 

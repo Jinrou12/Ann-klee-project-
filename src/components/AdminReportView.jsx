@@ -364,60 +364,143 @@ export default function AdminReportView({
 
         {/* Row 2: Side-by-Side Action Buttons */}
         {isMobile ? (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 8
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => (isEditing ? setIsEditing(false) : handleOpenEditor())}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                background: isEditing ? '#0f172a' : '#f1f5f9',
-                border: '1px solid #cbd5e1',
-                color: isEditing ? '#ffffff' : '#1e293b',
-                padding: '9px 10px',
-                borderRadius: 8,
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor: 'pointer',
-                width: '100%'
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 8
               }}
             >
-              <Edit3 size={15} />
-              <span>{isEditing ? 'បិទផ្ទាំងកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => (isEditing ? setIsEditing(false) : handleOpenEditor())}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  background: isEditing ? '#0f172a' : '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  color: isEditing ? '#ffffff' : '#1e293b',
+                  padding: '9px 10px',
+                  borderRadius: 8,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                <Edit3 size={15} />
+                <span>{isEditing ? 'បិទផ្ទាំងកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={isExportingPdf}
+              <button
+                type="button"
+                onClick={handleTriggerImport}
+                disabled={isImporting}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '9px 10px',
+                  borderRadius: 8,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: isImporting ? 'wait' : 'pointer',
+                  boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)',
+                  width: '100%'
+                }}
+              >
+                <Upload size={15} />
+                <span>{isImporting ? 'កំពុងអាន...' : 'Import Word / Excel'}</span>
+              </button>
+            </div>
+
+            <div
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
-                border: 'none',
-                color: '#ffffff',
-                padding: '9px 10px',
-                borderRadius: 8,
-                fontSize: 12.5,
-                fontWeight: 700,
-                cursor: isExportingPdf ? 'wait' : 'pointer',
-                boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)',
-                width: '100%'
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: 6
               }}
             >
-              <FileText size={15} />
-              <span>{isExportingPdf ? 'កំពុងផលិត PDF...' : 'Download PDF'}</span>
-            </button>
+              <button
+                type="button"
+                onClick={handleDownloadExcel}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  background: '#15803d',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '9px 6px',
+                  borderRadius: 8,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 5px rgba(21, 128, 61, 0.22)',
+                  width: '100%'
+                }}
+              >
+                <FileSpreadsheet size={14} />
+                <span>Excel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadWord}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  background: '#1d4ed8',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '9px 6px',
+                  borderRadius: 8,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 5px rgba(29, 78, 216, 0.22)',
+                  width: '100%'
+                }}
+              >
+                <FileText size={14} />
+                <span>Word</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isExportingPdf}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '9px 6px',
+                  borderRadius: 8,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: isExportingPdf ? 'wait' : 'pointer',
+                  boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)',
+                  width: '100%'
+                }}
+              >
+                <FileText size={14} />
+                <span>{isExportingPdf ? 'កំពុងផលិត...' : 'PDF'}</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div
@@ -1137,14 +1220,16 @@ export default function AdminReportView({
       {isMobile && (
         <div
           style={{
-            position: 'absolute',
+            position: 'fixed',
             left: '-9999px',
             top: 0,
             width: '794px',
             minWidth: '794px',
             maxWidth: '794px',
             zIndex: -1,
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            WebkitTextSizeAdjust: '100%',
+            textSizeAdjust: '100%'
           }}
           aria-hidden="true"
         >

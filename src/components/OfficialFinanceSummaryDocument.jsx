@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { getMonthEndReportDates } from '../utils/khmerCalendar';
 import { buildFinanceSummaryModel } from '../utils/financeSummaryBuilder';
+import { getAdaptiveMoneyFontSize } from '../utils/khmerNumerals';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 
 /**
@@ -138,7 +139,15 @@ export default function OfficialFinanceSummaryDocument({
               <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: 'nowrap' }}>
                 {row.qty}
               </td>
-              <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 8px', whiteSpace: 'nowrap' }}>
+              <td
+                style={{
+                  border: '1px solid #000',
+                  textAlign: 'right',
+                  padding: '3px 6px',
+                  whiteSpace: 'nowrap',
+                  fontSize: getAdaptiveMoneyFontSize(row.amountText, 11, 8.5)
+                }}
+              >
                 {row.amountText}
               </td>
               <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', fontSize: 11.5 }}>
@@ -151,11 +160,12 @@ export default function OfficialFinanceSummaryDocument({
           <tr className="official-total" style={{ height: 27 }}>
             <td
               colSpan={3}
+              className="official-subtotal-bold"
               style={{
                 border: '1px solid #000',
                 textAlign: 'center',
                 padding: '3px 8px',
-                fontWeight: 600,
+                fontWeight: 700,
                 fontSize: 12.5
               }}
             >
@@ -166,8 +176,8 @@ export default function OfficialFinanceSummaryDocument({
               style={{
                 border: '1px solid #000',
                 textAlign: 'right',
-                padding: '3px 8px',
-                fontSize: 12,
+                padding: '3px 6px',
+                fontSize: getAdaptiveMoneyFontSize(summaryModel.totalIncomeText, 11.5, 8.5),
                 whiteSpace: 'nowrap'
               }}
             >
@@ -175,7 +185,9 @@ export default function OfficialFinanceSummaryDocument({
                 {summaryModel.totalIncomeText}
               </span>
             </td>
-            <td style={{ border: '1px solid #000', padding: '3px 6px' }}></td>
+            <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+              {summaryModel.inKindNotes || ''}
+            </td>
           </tr>
 
           {/* Expense Rows (1 & 2) */}
@@ -186,7 +198,15 @@ export default function OfficialFinanceSummaryDocument({
               <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: 'nowrap' }}>
                 {row.qty}
               </td>
-              <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 8px', whiteSpace: 'nowrap' }}>
+              <td
+                style={{
+                  border: '1px solid #000',
+                  textAlign: 'right',
+                  padding: '3px 6px',
+                  whiteSpace: 'nowrap',
+                  fontSize: getAdaptiveMoneyFontSize(row.amountText, 11, 8.5)
+                }}
+              >
                 {row.amountText}
               </td>
               <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', fontSize: 11.5 }}>
@@ -199,11 +219,12 @@ export default function OfficialFinanceSummaryDocument({
           <tr className="official-total" style={{ height: 27 }}>
             <td
               colSpan={3}
+              className="official-subtotal-bold"
               style={{
                 border: '1px solid #000',
                 textAlign: 'center',
                 padding: '3px 8px',
-                fontWeight: 600,
+                fontWeight: 700,
                 fontSize: 12.5,
                 color: isDeficit ? '#b91c1c' : '#000000'
               }}
@@ -215,8 +236,8 @@ export default function OfficialFinanceSummaryDocument({
               style={{
                 border: '1px solid #000',
                 textAlign: 'right',
-                padding: '3px 8px',
-                fontSize: 12,
+                padding: '3px 6px',
+                fontSize: getAdaptiveMoneyFontSize(summaryModel.totalExpenseText, 11.5, 8.5),
                 color: isDeficit ? '#b91c1c' : '#000000',
                 whiteSpace: 'nowrap'
               }}
@@ -254,8 +275,8 @@ export default function OfficialFinanceSummaryDocument({
               style={{
                 border: '1px solid #000',
                 textAlign: 'right',
-                padding: '4px 8px',
-                fontSize: 12.5,
+                padding: '4px 6px',
+                fontSize: getAdaptiveMoneyFontSize(summaryModel.balanceText, 12, 8.5),
                 color: isDeficit ? '#b91c1c' : '#000000',
                 whiteSpace: 'nowrap'
               }}
@@ -270,7 +291,9 @@ export default function OfficialFinanceSummaryDocument({
                 {summaryModel.balanceText}
               </span>
             </td>
-            <td style={{ border: '1px solid #000', padding: '4px 6px' }}></td>
+            <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px 6px', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+              {summaryModel.inKindNotes || ''}
+            </td>
           </tr>
         </tbody>
       </table>

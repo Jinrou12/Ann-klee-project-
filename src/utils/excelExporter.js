@@ -568,7 +568,8 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
   rows.push(makeTableTopSpacerRow(numCols, 10));
 
   // 3. Table Header Row
-  const headers = ['ល.រ', 'គោត្តនាម-និងនាម', 'ថ្នាក់', 'មូលហេតុ', 'ចំនួនឈប់', 'កាលបរិច្ឆេទ', 'ផ្សេងៗ'];
+  const sixthColHeader = options.dateColumnHeader || (options.compactReasonColumn ? 'ចំនួនឈប់សរុប' : 'កាលបរិច្ឆេទ');
+  const headers = ['ល.រ', 'គោត្តនាម-និងនាម', 'ថ្នាក់', 'មូលហេតុ', 'ចំនួនឈប់', sixthColHeader, 'ផ្សេងៗ'];
   rows.push({
     height: 28,
     cells: headers.map(h => ({ v: h, s: 4 }))
@@ -619,7 +620,7 @@ export async function exportLeaveToExcel(records = [], monthLabel = 'កក្�
   downloadStyledXlsx({
     sheetName: 'ច្បាប់សមណសិស្ស',
     colWidths: options.compactReasonColumn
-      ? [6, 23, 9, 22, 19, 15, 10]
+      ? [6, 22, 9, 28, 13, 17, 10]
       : [6, 23, 9, 26, 13, 15, 10],
     rows,
     merges,
@@ -661,7 +662,7 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
   rows.push({ height: 23, cells: [{ v: 'ស្ដីពី', s: 2 }] });
   merges.push(`${cellRef(titleMidRow, 0)}:${cellRef(titleMidRow, numCols - 1)}`);
 
-  const title2Text = options.customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញកាតពាក់ក (ID) ក្នុងខែ${monthLabel}`;
+  const title2Text = options.customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញ (ID) កាតក្នុងខែ${monthLabel}`;
   const title2Row = rows.length + 1;
   rows.push({ height: 25, cells: [{ v: title2Text, s: 2 }] });
   merges.push(`${cellRef(title2Row, 0)}:${cellRef(title2Row, numCols - 1)}`);
@@ -721,7 +722,7 @@ export async function exportIdCardToExcel(records = [], monthLabel = 'កក្�
   rows.push({ height: 10, cells: [] });
   const sumRowNum = rows.length + 1;
   const sumText = options.customSummaryText || (
-    `សរុបសមណសិស្សទិញកាតពាក់ក (ID) ចំនួន ${fmt(sortedRecords.length)} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmer)}។`
+    `សរុបសមណសិស្សទិញ (ID) កាត ចំនួន ${fmt(sortedRecords.length)} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmer)}។`
   );
   rows.push({
     height: 24,
@@ -897,7 +898,7 @@ export async function exportFinanceToExcel(financeData = { income: [], expense: 
 
   downloadStyledXlsx({
     sheetName: 'ចំណូល-ចំណាយ',
-    colWidths: [6, 38, 10, 14, 20, 12],
+    colWidths: [6, 44, 15, 13, 16, 15],
     rows,
     merges,
     fileName: `របាយការណ៍ចំណូលចំណាយ_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
@@ -989,7 +990,7 @@ export async function exportFinanceSummaryReportToExcel(
       { v: '', s: 17 },
       { v: '', s: 17 },
       { v: summaryModel.totalIncomeText, s: 18 },
-      { v: '', s: 5 }
+      { v: summaryModel.inKindNotes || '', s: 5 }
     ]
   });
   merges.push(`${cellRef(subIncRow, 0)}:${cellRef(subIncRow, 2)}`);
@@ -1031,7 +1032,7 @@ export async function exportFinanceSummaryReportToExcel(
       { v: '', s: 9 },
       { v: '', s: 9 },
       { v: summaryModel.balanceText, s: isDeficit ? 21 : 20 },
-      { v: '', s: 5 }
+      { v: summaryModel.inKindNotes || '', s: 5 }
     ]
   });
   merges.push(`${cellRef(balRow, 0)}:${cellRef(balRow, 2)}`);

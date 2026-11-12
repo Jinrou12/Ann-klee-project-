@@ -165,6 +165,23 @@ export function formatExpenseTotals(totals = {}, isDeficit = false, useKhmerNume
 }
 
 /**
+ * Dynamically scale font size for currency / money strings so long numbers never truncate with '...'
+ * and always display 100% of their digits on a single line.
+ * @param {string} text
+ * @param {number} basePt
+ * @param {number} minPt
+ * @returns {string} CSS font-size in pt (e.g. "11pt", "10pt", "9.2pt", "8.5pt", "8pt")
+ */
+export function getAdaptiveMoneyFontSize(text = '', basePt = 11, minPt = 8) {
+  const len = String(text || '').trim().length;
+  if (len <= 11) return `${basePt}pt`;
+  if (len <= 13) return `${Math.max(minPt, Number((basePt - 1).toFixed(1)))}pt`;
+  if (len <= 16) return `${Math.max(minPt, Number((basePt - 1.8).toFixed(1)))}pt`;
+  if (len <= 20) return `${Math.max(minPt, Number((basePt - 2.5).toFixed(1)))}pt`;
+  return `${minPt}pt`;
+}
+
+/**
  * Parse a raw string to a pure float number
  * Handles both Khmer and Arabic digits
  * @param {string|number} input 

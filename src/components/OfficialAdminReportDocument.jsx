@@ -4,8 +4,15 @@ import { toKhmerDigits } from '../utils/khmerNumerals';
 
 const SIEMREAP_FONT = "'Khmer OS Siemreap', 'Siemreap', 'Battambang', sans-serif";
 const MOUL_FONT = "'Khmer OS Muol Light', 'Khmer OS Moul Light', 'Khmer OS Muol', 'Moul', serif";
-const ROMAN_FONT = "'Times New Roman', serif";
+const ROMAN_FONT = "'Times New Roman', 'Liberation Serif', 'Noto Serif', Georgia, serif";
 const NAVY_HEADER_COLOR = '#002060';
+
+function normalizeSingleSpaces(str = '') {
+  return String(str || '')
+    .replace(/\u200B/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
 
 // Content box height inside 1123px A4 sheet (1123 - 36px top padding - 48px bottom footer area = 1039px)
 const MAX_PAGE_CONTENT_PX = 1035;
@@ -36,19 +43,22 @@ function renderMonkTitleAndName(fullName = '') {
 }
 
 /**
- * Highlights specific monastic titles in Muol Light inside body/closing paragraphs
+ * Highlights specific monastic titles in Muol Light inside body/closing paragraphs.
+ * Each monastic title is wrapped with whiteSpace: 'nowrap' so a royal/monastic title
+ * (such as ព្រះធម្មសាលវង្ស) is never broken in half across lines.
  */
 function renderParagraphWithMuolHighlights(text = '', boldPhrases = []) {
+  const cleanText = normalizeSingleSpaces(text);
   const tokens = [
-    'ព្រះធម្មសាលវង្ស ព្រះអនុគណ',
+    'ព្រះធម្មសាលវង្ស',
     'ព្រះអនុគណ',
-    ...boldPhrases.filter(Boolean)
+    ...boldPhrases.map(b => normalizeSingleSpaces(b)).filter(Boolean)
   ];
-  if (!text) return null;
+  if (!cleanText) return null;
 
-  let parts = [{ text: String(text), type: 'normal' }];
+  let parts = [{ text: cleanText, type: 'normal' }];
   tokens.forEach(token => {
-    const isMuol = token.includes('ព្រះអនុគណ') || token.includes('ព្រះធម្មសាលវង្ស');
+    const isMuol = token === 'ព្រះអនុគណ' || token === 'ព្រះធម្មសាលវង្ស';
     const nextParts = [];
     parts.forEach(part => {
       if (part.type !== 'normal' || !part.text.includes(token)) {
@@ -69,7 +79,14 @@ function renderParagraphWithMuolHighlights(text = '', boldPhrases = []) {
   return parts.map((p, i) => {
     if (p.type === 'moul') {
       return (
-        <span key={i} style={{ fontFamily: MOUL_FONT, fontWeight: 400 }}>
+        <span
+          key={i}
+          style={{
+            fontFamily: MOUL_FONT,
+            fontWeight: 400,
+            whiteSpace: 'nowrap'
+          }}
+        >
           {p.text}
         </span>
       );
@@ -119,9 +136,10 @@ export default function OfficialAdminReportDocument({
   const { page1Node, flowBlocks } = useMemo(() => {
     if (!displayModel) return { page1Node: null, flowBlocks: [] };
 
-    const studentLines = displayModel.studentStatLines || [];
-    const page1StudentLines = studentLines.slice(0, 3);
-    const page2CarryStudentLines = studentLines.slice(3);
+    const studentLines = (displayModel.studentStatLines || []).map(normalizeSingleSpaces);
+    const p1SliceCount = displayModel.periodType && displayModel.periodType !== 'month' ? 2 : 3;
+    const page1StudentLines = studentLines.slice(0, p1SliceCount);
+    const page2CarryStudentLines = studentLines.slice(p1SliceCount);
 
     // PAGE 1: Official Header + Salutation + Subject + Intro + Section I + Section II (up to ថ្នាក់ទី១)
     // Matches authentic Word template layout: natural flowing vertical rhythm without artificial flexbox stretching
@@ -145,8 +163,8 @@ export default function OfficialAdminReportDocument({
           <div style={{ fontFamily: MOUL_FONT, fontSize: 17.5 }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, letterSpacing: 0.5 }}>
-            ជាតិ &nbsp; សាសនា &nbsp; ព្រះមហាក្សត្រ
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
+            ជាតិ{'\u00A0\u00A0'}សាសនា{'\u00A0\u00A0'}ព្រះមហាក្សត្រ
           </div>
           <KhmerRoyalDivider width={120} height={8} color={NAVY_HEADER_COLOR} />
         </div>
@@ -213,7 +231,7 @@ export default function OfficialAdminReportDocument({
               marginBottom: 3
             }}
           >
-            {displayModel.recipientTitle}
+            {normalizeSingleSpaces(displayModel.recipientTitle)}
           </div>
           <div
             style={{
@@ -235,7 +253,8 @@ export default function OfficialAdminReportDocument({
           style={{
             display: 'flex',
             alignItems: 'baseline',
-            textAlign: 'justify',
+            textAlign: 'left',
+            wordSpacing: 'normal',
             marginBottom: 8,
             lineHeight: 1.75
           }}
@@ -260,7 +279,8 @@ export default function OfficialAdminReportDocument({
         {/* 5. Intro Paragraph */}
         <div
           style={{
-            textAlign: 'justify',
+            textAlign: 'left',
+            wordSpacing: 'normal',
             paddingLeft: 76,
             marginBottom: 8,
             lineHeight: 1.75
@@ -281,13 +301,14 @@ export default function OfficialAdminReportDocument({
           </div>
           <div
             style={{
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               textIndent: 68,
               marginBottom: 6,
               lineHeight: 1.8
             }}
           >
-            {displayModel.section1Intro}
+            {normalizeSingleSpaces(displayModel.section1Intro)}
           </div>
           <div style={{ paddingLeft: 56 }}>
             {(displayModel.managementRoles || []).map((m, idx) => (
@@ -301,10 +322,10 @@ export default function OfficialAdminReportDocument({
                 }}
               >
                 <span style={{ width: 18, flexShrink: 0 }}>-</span>
-                <span style={{ minWidth: 230, flexShrink: 0 }}>
+                <span style={{ minWidth: 192, flexShrink: 0 }}>
                   {renderMonkTitleAndName(m.name)}
                 </span>
-                <span>{m.role}</span>
+                <span>{normalizeSingleSpaces(m.role)}</span>
               </div>
             ))}
           </div>
@@ -340,7 +361,7 @@ export default function OfficialAdminReportDocument({
                 }}
               >
                 <span style={{ width: 18, flexShrink: 0 }}>-</span>
-                <span>{line}</span>
+                <span>{normalizeSingleSpaces(line)}</span>
               </div>
             ))}
           </div>
@@ -420,7 +441,8 @@ export default function OfficialAdminReportDocument({
     });
 
     // Section III (ក) Activities with ❖ bullet (Word template uses Wingdings bullet U+F076 = ❖)
-    (displayModel.activities || []).forEach((line, idx) => {
+    (displayModel.activities || []).forEach((rawLine, idx) => {
+      const line = normalizeSingleSpaces(rawLine);
       blocks.push({
         id: `act-${idx}`,
         estPx: estimateVisualHeightPx(line, 58, 3),
@@ -431,7 +453,8 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 86,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
@@ -463,7 +486,8 @@ export default function OfficialAdminReportDocument({
       )
     });
 
-    (displayModel.adminDocLines || []).forEach((line, idx) => {
+    (displayModel.adminDocLines || []).forEach((rawLine, idx) => {
+      const line = normalizeSingleSpaces(rawLine);
       blocks.push({
         id: `doc-${idx}`,
         estPx: 29,
@@ -502,7 +526,8 @@ export default function OfficialAdminReportDocument({
       )
     });
 
-    (displayModel.appendixItems || []).forEach((line, idx) => {
+    (displayModel.appendixItems || []).forEach((rawLine, idx) => {
+      const line = normalizeSingleSpaces(rawLine);
       blocks.push({
         id: `appx-${idx}`,
         estPx: 29,
@@ -544,7 +569,8 @@ export default function OfficialAdminReportDocument({
       )
     });
 
-    (displayModel.challenges || []).forEach((line, idx) => {
+    (displayModel.challenges || []).forEach((rawLine, idx) => {
+      const line = normalizeSingleSpaces(rawLine);
       blocks.push({
         id: `chal-${idx}`,
         estPx: estimateVisualHeightPx(line, 60, 3),
@@ -555,7 +581,8 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 76,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
@@ -587,7 +614,8 @@ export default function OfficialAdminReportDocument({
       )
     });
 
-    (displayModel.solutions || []).forEach((line, idx) => {
+    (displayModel.solutions || []).forEach((rawLine, idx) => {
+      const line = normalizeSingleSpaces(rawLine);
       blocks.push({
         id: `sol-${idx}`,
         estPx: estimateVisualHeightPx(line, 60, 3),
@@ -598,7 +626,8 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 76,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
@@ -630,7 +659,8 @@ export default function OfficialAdminReportDocument({
       )
     });
 
-    (displayModel.requests || []).forEach((line, idx) => {
+    (displayModel.requests || []).forEach((rawLine, idx) => {
+      const line = normalizeSingleSpaces(rawLine);
       blocks.push({
         id: `req-${idx}`,
         estPx: estimateVisualHeightPx(line, 60, 3),
@@ -641,7 +671,8 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 76,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
@@ -666,7 +697,8 @@ export default function OfficialAdminReportDocument({
       )
     });
 
-    (displayModel.directions || []).forEach((line, idx) => {
+    (displayModel.directions || []).forEach((rawLine, idx) => {
+      const line = normalizeSingleSpaces(rawLine);
       blocks.push({
         id: `dir-${idx}`,
         estPx: estimateVisualHeightPx(line, 60, 3),
@@ -677,7 +709,8 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 76,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
@@ -702,12 +735,13 @@ export default function OfficialAdminReportDocument({
           <div
             style={{
               paddingLeft: 28,
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               textIndent: 42,
               lineHeight: 1.82
             }}
           >
-            {displayModel.conclusionText}
+            {normalizeSingleSpaces(displayModel.conclusionText)}
           </div>
         </div>
       )
@@ -721,7 +755,8 @@ export default function OfficialAdminReportDocument({
           <div
             style={{
               paddingLeft: 28,
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               textIndent: 42,
               marginBottom: 4,
               lineHeight: 1.8
@@ -732,7 +767,8 @@ export default function OfficialAdminReportDocument({
           <div
             style={{
               paddingLeft: 28,
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               textIndent: 42,
               marginBottom: 8,
               lineHeight: 1.8
@@ -875,17 +911,24 @@ export default function OfficialAdminReportDocument({
       {/* Hidden 694px measurement probe for exact DOM pixel height pagination */}
       <div
         ref={measureContainerRef}
+        className="admin-a4-measure-probe"
         aria-hidden="true"
         style={{
-          position: 'absolute',
+          position: 'fixed',
           left: -10000,
           top: 0,
           width: 694,
+          minWidth: 694,
+          maxWidth: 694,
           visibility: 'hidden',
           pointerEvents: 'none',
           fontFamily: SIEMREAP_FONT,
           fontSize: 15.2,
-          lineHeight: 1.78
+          lineHeight: 1.78,
+          wordSpacing: 'normal',
+          letterSpacing: 0,
+          WebkitTextSizeAdjust: '100%',
+          textSizeAdjust: '100%'
         }}
       >
         {flowBlocks.map(b => (
@@ -902,6 +945,8 @@ export default function OfficialAdminReportDocument({
           style={{
             position: 'relative',
             width: 794,
+            minWidth: 794,
+            maxWidth: 794,
             height: 1123,
             minHeight: 1123,
             maxHeight: 1123,
@@ -913,6 +958,10 @@ export default function OfficialAdminReportDocument({
             fontFamily: SIEMREAP_FONT,
             fontSize: 15.2,
             lineHeight: 1.78,
+            wordSpacing: 'normal',
+            letterSpacing: 0,
+            WebkitTextSizeAdjust: '100%',
+            textSizeAdjust: '100%',
             color: '#000000',
             margin: '0 auto',
             flexShrink: 0

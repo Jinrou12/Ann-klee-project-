@@ -73,14 +73,54 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
             letterRendering: false,
             logging: false,
             backgroundColor: '#ffffff',
+            x: 0,
+            y: 0,
             width: 794,
             height: 1123,
-            windowWidth: 794,
-            windowHeight: 1123,
+            windowWidth: 1200,
+            windowHeight: 1200,
             scrollX: 0,
             scrollY: 0,
             onclone: (clonedDoc, clonedEl) => {
               if (!clonedEl) return;
+
+              if (clonedDoc.documentElement) {
+                clonedDoc.documentElement.style.margin = '0';
+                clonedDoc.documentElement.style.padding = '0';
+                clonedDoc.documentElement.style.overflow = 'visible';
+                clonedDoc.documentElement.style.webkitTextSizeAdjust = '100%';
+                clonedDoc.documentElement.style.textSizeAdjust = '100%';
+              }
+              if (clonedDoc.body) {
+                clonedDoc.body.style.margin = '0';
+                clonedDoc.body.style.padding = '0';
+                clonedDoc.body.style.overflow = 'visible';
+                clonedDoc.body.style.position = 'static';
+                clonedDoc.body.style.width = '794px';
+                clonedDoc.body.style.webkitTextSizeAdjust = '100%';
+                clonedDoc.body.style.textSizeAdjust = '100%';
+              }
+
+              // Neutralize any mobile ancestor constraints / negative offsets / flex / transforms
+              let curr = clonedEl.parentElement;
+              while (curr && curr !== clonedDoc.body) {
+                curr.style.position = 'static';
+                curr.style.left = '0';
+                curr.style.top = '0';
+                curr.style.transform = 'none';
+                curr.style.webkitTransform = 'none';
+                curr.style.overflow = 'visible';
+                curr.style.maxWidth = 'none';
+                curr.style.width = '794px';
+                curr.style.padding = '0';
+                curr.style.margin = '0';
+                curr.style.zIndex = 'auto';
+                curr = curr.parentElement;
+              }
+
+              clonedEl.style.position = 'fixed';
+              clonedEl.style.left = '0px';
+              clonedEl.style.top = '0px';
               clonedEl.style.width = '794px';
               clonedEl.style.minWidth = '794px';
               clonedEl.style.maxWidth = '794px';
@@ -89,19 +129,12 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
               clonedEl.style.maxHeight = '1123px';
               clonedEl.style.transform = 'none';
               clonedEl.style.boxSizing = 'border-box';
-              clonedEl.style.margin = '0 auto';
-
-              // Neutralize any mobile ancestor constraints / flex / transforms
-              let curr = clonedEl.parentElement;
-              while (curr && curr !== clonedDoc.body) {
-                curr.style.transform = 'none';
-                curr.style.overflow = 'visible';
-                curr.style.maxWidth = 'none';
-                curr.style.width = '794px';
-                curr.style.padding = '0';
-                curr.style.margin = '0';
-                curr = curr.parentElement;
-              }
+              clonedEl.style.margin = '0';
+              clonedEl.style.boxShadow = 'none';
+              clonedEl.style.borderRadius = '0px';
+              clonedEl.style.zIndex = '99999';
+              clonedEl.style.webkitTextSizeAdjust = '100%';
+              clonedEl.style.textSizeAdjust = '100%';
             }
           });
 

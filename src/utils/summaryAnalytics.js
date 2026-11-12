@@ -99,7 +99,7 @@ export function parseSingleDuration(rawDuration) {
 
 /**
  * Format accumulated duration totals into natural Khmer text
- * e.g. { days: 2.5, mornings: 1, afternoons: 0 } -> "២ថ្ងៃកន្លះ ១ព្រឹក"
+ * e.g. { days: 3, mornings: 1, afternoons: 4 } -> "៣ថ្ងៃ ១ព្រឹក ៤ល្ងាច"
  */
 export function formatDurationTotals(totals, useKhmerNumerals = true) {
   if (!totals) return '—';
@@ -134,54 +134,75 @@ export function formatDurationTotals(totals, useKhmerNumerals = true) {
 }
 
 /**
- * Condense multiple leave reasons for Semester & Full-Year summary tables into a single short 1-line phrase:
- * e.g., "អាពាធ...", "ទៅបុណ្យ...", "គ្រុនផ្តាសាយ..." so the Reason column never wraps onto 2 lines.
+ * Helper to extract a clean short reason phrase from a single raw reason string without ever slicing mid-cluster in Khmer.
  */
-export function formatCondensedReasons(records = []) {
-  const distinctReasons = [];
-  const seen = new Set();
+function shortenSingleReasonPhrase(raw = '') {
+  const fullTrimmed = String(raw || '').replace(/\u200B/g, '').replace(/\s+/g, ' ').trim();
+  if (!fullTrimmed) return { text: '', wasShortened: false };
+
+  // Strip parenthetical details or secondary clauses separated by comma/slash
+  const clean = fullTrimmed
+    .replace(/\s*\([^)]*\)/g, '')
+    .split(/[,，/]/)[0]
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!clean) return { text: fullTrimmed, wasShortened: false };
+
+  if (/^អាពាធ/.test(clean)) {
+    return { text: 'អាពាធ', wasShortened: fullTrimmed !== 'អាពាធ' };
+  }
+  if (/^(និមន្ត)?ទៅបុណ្យ/.test(clean)) {
+    return { text: 'ទៅបុណ្យ', wasShortened: fullTrimmed !== 'ទៅបុណ្យ' };
+  }
+  if (/^ទៅពេទ្យ/.test(clean)) {
+    return { text: 'ទៅពេទ្យ', wasShortened: fullTrimmed !== 'ទៅពេទ្យ' };
+  }
+
+  // If there are multiple space-separated words and the phrase is long, take the first word/phrase at a space boundary (never slice mid-word)
+  const words = clean.split(/\s+/);
+  if (words.length > 1 && clean.length > 15) {
+    return { text: words[0], wasShortened: true };
+  }
+
+  return { text: clean, wasShortened: clean !== fullTrimmed };
+}
+
+/**
+ * Condense multiple leave reasons for Semester & Full-Year summary tables into a single 1-line phrase
+ * showing up to `maxReasons` (default 2) distinct reasons separated by "/":
+ * e.g., "អាពាធ/ទៅបុណ្យ...", "ទៅបុណ្យ/ឈឺធ្មេញ..." without ever slicing Khmer subscripts (ជើងអក្សរ).
+ */
+export function formatCondensedReasons(records = [], options = {}) {
+  const maxReasons = typeof options.maxReasons === 'number' && options.maxReasons > 0 ? options.maxReasons : 2;
+  const distinctShortReasons = [];
+  const seenShort = new Set();
+  let anyShortened = false;
 
   (records || []).forEach(r => {
     const raw = String(r?.reason || '').replace(/\u200B/g, '').replace(/\s+/g, ' ').trim();
     if (!raw) return;
-    const normKey = raw.replace(/\s+/g, '');
-    if (!seen.has(normKey)) {
-      seen.add(normKey);
-      distinctReasons.push(raw);
+    const { text, wasShortened } = shortenSingleReasonPhrase(raw);
+    if (!text) return;
+    if (wasShortened) anyShortened = true;
+    const normKey = text.replace(/\s+/g, '');
+    if (!seenShort.has(normKey)) {
+      seenShort.add(normKey);
+      distinctShortReasons.push(text);
     }
   });
 
-  if (distinctReasons.length === 0) return '—';
+  if (distinctShortReasons.length === 0) return '—';
 
-  const firstRaw = distinctReasons[0];
-  const hasMoreRecords = (records || []).length > 1 || distinctReasons.length > 1;
+  const selected = distinctShortReasons.slice(0, maxReasons);
+  const joined = selected.join('/');
+  const hasMore = (records || []).length > selected.length || distinctShortReasons.length > maxReasons || anyShortened;
 
-  // Strip parenthetical details or secondary clauses for a crisp 1-line label
-  let shortLabel = firstRaw
-    .replace(/\s*\([^)]*\)/g, '')
-    .split(/[,，/]/)[0]
-    .trim();
-
-  if (/^អាពាធ/.test(shortLabel) && (shortLabel.length > 5 || hasMoreRecords || firstRaw !== shortLabel)) {
-    return 'អាពាធ...';
-  }
-  if (/^ទៅបុណ្យ/.test(shortLabel) && (shortLabel.length > 7 || hasMoreRecords || firstRaw !== shortLabel)) {
-    return 'ទៅបុណ្យ...';
+  if (hasMore) {
+    return `${joined.replace(/\.+$/, '')}...`;
   }
 
-  // Keep only the first word/phrase if it contains spaces and is long
-  const words = shortLabel.split(/\s+/);
-  if (words.length > 1 && shortLabel.length > 12) {
-    shortLabel = words[0];
-  } else if (shortLabel.length > 14) {
-    shortLabel = shortLabel.slice(0, 12).trim();
-  }
-
-  if (hasMoreRecords || shortLabel !== firstRaw) {
-    return `${shortLabel.replace(/\.+$/, '')}...`;
-  }
-
-  return shortLabel;
+  return joined;
 }
 
 /**
@@ -370,12 +391,14 @@ export function computePeriodSummary({
   // 4. Build sorted lists
   const allStudentsList = Array.from(studentMap.values());
 
-  // Students with leave: sort by leaveCount DESC, then days DESC, then original order
+  // Students with leave: sort by leaveCount DESC, then combined total days DESC, then original order
+  const getCombinedTotalDays = (t) => (Number(t?.days) || 0) + ((Number(t?.mornings) || 0) + (Number(t?.afternoons) || 0)) * 0.5;
   const studentsWithLeave = allStudentsList
     .filter(s => s.leaveCount > 0)
     .sort((a, b) => {
       if (b.leaveCount !== a.leaveCount) return b.leaveCount - a.leaveCount;
-      if (b.durationTotals.days !== a.durationTotals.days) return b.durationTotals.days - a.durationTotals.days;
+      const diffDays = getCombinedTotalDays(b.durationTotals) - getCombinedTotalDays(a.durationTotals);
+      if (Math.abs(diffDays) > 0.001) return diffDays;
       return a.orderIndex - b.orderIndex;
     });
 

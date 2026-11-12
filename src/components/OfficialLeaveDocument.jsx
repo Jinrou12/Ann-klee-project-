@@ -29,7 +29,8 @@ export default function OfficialLeaveDocument({
   studentMaster = [],
   customPeriodTitle = '',
   customSummaryText = '',
-  compactReasonColumn = false
+  compactReasonColumn = false,
+  dateColumnHeader = ''
 }) {
   // Automatically calculate the last working day of the month (excluding Saturday/Sunday)
   const reportDates = useMemo(() => getMonthEndReportDates(monthKey, {
@@ -116,12 +117,14 @@ export default function OfficialLeaveDocument({
       }}>
         <thead>
           <tr style={{ background: '#ffffff', textAlign: 'center', height: 28 }}>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '6%' : '5%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ល.រ</th>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '21%' : '20%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>គោត្តនាម-និងនាម</th>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '8%' : '7%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ថ្នាក់</th>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '22%' : '31%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>មូលហេតុ</th>
-            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '20%' : '13%', padding: '3px 5px', fontWeight: 400, whiteSpace: 'nowrap' }}>ចំនួនឈប់</th>
-            <th style={{ border: '1px solid #000', width: '14%', padding: '3px 5px', fontWeight: 400, whiteSpace: 'nowrap' }}>កាលបរិច្ឆេទ</th>
+            <th style={{ border: '1px solid #000', width: '5%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ល.រ</th>
+            <th style={{ border: '1px solid #000', width: '20%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>គោត្តនាម-និងនាម</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '7%' : '7%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ថ្នាក់</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '28%' : '31%', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>មូលហេតុ</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '16%' : '13%', padding: '3px 5px', fontWeight: 400, whiteSpace: 'nowrap' }}>ចំនួនឈប់</th>
+            <th style={{ border: '1px solid #000', width: compactReasonColumn ? '15%' : '14%', padding: '3px 5px', fontWeight: 400, whiteSpace: 'nowrap' }}>
+              {dateColumnHeader || (compactReasonColumn ? 'ចំនួនឈប់សរុប' : 'កាលបរិច្ឆេទ')}
+            </th>
             <th style={{ border: '1px solid #000', width: compactReasonColumn ? '9%' : '10%', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ផ្សេងៗ</th>
             {isEditable && (
               <th className="no-print" style={{ border: '1px solid #cbd5e1', width: 40, background: '#f8fafc' }}></th>
@@ -143,12 +146,12 @@ export default function OfficialLeaveDocument({
               return (
                 <tr key={r.id} style={{ height: 26 }}>
                   {/* Column 1: Index */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px 4px' }}>
                     {rowNum}
                   </td>
 
                   {/* Column 2: Name */}
-                  <td style={{ border: '1px solid #000', padding: '3px 7px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <td style={{ border: '1px solid #000', padding: '4px 7px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.45 }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -161,7 +164,7 @@ export default function OfficialLeaveDocument({
                     ) : (
                       <div
                         onClick={() => isEditable && setEditingRowId(r.id)}
-                        style={{ cursor: isEditable ? 'pointer' : 'default', minHeight: 20, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        style={{ cursor: isEditable ? 'pointer' : 'default', minHeight: 20, lineHeight: 1.45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                         title={isEditable ? "ចុចដើម្បីកែប្រែ" : ""}
                       >
                         {r.name || <span style={{ color: '#cbd5e1' }}>--</span>}
@@ -170,7 +173,7 @@ export default function OfficialLeaveDocument({
                   </td>
 
                   {/* Column 3: Grade */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px', whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '4px 4px', whiteSpace: 'nowrap' }}>
                     {isEditing ? (
                       <input
                         type="text"
@@ -188,7 +191,8 @@ export default function OfficialLeaveDocument({
                   {/* Column 4: Reason */}
                   <td style={{
                     border: '1px solid #000',
-                    padding: '3px 8px',
+                    padding: '4px 8px',
+                    lineHeight: 1.45,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis'
@@ -205,6 +209,7 @@ export default function OfficialLeaveDocument({
                         onClick={() => isEditable && setEditingRowId(r.id)}
                         style={{
                           cursor: isEditable ? 'pointer' : 'default',
+                          lineHeight: 1.45,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis'
@@ -217,7 +222,13 @@ export default function OfficialLeaveDocument({
                   </td>
 
                   {/* Column 5: Duration */}
-                  <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 6px', whiteSpace: 'nowrap' }}>
+                  <td style={{
+                    border: '1px solid #000',
+                    textAlign: 'center',
+                    padding: '3px 4px',
+                    whiteSpace: 'nowrap',
+                    fontSize: String(r.duration || '').length > 12 ? '9.5pt' : '11pt'
+                  }}>
                     {isEditing ? (
                       <input
                         type="text"

@@ -5,7 +5,7 @@
 @font-face {
   font-family: 'Khmer OS Muol Light';
   src: local('Khmer OS Muol Light'), url('/fonts/KhmerOSmuollight.ttf') format('truetype');
-  font-weight: 400;
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -13,7 +13,7 @@
 @font-face {
   font-family: 'Khmer OS Siemreap';
   src: local('Khmer OS Siemreap'), url('/fonts/KhmerOSsiemreap.ttf') format('truetype');
-  font-weight: 400;
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
@@ -130,14 +130,21 @@ input:focus, select:focus, textarea:focus {
 .printable-document,
 .printable-document *,
 .admin-a4-page-sheet,
-.admin-a4-page-sheet * {
+.admin-a4-page-sheet *,
+.admin-a4-measure-probe,
+.admin-a4-measure-probe * {
   letter-spacing: 0 !important;
+  word-spacing: normal !important;
+  -webkit-text-size-adjust: 100% !important;
+  -moz-text-size-adjust: 100% !important;
+  text-size-adjust: 100% !important;
 }
 
 /* Prevent mobile browsers (Chrome font boosting) from inflating text in the A4 document,
    so mobile PDF renders at the exact same font sizes as PC PDF */
 .printable-document,
-.admin-a4-page-sheet {
+.admin-a4-page-sheet,
+.admin-a4-measure-probe {
   -webkit-text-size-adjust: 100% !important;
   -moz-text-size-adjust: 100% !important;
   text-size-adjust: 100% !important;
@@ -164,7 +171,7 @@ input:focus, select:focus, textarea:focus {
   border-left: none !important;
   border-right: 0.6px solid #475569 !important;
   border-bottom: 0.6px solid #475569 !important;
-  line-height: 1.35;
+  line-height: 1.45;
 }
 
 .printable-document table.official-grid > thead > tr:first-child > th:not(.no-print),
@@ -220,6 +227,12 @@ input:focus, select:focus, textarea:focus {
 
 .printable-document table.official-grid td:not(.no-print) {
   font-weight: 400 !important;
+}
+
+.printable-document table.official-grid td.official-subtotal-bold:not(.no-print) {
+  font-family: var(--font-content) !important;
+  font-weight: 700 !important;
+  -webkit-text-stroke: 0.25px currentColor;
 }
 
 .printable-document table.official-grid tr {

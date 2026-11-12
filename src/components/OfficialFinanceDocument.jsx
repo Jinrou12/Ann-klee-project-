@@ -8,7 +8,8 @@ import {
   combineCurrencyTotals,
   formatCurrencyTotals,
   formatExpenseTotals,
-  isFinanceDeficit
+  isFinanceDeficit,
+  getAdaptiveMoneyFontSize
 } from '../utils/khmerNumerals';
 import { getMonthEndReportDates } from '../utils/khmerCalendar';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
@@ -122,13 +123,13 @@ export default function OfficialFinanceDocument({
             }}
           >
             <colgroup>
-              <col style={{ width: '6%' }} />
-              <col style={{ width: '38%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '14%' }} />
-              <col style={{ width: '20%' }} />
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '40%' }} />
+              <col style={{ width: '12.5%' }} />
+              <col style={{ width: '12.5%' }} />
+              <col style={{ width: '18%' }} />
               <col style={{ width: '12%' }} />
-              {isEditable && <col className="no-print" style={{ width: 32 }} />}
+              {isEditable && <col className="no-print" style={{ width: 26 }} />}
             </colgroup>
             <tbody>
               {/* Section 1: ចំណូល (Income) */}
@@ -159,18 +160,23 @@ export default function OfficialFinanceDocument({
                     <th style={{ border: '1px solid #000', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>តម្លៃសរុប</th>
                     <th style={{ border: '1px solid #000', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ផ្សេងៗ</th>
                     {isEditable && (
-                      <th className="no-print" style={{ border: '1px solid #cbd5e1', width: 32, background: '#f8fafc' }}></th>
+                      <th className="no-print" style={{ border: '1px solid #cbd5e1', width: 26, background: '#f8fafc' }}></th>
                     )}
                   </tr>
 
                   {incomeList.map((item, index) => {
                     const isItemEditing = isEditable && editingId === item.id;
                     const rowNum = useKhmerNumerals ? toKhmerDigits(index + 1) : (index + 1);
+                    const unitPriceText = item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmerNumerals) : '';
+                    const totalDisplayText = item.totalLabel && (!item.total || Number(item.total) === 0)
+                      ? (useKhmerNumerals ? toKhmerDigits(item.totalLabel) : item.totalLabel)
+                      : formatMoney(item.total, item.currency, useKhmerNumerals);
+                    const descLen = String(item.desc || '').length;
 
                     return (
-                      <tr key={item.id} style={{ height: 25 }}>
-                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>{rowNum}</td>
-                        <td style={{ border: '1px solid #000', padding: '3px 6px' }}>
+                      <tr key={item.id} style={{ height: 26 }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 3px' }}>{rowNum}</td>
+                        <td style={{ border: '1px solid #000', padding: '3px 6px', overflow: 'hidden' }}>
                           {isItemEditing ? (
                             <input
                               type="text"
@@ -181,13 +187,18 @@ export default function OfficialFinanceDocument({
                           ) : (
                             <div
                               onClick={() => isEditable && setEditingId(item.id)}
-                              style={{ cursor: isEditable ? 'pointer' : 'default', lineHeight: 1.3 }}
+                              style={{
+                                cursor: isEditable ? 'pointer' : 'default',
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                                fontSize: descLen > 46 ? '9.5pt' : descLen > 38 ? '10.2pt' : '11pt'
+                              }}
                             >
                               {item.desc}
                             </div>
                           )}
                         </td>
-                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px', whiteSpace: 'nowrap' }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 3px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                           {isItemEditing ? (
                             <input
                               type="text"
@@ -198,13 +209,18 @@ export default function OfficialFinanceDocument({
                           ) : (
                             <div
                               onClick={() => isEditable && setEditingId(item.id)}
-                              style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+                              style={{
+                                cursor: isEditable ? 'pointer' : 'default',
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                                fontSize: String(item.qty || '').length > 10 ? '9.8pt' : '11pt'
+                              }}
                             >
                               {item.qty}
                             </div>
                           )}
                         </td>
-                        <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 6px', whiteSpace: 'nowrap' }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 4px', whiteSpace: 'nowrap' }}>
                           {isItemEditing ? (
                             <input
                               type="text"
@@ -215,13 +231,17 @@ export default function OfficialFinanceDocument({
                           ) : (
                             <div
                               onClick={() => isEditable && setEditingId(item.id)}
-                              style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+                              style={{
+                                cursor: isEditable ? 'pointer' : 'default',
+                                whiteSpace: 'nowrap',
+                                fontSize: getAdaptiveMoneyFontSize(unitPriceText, 11, 8)
+                              }}
                             >
-                              {item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmerNumerals) : ''}
+                              {unitPriceText}
                             </div>
                           )}
                         </td>
-                        <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>
                           {isItemEditing ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                               <input
@@ -238,15 +258,18 @@ export default function OfficialFinanceDocument({
                           ) : (
                             <div
                               onClick={() => isEditable && setEditingId(item.id)}
-                              style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+                              style={{
+                                cursor: isEditable ? 'pointer' : 'default',
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                                fontSize: getAdaptiveMoneyFontSize(totalDisplayText, 11, 8)
+                              }}
                             >
-                              {item.totalLabel && (!item.total || Number(item.total) === 0)
-                                ? (useKhmerNumerals ? toKhmerDigits(item.totalLabel) : item.totalLabel)
-                                : formatMoney(item.total, item.currency, useKhmerNumerals)}
+                              {totalDisplayText}
                             </div>
                           )}
                         </td>
-                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 5px' }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px', overflow: 'hidden' }}>
                           {isItemEditing ? (
                             <input
                               type="text"
@@ -260,7 +283,7 @@ export default function OfficialFinanceDocument({
                               style={{
                                 cursor: isEditable ? 'pointer' : 'default',
                                 fontSize: 11.5,
-                                lineHeight: 1.3,
+                                lineHeight: 1.4,
                                 display: '-webkit-box',
                                 WebkitLineClamp: 2,
                                 WebkitBoxOrient: 'vertical',
@@ -296,25 +319,36 @@ export default function OfficialFinanceDocument({
                   })}
 
                   {/* Subtotal Income Row */}
-                  <tr className="official-total" style={{ height: 27, background: '#ffffff' }}>
-                    <td colSpan={4} style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>
-                      <span className="font-moul" style={{ fontSize: 12 }}>សរុបចំណូល</span>
-                    </td>
-                    <td
-                      className="font-moul"
-                      style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 6px', fontSize: 12, whiteSpace: 'nowrap' }}
-                    >
-                      <span style={{ display: 'inline-block', borderBottom: '1px solid #000000', paddingBottom: 0.5 }}>
-                        {formatCurrencyTotals(incomeTotals, useKhmerNumerals)}
-                      </span>
-                    </td>
-                    <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 5px', fontSize: 11.5 }}>
-                      {incomeList.some(it => it?.totalLabel)
-                        ? incomeList.map(it => it.totalLabel).filter(Boolean).join(', ')
-                        : ''}
-                    </td>
-                    {isEditable && <td className="no-print" style={{ border: '1px solid #cbd5e1' }}></td>}
-                  </tr>
+                  {(() => {
+                    const subtotalIncText = formatCurrencyTotals(incomeTotals, useKhmerNumerals);
+                    return (
+                      <tr className="official-total" style={{ height: 27, background: '#ffffff' }}>
+                        <td colSpan={4} style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>
+                          <span className="font-moul" style={{ fontSize: 12 }}>សរុបចំណូល</span>
+                        </td>
+                        <td
+                          className="font-moul"
+                          style={{
+                            border: '1px solid #000',
+                            textAlign: 'right',
+                            padding: '3px 4px',
+                            fontSize: getAdaptiveMoneyFontSize(subtotalIncText, 11.5, 8.5),
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <span style={{ display: 'inline-block', borderBottom: '1px solid #000000', paddingBottom: 0.5 }}>
+                            {subtotalIncText}
+                          </span>
+                        </td>
+                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 3px', fontSize: 11, whiteSpace: 'nowrap' }}>
+                          {incomeList.some(it => it?.totalLabel)
+                            ? incomeList.map(it => it.totalLabel).filter(Boolean).join(', ')
+                            : ''}
+                        </td>
+                        {isEditable && <td className="no-print" style={{ border: '1px solid #cbd5e1' }}></td>}
+                      </tr>
+                    );
+                  })()}
                 </>
               )}
 
@@ -346,18 +380,23 @@ export default function OfficialFinanceDocument({
                     <th style={{ border: '1px solid #000', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>តម្លៃសរុប</th>
                     <th style={{ border: '1px solid #000', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>ផ្សេងៗ</th>
                     {isEditable && (
-                      <th className="no-print" style={{ border: '1px solid #cbd5e1', width: 32, background: '#f8fafc' }}></th>
+                      <th className="no-print" style={{ border: '1px solid #cbd5e1', width: 26, background: '#f8fafc' }}></th>
                     )}
                   </tr>
 
                   {expenseList.map((item, index) => {
                     const isItemEditing = isEditable && editingId === item.id;
                     const rowNum = useKhmerNumerals ? toKhmerDigits(index + 1) : (index + 1);
+                    const unitPriceText = item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmerNumerals) : '';
+                    const totalDisplayText = item.totalLabel && (!item.total || Number(item.total) === 0)
+                      ? (useKhmerNumerals ? toKhmerDigits(item.totalLabel) : item.totalLabel)
+                      : formatMoney(item.total, item.currency, useKhmerNumerals);
+                    const descLen = String(item.desc || '').length;
 
                     return (
-                      <tr key={item.id} style={{ height: 25 }}>
-                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>{rowNum}</td>
-                        <td style={{ border: '1px solid #000', padding: '3px 6px' }}>
+                      <tr key={item.id} style={{ height: 26 }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 3px' }}>{rowNum}</td>
+                        <td style={{ border: '1px solid #000', padding: '3px 6px', overflow: 'hidden' }}>
                           {isItemEditing ? (
                             <input
                               type="text"
@@ -368,13 +407,18 @@ export default function OfficialFinanceDocument({
                           ) : (
                             <div
                               onClick={() => isEditable && setEditingId(item.id)}
-                              style={{ cursor: isEditable ? 'pointer' : 'default', lineHeight: 1.3 }}
+                              style={{
+                                cursor: isEditable ? 'pointer' : 'default',
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                                fontSize: descLen > 46 ? '9.5pt' : descLen > 38 ? '10.2pt' : '11pt'
+                              }}
                             >
                               {item.desc}
                             </div>
                           )}
                         </td>
-                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px', whiteSpace: 'nowrap' }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 3px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                           {isItemEditing ? (
                             <input
                               type="text"
@@ -385,13 +429,18 @@ export default function OfficialFinanceDocument({
                           ) : (
                             <div
                               onClick={() => isEditable && setEditingId(item.id)}
-                              style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+                              style={{
+                                cursor: isEditable ? 'pointer' : 'default',
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                                fontSize: String(item.qty || '').length > 10 ? '9.8pt' : '11pt'
+                              }}
                             >
                               {item.qty}
                             </div>
                           )}
                         </td>
-                        <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 6px', whiteSpace: 'nowrap' }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 4px', whiteSpace: 'nowrap' }}>
                           {isItemEditing ? (
                             <input
                               type="text"
@@ -402,13 +451,17 @@ export default function OfficialFinanceDocument({
                           ) : (
                             <div
                               onClick={() => isEditable && setEditingId(item.id)}
-                              style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+                              style={{
+                                cursor: isEditable ? 'pointer' : 'default',
+                                whiteSpace: 'nowrap',
+                                fontSize: getAdaptiveMoneyFontSize(unitPriceText, 11, 8)
+                              }}
                             >
-                              {item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmerNumerals) : ''}
+                              {unitPriceText}
                             </div>
                           )}
                         </td>
-                        <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 6px', fontWeight: 400, whiteSpace: 'nowrap' }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'right', padding: '3px 4px', fontWeight: 400, whiteSpace: 'nowrap' }}>
                           {isItemEditing ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                               <input
@@ -425,15 +478,18 @@ export default function OfficialFinanceDocument({
                           ) : (
                             <div
                               onClick={() => isEditable && setEditingId(item.id)}
-                              style={{ cursor: isEditable ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
+                              style={{
+                                cursor: isEditable ? 'pointer' : 'default',
+                                lineHeight: 1.4,
+                                whiteSpace: 'nowrap',
+                                fontSize: getAdaptiveMoneyFontSize(totalDisplayText, 11, 8)
+                              }}
                             >
-                              {item.totalLabel && (!item.total || Number(item.total) === 0)
-                                ? (useKhmerNumerals ? toKhmerDigits(item.totalLabel) : item.totalLabel)
-                                : formatMoney(item.total, item.currency, useKhmerNumerals)}
+                              {totalDisplayText}
                             </div>
                           )}
                         </td>
-                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 5px' }}>
+                        <td style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px', overflow: 'hidden' }}>
                           {isItemEditing ? (
                             <input
                               type="text"
@@ -447,7 +503,7 @@ export default function OfficialFinanceDocument({
                               style={{
                                 cursor: isEditable ? 'pointer' : 'default',
                                 fontSize: 11.5,
-                                lineHeight: 1.3,
+                                lineHeight: 1.4,
                                 display: '-webkit-box',
                                 WebkitLineClamp: 2,
                                 WebkitBoxOrient: 'vertical',
@@ -483,36 +539,41 @@ export default function OfficialFinanceDocument({
                   })}
 
                   {/* Subtotal Expense Row */}
-                  <tr className="official-total" style={{ height: 27, background: '#ffffff' }}>
-                    <td colSpan={4} style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>
-                      <span className="font-moul" style={{ fontSize: 12, color: isDeficit ? '#b91c1c' : '#000000' }}>
-                        សរុបចំណាយ
-                      </span>
-                    </td>
-                    <td
-                      className="font-moul"
-                      style={{
-                        border: '1px solid #000',
-                        textAlign: 'right',
-                        padding: '3px 6px',
-                        fontSize: 12,
-                        color: isDeficit ? '#b91c1c' : '#000000',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          borderBottom: `1px solid ${isDeficit ? '#b91c1c' : '#000000'}`,
-                          paddingBottom: 0.5
-                        }}
-                      >
-                        {formatExpenseTotals(expenseTotals, isDeficit, useKhmerNumerals)}
-                      </span>
-                    </td>
-                    <td style={{ border: '1px solid #000' }}></td>
-                    {isEditable && <td className="no-print" style={{ border: '1px solid #cbd5e1' }}></td>}
-                  </tr>
+                  {(() => {
+                    const subtotalExpText = formatExpenseTotals(expenseTotals, isDeficit, useKhmerNumerals);
+                    return (
+                      <tr className="official-total" style={{ height: 27, background: '#ffffff' }}>
+                        <td colSpan={4} style={{ border: '1px solid #000', textAlign: 'center', padding: '3px 4px' }}>
+                          <span className="font-moul" style={{ fontSize: 12, color: isDeficit ? '#b91c1c' : '#000000' }}>
+                            សរុបចំណាយ
+                          </span>
+                        </td>
+                        <td
+                          className="font-moul"
+                          style={{
+                            border: '1px solid #000',
+                            textAlign: 'right',
+                            padding: '3px 4px',
+                            fontSize: getAdaptiveMoneyFontSize(subtotalExpText, 11.5, 8.5),
+                            color: isDeficit ? '#b91c1c' : '#000000',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              borderBottom: `1px solid ${isDeficit ? '#b91c1c' : '#000000'}`,
+                              paddingBottom: 0.5
+                            }}
+                          >
+                            {subtotalExpText}
+                          </span>
+                        </td>
+                        <td style={{ border: '1px solid #000' }}></td>
+                        {isEditable && <td className="no-print" style={{ border: '1px solid #cbd5e1' }}></td>}
+                      </tr>
+                    );
+                  })()}
                 </>
               )}
             </tbody>

@@ -547,9 +547,10 @@ export async function exportLeaveToWord(records = [], monthLabel = 'កក្ក
   });
 
   const colWidths = fitColumns(options.compactReasonColumn
-    ? [580, 2150, 860, 2220, 2050, 1500, 1040] // 1-line reason & 1-line duration for Semester/Year
+    ? [520, 2080, 780, 2740, 1680, 1680, 940] // 1-line 2-reason & 1-line ចំនួនឈប់សរុប for Semester/Year
     : [580, 2150, 920, 2550, 1480, 1680, 1040]);
-  const headers = ['ល.រ', 'គោត្តនាម-និងនាម', 'ថ្នាក់', 'មូលហេតុ', 'ចំនួនឈប់', 'កាលបរិច្ឆេទ', 'ផ្សេងៗ'];
+  const sixthColHeader = options.dateColumnHeader || (options.compactReasonColumn ? 'ចំនួនឈប់សរុប' : 'កាលបរិច្ឆេទ');
+  const headers = ['ល.រ', 'គោត្តនាម-និងនាម', 'ថ្នាក់', 'មូលហេតុ', 'ចំនួនឈប់', sixthColHeader, 'ផ្សេងៗ'];
 
   const headerRowXml = `<w:tr>
     ${headers.map((h, i) => wCell(
@@ -568,16 +569,16 @@ export async function exportLeaveToWord(records = [], monthLabel = 'កក្ក
     : sortedRecords.map((r, idx) => {
       const cleanDate = normalizeRecordDateStr(r.date || '', useKhmer);
       const vals = [
-        { text: fmt(idx + 1), align: 'center' },
-        { text: r.name || '', align: 'left' },
-        { text: useKhmer ? toKhmerDigits(r.grade || '') : (r.grade || ''), align: 'center' },
-        { text: String(r.reason || '').replace(/\s+/g, ' ').trim(), align: 'left' },
-        { text: r.duration || '', align: 'center' },
-        { text: cleanDate, align: 'center' },
-        { text: r.note || '', align: 'center' }
+        { text: fmt(idx + 1), align: 'center', sizePt: 11 },
+        { text: r.name || '', align: 'left', sizePt: 11 },
+        { text: useKhmer ? toKhmerDigits(r.grade || '') : (r.grade || ''), align: 'center', sizePt: 11 },
+        { text: String(r.reason || '').replace(/\s+/g, ' ').trim(), align: 'left', sizePt: 11 },
+        { text: r.duration || '', align: 'center', sizePt: String(r.duration || '').length > 12 ? 9.5 : 11 },
+        { text: cleanDate, align: 'center', sizePt: 11 },
+        { text: r.note || '', align: 'center', sizePt: 11 }
       ];
       return `<w:tr>${vals.map((v, i) => wCell(
-        wParagraph(v.text, { font: FONT_SIEMREAP, sizePt: 11, align: v.align }),
+        wParagraph(v.text, { font: FONT_SIEMREAP, sizePt: v.sizePt || 11, align: v.align }),
         { widthDxa: colWidths[i] }
       )).join('')}</w:tr>`;
     });
@@ -658,8 +659,8 @@ export async function exportIdCardToWord(records = [], monthLabel = 'កក្�
     ${wCell(wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center' }), { widthDxa: colWidths[6] })}
   </w:tr>`;
 
-  const titleText = options.customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញកាតពាក់ក (ID) ក្នុងខែ${monthLabel}`;
-  const sumText = options.customSummaryText || `សរុបសមណសិស្សទិញកាតពាក់ក (ID) ចំនួន ${fmt(sortedRecords.length)} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmer)}។`;
+  const titleText = options.customPeriodTitle || `តារាងរាយនាមសមណសិស្ស បង់ថ្លៃទិញ (ID) កាតក្នុងខែ${monthLabel}`;
+  const sumText = options.customSummaryText || `សរុបសមណសិស្សទិញ (ID) កាត ចំនួន ${fmt(sortedRecords.length)} អង្គ សរុបទឹកប្រាក់ចំនួន ${formatKhmerCurrency(totalAmount, useKhmer)}។`;
 
   const bodyXml = [
     buildWordOfficialHeader(metadata, false, hasLogo),
@@ -704,10 +705,16 @@ export async function exportFinanceToWord(financeData = { income: [], expense: [
     useKhmerNumerals: useKhmer
   });
 
-  // Column proportions taken directly from តារាងចំណូលចំណាយ_ខែ_កញ្ញា_២០២៦.docx
-  const colWidths = fitColumns([709, 4253, 1134, 1559, 2206, 1338]);
+  // Column proportions matching OfficialFinanceDocument.jsx (5% | 40% | 12.5% | 12.5% | 18% | 12%) so long money & កុំព្យូទ័រ១គ្រឿង stay on 1 line
+  const colWidths = fitColumns([520, 4160, 1300, 1300, 1872, 1248]);
   const firstFourWidth = colWidths.slice(0, 4).reduce((s, w) => s + w, 0);
   const tableHeaders = ['ល.រ', 'បរិយាយ', 'ចំនួន', 'តម្លៃរាយ', 'តម្លៃសរុប', 'ផ្សេងៗ'];
+  const getWordMoneyPt = (txt, base = 11) => {
+    const len = String(txt || '').trim().length;
+    if (len <= 12) return base;
+    if (len <= 15) return Math.max(8.5, base - 1);
+    return Math.max(8, base - 2);
+  };
 
   const buildHeaderRow = () => `<w:tr>
     ${tableHeaders.map((h, i) => wCell(
@@ -717,19 +724,20 @@ export async function exportFinanceToWord(financeData = { income: [], expense: [
   </w:tr>`;
 
   const buildItemRows = (list) => list.map((item, idx) => {
+    const unitPriceText = item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmer) : '';
     const displayTotal = item.totalLabel && (!item.total || Number(item.total) === 0)
       ? (useKhmer ? toKhmerDigits(item.totalLabel) : item.totalLabel)
       : formatMoney(item.total, item.currency, useKhmer);
     const vals = [
-      { text: fmt(idx + 1), align: 'center' },
-      { text: item.desc || '', align: 'left' },
-      { text: item.qty || '', align: 'center' },
-      { text: item.unitPrice ? formatMoney(item.unitPrice, item.currency, useKhmer) : '', align: 'right' },
-      { text: displayTotal, align: 'right' },
-      { text: item.note || '', align: 'center' }
+      { text: fmt(idx + 1), align: 'center', sizePt: 11 },
+      { text: item.desc || '', align: 'left', sizePt: String(item.desc || '').length > 42 ? 10 : 11 },
+      { text: item.qty || '', align: 'center', sizePt: 11 },
+      { text: unitPriceText, align: 'right', sizePt: getWordMoneyPt(unitPriceText, 11) },
+      { text: displayTotal, align: 'right', sizePt: getWordMoneyPt(displayTotal, 11) },
+      { text: item.note || '', align: 'center', sizePt: 11 }
     ];
     return `<w:tr>${vals.map((v, i) => wCell(
-      wParagraph(v.text, { font: FONT_SIEMREAP, sizePt: 11, align: v.align }),
+      wParagraph(v.text, { font: FONT_SIEMREAP, sizePt: v.sizePt || 11, align: v.align }),
       { widthDxa: colWidths[i] }
     )).join('')}</w:tr>`;
   });
@@ -850,7 +858,7 @@ export async function exportFinanceSummaryReportToWord(
       { widthDxa: colWidths[3] }
     )}
     ${wCell(
-      wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
+      wParagraph(summaryModel.inKindNotes || '', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
       { widthDxa: colWidths[4] }
     )}
   </w:tr>`;
@@ -880,7 +888,7 @@ export async function exportFinanceSummaryReportToWord(
       { widthDxa: colWidths[3] }
     )}
     ${wCell(
-      wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
+      wParagraph(summaryModel.inKindNotes || '', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
       { widthDxa: colWidths[4] }
     )}
   </w:tr>`;
@@ -1148,9 +1156,9 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
   const subHeading = (text, spaceBefore = 0) =>
     wParagraph(text, { font: FONT_SIEMREAP, sizePt: SZ, bold: true, align: 'left', indentLeft: SUB_INDENT * 2, spaceBefore });
   const listItem = (text, bullet = '-') =>
-    wParagraph(`${bullet} ${text}`, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', indentLeft: BODY_INDENT + SUB_INDENT });
+    wParagraph(`${bullet} ${text}`, { font: FONT_SIEMREAP, sizePt: SZ, align: 'left', indentLeft: BODY_INDENT + SUB_INDENT });
   const bodyPara = (text, boldPhrases = []) =>
-    wMultiRunParagraph(buildHighlightedRuns(text, boldPhrases, SZ), { align: 'both', firstLine: FIRST_LINE });
+    wMultiRunParagraph(buildHighlightedRuns(text, boldPhrases, SZ), { align: 'left', firstLine: FIRST_LINE });
 
   const roleTabPos = 4680;
 
@@ -1165,7 +1173,7 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     wMultiRunParagraph([
       { text: 'កម្មវត្ថុ៖ ', font: FONT_MOUL, sizePt: SZ },
       ...buildHighlightedRuns(displayModel.subjectText, [displayModel.periodTitlePhrase], SZ)
-    ], { align: 'both', indentLeft: 0, spaceAfter: 60 }),
+    ], { align: 'left', indentLeft: 0, spaceAfter: 60 }),
 
     // Intro Paragraph
     bodyPara(displayModel.introParagraph, [displayModel.inPeriodPhrase]),

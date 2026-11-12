@@ -298,7 +298,7 @@ export const INITIAL_FINANCE_DATA = {
       { id: 'exp-05-35', desc: 'គាវទឹក GiralleGR', qty: '១ដើម', unitPrice: 10000, total: 10000, note: '' },
       { id: 'exp-05-36', desc: 'ទូដែក(១៥ថត)', qty: '១ទូ', unitPrice: 559995, total: 559995, note: '' },
       { id: 'exp-05-37', desc: 'ម៉ូតូឌុប', qty: '២ដង', unitPrice: 5000, total: 10000, note: '' },
-      { id: 'exp-05-38', desc: 'ចំណាយ លើគ្រូស្ម័គ្រចិត្ត (ប្រាក់ម៉ោង)៦អង្គ/រូប', qty: '៩០ម៉ោង', unitPrice: 4000, total: 360000, note: '' }
+      { id: 'exp-05-38', desc: 'ចំណាយលើគ្រូស្ម័គ្រចិត្ត (ប្រាក់ម៉ោង)៦អង្គ/រូប', qty: '៩០ម៉ោង', unitPrice: 4000, total: 360000, note: '' }
     ]
   },
   '2026-06': {
@@ -411,6 +411,7 @@ export function sanitizeFinanceState(rawFinance = {}) {
       return true;
     }).map(e => ({
       ...e,
+      desc: e.desc ? e.desc.replace(/^ចំណាយ\s+លើគ្រូស្ម័គ្រចិត្ត/, 'ចំណាយលើគ្រូស្ម័គ្រចិត្ត') : e.desc,
       qty: e.qty ? e.qty.replace(/0\.25\s+គីឡូក្រាម/, '0.25គីឡូក្រាម').replace(/0\.8\s+គីឡូក្រាម/, '0.8គីឡូក្រាម') : e.qty
     }));
 

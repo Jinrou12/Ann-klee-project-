@@ -177,6 +177,7 @@ export function buildFinanceSummaryModel(
   return {
     reportTitle,
     isDeficit,
+    inKindNotes,
     incomeRows: [
       {
         no: fmt(1),
