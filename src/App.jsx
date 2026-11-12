@@ -19,6 +19,7 @@ import FinanceMobileView from './components/mobile/FinanceMobileView';
 import SummaryMobileView from './components/mobile/SummaryMobileView';
 import MobileBottomNav from './components/mobile/MobileBottomNav';
 import { useDeviceMode } from './utils/useDeviceMode';
+import { useStandalonePinchZoom } from './utils/useStandalonePinchZoom';
 import { isAcademicMonthKey } from './utils/summaryAnalytics';
 import { INITIAL_ADMIN_REPORTS } from './utils/adminReportBuilder';
 
@@ -63,6 +64,8 @@ import { parseDurationShorthand, normalizeCurrency } from './utils/khmerNumerals
 export default function App() {
   // Device mode detection (Rule: Clean PC vs Mobile Separation)
   const { isMobile, isDesktop, overrideMode, setViewMode } = useDeviceMode();
+  const mainContainerRef = useRef(null);
+  useStandalonePinchZoom(mainContainerRef, isMobile);
 
   // 1. Central App State (Rule 7: Single State Mutator Guard)
   const [appState, setAppState] = useState(() => loadAppState());
@@ -1195,7 +1198,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="app-container">
+      <main ref={mainContainerRef} className="app-container">
         {/* Month Selector Bar */}
         <MonthSelector
           currentMonth={currentMonthKey}

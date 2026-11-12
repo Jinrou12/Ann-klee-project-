@@ -81,5 +81,5 @@
 * **គោលការណ៍ Rolling Snapshot**: ផ្នែកនេះត្រូវតែប្រើប្រព័ន្ធ **In-Place Overwrite** រក្សាត្រឹមតែ ៣-៤ បន្ទាត់សង្ខេបចុងក្រោយ (ហាម append logs នាំឱ្យឯកសាររីកធំ)។
 * **កាលបរិច្ឆេទ**: 2026-11-12
 * **គម្រោង**: Ann Klee Project (ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស និងចំណូលចំណាយ)
-* **ស្ថានភាព**: បានកែសម្រួលរួចរាល់សម្រាប់ទាំង Mobile និង PC (`/pm` និង `/m`) លើក្រដាសរបាយការណ៍ប្រចាំខែ ឆមាស និងឆ្នាំ៖ (១) បំបាត់បញ្ហាដកឃ្លាឆ្ងាយខុសប្រក្រតី ដោយប្ដូរពី `justify` មក `left` ជាមួយ `normalizeSingleSpaces()` និងការពារគោរមងារ `ព្រះធម្មសាលវង្ស` មិនឱ្យដាច់ពាក្យឆ្លងបន្ទាត់ (២) កែសម្រួលការទាញយក PDF លើទូរសព្ទ (`/m`) ឱ្យដូច PC បេះបិទតាមរយៈការបិទ Font Boosting (`-webkit-text-size-adjust: 100%`), កំណត់ `font-weight: 100 900` លើ Font ខ្មែរ និងចាក់សោ `html2canvas` លើ `.admin-a4-page-sheet` (៣) កែសម្រួលចំណុចខ្វះខាតផ្សេងៗក្នុង `adminReportBuilder.js`, `AdminReportView.jsx` និង `wordExporter.js`។
-* **ការងារបន្ទាប់**: Dev Server កំពុងដំណើរការលើ Port 5173 — រង់ចាំបងពិនិត្យផ្ទៀងផ្ទាត់លើ UI និងការទាញយក PDF / Word / Excel ទាំងលើ PC និងទូរសព្ទ។
+* **ស្ថានភាព**: បានបំពាក់មុខងារប្រើម្រាមដៃ ២ ពង្រីក-បង្រួម (2-Finger Pinch-to-Zoom & Pan) សម្រាប់ទូរសព្ទ (`/mobile`) នៅក្នុង App Home Screen (PWA Standalone) ដោយគ្មានប៊ូតុង Zoom៖ (១) បើកសិទ្ធិ `user-scalable=yes, maximum-scale=5.0` ក្នុង `index.html` និង `main.jsx` ព្រមទាំងដំឡើង Service Worker Cache ទៅ `hun-neng-app-v6` (២) បំពាក់ Touch Pinch-to-Zoom & Pan ក្នុង `A4SheetScaler.jsx` និង `useStandalonePinchZoom.js` សម្រាប់គ្រប់ផ្ទាំងលើ Mobile។
+* **ការងារបន្ទាប់**: រង់ចាំបងពិនិត្យផ្ទៀងផ្ទាត់ ឬបញ្ជា Commit ឡើង Vercel។
