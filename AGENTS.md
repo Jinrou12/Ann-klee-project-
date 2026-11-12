@@ -81,5 +81,5 @@
 * **គោលការណ៍ Rolling Snapshot**: ផ្នែកនេះត្រូវតែប្រើប្រព័ន្ធ **In-Place Overwrite** រក្សាត្រឹមតែ ៣-៤ បន្ទាត់សង្ខេបចុងក្រោយ (ហាម append logs នាំឱ្យឯកសាររីកធំ)។
 * **កាលបរិច្ឆេទ**: 2026-11-12
 * **គម្រោង**: Ann Klee Project (ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស និងចំណូលចំណាយ)
-* **ស្ថានភាព**: បានបំពាក់មុខងារប្រើម្រាមដៃ ២ ពង្រីក-បង្រួម (2-Finger Pinch-to-Zoom & Pan) សម្រាប់ទូរសព្ទ (`/mobile`) នៅក្នុង App Home Screen (PWA Standalone) ដោយគ្មានប៊ូតុង Zoom និងបាន Commit/Push ឡើងទៅ Vercel (`4805376`) រួចរាល់។
+* **ស្ថានភាព**: បានធ្វើឱ្យការ Zoom ដោយម្រាមដៃ ២ ក្នុង Mode PC លើទូរសព្ទ (`/mobile`) រលូនខ្ពស់៖ `A4SheetScaler.jsx` លែងគូរក្រដាសឡើងវិញពេល Zoom (សរសេរ transform ផ្ទាល់តាម `requestAnimationFrame`), ដាក់ `will-change` តែពេលកំពុងប៉ះ ដើម្បីឱ្យអក្សរច្បាស់ពេលលែងដៃ, ផ្អាក `MutationObserver` ពេល Zoom, `useDeviceMode.js` លែងគូរ App ឡើងវិញរាល់ `resize`, ដំឡើង Cache PWA ទៅ `hun-neng-app-v7` និង Commit/Push ទៅ Vercel រួចរាល់។
 * **ការងារបន្ទាប់**: Dev Server កំពុងដំណើរការលើ Port 5173 — រង់ចាំបងពិនិត្យផ្ទៀងផ្ទាត់លើទូរសព្ទជាក់ស្តែង។
