@@ -60,6 +60,7 @@ import {
   formatKhmerScanError
 } from './utils/ocrService';
 import { parseDurationShorthand, normalizeCurrency } from './utils/khmerNumerals';
+import { loadAuthSession, authenticateUser, logoutAuthSession } from './utils/auth';
 
 export default function App() {
   // Device mode detection (Rule: Clean PC vs Mobile Separation)
@@ -69,6 +70,11 @@ export default function App() {
 
   // 1. Central App State (Rule 7: Single State Mutator Guard)
   const [appState, setAppState] = useState(() => loadAppState());
+  const [authSession, setAuthSession] = useState(() => loadAuthSession());
+  const [undoToastMsg, setUndoToastMsg] = useState('');
+  const undoStackRef = useRef([]);
+  const appStateRef = useRef(appState);
+  appStateRef.current = appState;
   const [apiKey, setApiKey] = useState(() => getStoredApiKey());
   const [queue, setQueue] = useState(() => getOfflineQueue());
   const [trainingCount, setTrainingCount] = useState(() => getStoredTrainingDataset().length);
@@ -118,6 +124,7 @@ export default function App() {
         const cloudMeta = {
           ...appState.meta,
           ...(cloudData.meta || {}),
+          currentMonth: appStateRef.current?.meta?.currentMonth || appState.meta?.currentMonth || cloudData.meta?.currentMonth || '2026-07',
           geminiKey: mergedKeyPool[0] || cloudData.meta?.geminiKey || appState.meta?.geminiKey || apiKey || '',
           geminiKeys: mergedKeyPool.length > 0
             ? mergedKeyPool.join(',')
@@ -139,6 +146,16 @@ export default function App() {
         if (JSON.stringify(recomputedCloudFinance) !== JSON.stringify(cloudData.finance)) {
           needsCloudUpdate = true;
         }
+        // Timestamp Guard: if this device holds newer data than the cloud, keep local and push it up
+        const localUpdatedMs = appState.meta?.updatedAt ? new Date(appState.meta.updatedAt).getTime() : 0;
+        const cloudUpdatedMs = cloudData.meta?.updatedAt ? new Date(cloudData.meta.updatedAt).getTime() : 0;
+        if (localUpdatedMs > 0 && localUpdatedMs > cloudUpdatedMs) {
+          isHydratedRef.current = true;
+          setCloudStatus('connected');
+          syncAppStateToCloud(appState).catch(e => console.warn('Sync newer local state to cloud error:', e));
+          return;
+        }
+
         const mergedState = {
           ...appState,
           ...cloudData,
@@ -208,9 +225,15 @@ export default function App() {
         // Mark as incoming remote update to prevent echo loop!
         isRemoteUpdateRef.current = true;
         setAppState(prev => {
+          const prevUpdatedMs = prev.meta?.updatedAt ? new Date(prev.meta.updatedAt).getTime() : 0;
+          const remoteUpdatedMs = remoteState.meta?.updatedAt ? new Date(remoteState.meta.updatedAt).getTime() : 0;
+          if (prevUpdatedMs > 0 && remoteUpdatedMs > 0 && remoteUpdatedMs < prevUpdatedMs) {
+            return prev; // Stale remote payload: ignore
+          }
           const mergedMeta = {
             ...prev.meta,
             ...(remoteState.meta || {}),
+            currentMonth: prev.meta?.currentMonth || remoteState.meta?.currentMonth || '2026-07',
             geminiKey: remotePool[0] || remoteState.meta?.geminiKey || prev.meta?.geminiKey || '',
             geminiKeys: remotePool.length > 0
               ? remotePool.join(',')
@@ -296,17 +319,98 @@ export default function App() {
     saveOfflineQueue(queue);
   }, [queue]);
 
+  // Auto-generate current academic month & next academic month starting on the last Saturday of each month
+  const getAutoAcademicMonthsForDate = useCallback((now = new Date()) => {
+    const curY = now.getFullYear();
+    const curM = now.getMonth() + 1;
+    const curKey = `${curY}-${String(curM).padStart(2, '0')}`;
+    const keys = [];
+    if (isAcademicMonthKey(curKey)) {
+      keys.push(curKey);
+    }
+    const lastDayDate = new Date(curY, curM, 0);
+    const lastDateNum = lastDayDate.getDate();
+    const lastDayOfWeek = lastDayDate.getDay(); // 0 = Sun ... 6 = Sat
+    const offsetToSat = (lastDayOfWeek - 6 + 7) % 7;
+    const lastSaturdayDate = new Date(curY, curM - 1, lastDateNum - offsetToSat, 0, 0, 0, 0);
+    if (now >= lastSaturdayDate) {
+      let nextY = curM === 12 ? curY + 1 : curY;
+      let nextM = curM === 12 ? 1 : curM + 1;
+      // Skip March (03) & April (04) vacation months -> jump to May (05)
+      if (nextM === 3 || nextM === 4) {
+        nextM = 5;
+      }
+      const nextKey = `${nextY}-${String(nextM).padStart(2, '0')}`;
+      if (isAcademicMonthKey(nextKey) && !keys.includes(nextKey)) {
+        keys.push(nextKey);
+      }
+    }
+    return keys;
+  }, []);
+
+  useEffect(() => {
+    const ensureAutoMonths = () => {
+      if (!isHydratedRef.current) return;
+      const targetKeys = getAutoAcademicMonthsForDate(new Date());
+      if (targetKeys.length === 0) return;
+
+      setAppState(prev => {
+        const missingKeys = targetKeys.filter(k =>
+          !Object.prototype.hasOwnProperty.call(prev.leaves || {}, k) ||
+          !Object.prototype.hasOwnProperty.call(prev.finance || {}, k) ||
+          !Object.prototype.hasOwnProperty.call(prev.idCards || {}, k)
+        );
+        if (missingKeys.length === 0) return prev;
+
+        const nextLeaves = { ...(prev.leaves || {}) };
+        const nextIdCards = { ...(prev.idCards || INITIAL_ID_CARD_DATA) };
+        const rawNextFinance = { ...(prev.finance || {}) };
+
+        missingKeys.forEach(k => {
+          if (!nextLeaves[k]) nextLeaves[k] = [];
+          if (!nextIdCards[k]) nextIdCards[k] = [];
+          if (!rawNextFinance[k]) rawNextFinance[k] = { income: [], expense: [] };
+        });
+
+        const nextFinance = recomputeLinkedFinance(
+          rawNextFinance,
+          nextLeaves,
+          nextIdCards,
+          missingKeys
+        );
+
+        return {
+          ...prev,
+          leaves: nextLeaves,
+          idCards: nextIdCards,
+          finance: nextFinance,
+          meta: {
+            ...prev.meta,
+            updatedAt: new Date().toISOString()
+          }
+        };
+      });
+    };
+
+    ensureAutoMonths();
+    const intervalId = setInterval(ensureAutoMonths, 30 * 60 * 1000);
+    return () => clearInterval(intervalId);
+  }, [cloudStatus, appState.leaves, appState.finance, appState.idCards, getAutoAcademicMonthsForDate]);
+
   const rawCurrentMonthKey = appState.meta.currentMonth || '2026-07';
   const activeYear = (rawCurrentMonthKey || '2026-07').split('-')[0] || '2026';
   const currentMonthKey = isAcademicMonthKey(rawCurrentMonthKey)
     ? rawCurrentMonthKey
     : `${activeYear}-05`;
 
+  const autoAcademicMonths = getAutoAcademicMonthsForDate(new Date());
+
   // Scoped available months for the currently selected activeYear (excluding March 03 & April 04)
   const availableMonths = Array.from(new Set([
     ...Object.keys(appState.leaves).filter(k => k.startsWith(`${activeYear}-`) && isAcademicMonthKey(k)),
     ...Object.keys(appState.finance).filter(k => k.startsWith(`${activeYear}-`) && isAcademicMonthKey(k)),
     ...Object.keys(appState.idCards || {}).filter(k => k.startsWith(`${activeYear}-`) && isAcademicMonthKey(k)),
+    ...autoAcademicMonths.filter(k => k.startsWith(`${activeYear}-`)),
     currentMonthKey
   ])).sort().reverse();
 
@@ -350,9 +454,149 @@ export default function App() {
   const currentFinance = appState.finance[currentMonthKey] || { income: [], expense: [] };
   const currentIdCards = (appState.idCards && appState.idCards[currentMonthKey]) || [];
 
+  // ================================================================
+  // 3-Tier Role Permissions (Owner / Admin / User) + Old Month Lock
+  // Automatic Lock Rule: Starting from May (2026-05), an old month is
+  // locked starting on the 10th day (ថ្ងៃទី ១០) of the following month.
+  // ================================================================
+  const isMonthLockedByRule = useCallback((monthKey, metaObj) => {
+    if (!monthKey || !/^\d{4}-\d{2}$/.test(String(monthKey))) return false;
+    const lockedList = Array.isArray(metaObj?.lockedMonths) ? metaObj.lockedMonths : [];
+    const unlockedList = Array.isArray(metaObj?.unlockedMonths) ? metaObj.unlockedMonths : [];
+    if (lockedList.includes(monthKey)) return true;
+    if (unlockedList.includes(monthKey)) return false;
+    if (monthKey < '2026-05') return false;
+    const [yrStr, moStr] = String(monthKey).split('-');
+    const y = parseInt(yrStr, 10);
+    const m = parseInt(moStr, 10);
+    if (!y || !m) return false;
+    // Day 10 at 00:00:00 of the month immediately following (y, m)
+    const lockCutoffDate = new Date(y, m, 10, 0, 0, 0, 0);
+    return new Date() >= lockCutoffDate;
+  }, []);
+
+  const authRole = authSession?.role || 'user';
+  const isOwner = authRole === 'owner';
+  const isAdmin = authRole === 'admin';
+  const isOldLockedMonth = isMonthLockedByRule(currentMonthKey, appState.meta);
+  const canEditCurrentMonth = isOwner || (isAdmin && !isOldLockedMonth);
+  const canDownloadPdf = isOwner || isAdmin;
+  const canExportOffice = isOwner || (isAdmin && !isMobile);
+  const canUploadOcr = canEditCurrentMonth;
+  const canEditStudentMaster = isOwner || isAdmin;
+  const canAddNewYear = isOwner;
+
+  const permRef = useRef({ canEdit: false, isOwner: false, canEditStudents: false });
+  permRef.current = {
+    canEdit: canEditCurrentMonth,
+    isOwner,
+    canEditStudents: canEditStudentMaster,
+    isOldLockedMonth,
+    role: authRole
+  };
+
+  // Central commit for genuine user edits: permission guard + hidden undo snapshot + updatedAt stamp
+  const commitUserEdit = useCallback((updater, { permission = 'month' } = {}) => {
+    const perm = permRef.current;
+    const allowed =
+      permission === 'owner'
+        ? perm.isOwner
+        : permission === 'students'
+          ? perm.canEditStudents
+          : permission === 'any'
+            ? perm.role !== 'user'
+            : perm.canEdit;
+    if (!allowed) {
+      if (perm.role === 'user') {
+        alert('គណនីនេះបានត្រឹមតែមើលប៉ុណ្ណោះ (View-Only)។');
+      } else if (perm.isOldLockedMonth) {
+        alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ មានតែ Owner ប៉ុណ្ណោះដែលអាចកែប្រែបាន។');
+      } else {
+        alert('អ្នកមិនមានសិទ្ធិធ្វើសកម្មភាពនេះទេ។');
+      }
+      return false;
+    }
+    // Hidden undo snapshot (max 20)
+    undoStackRef.current = [...undoStackRef.current, appStateRef.current].slice(-20);
+    setAppState(prev => {
+      const next = updater(prev);
+      if (!next || next === prev) return prev;
+      return {
+        ...next,
+        meta: { ...(next.meta || prev.meta), updatedAt: new Date().toISOString() }
+      };
+    });
+    return true;
+  }, []);
+
+  // Hidden Ctrl+Z / Cmd+Z undo (no visible button). Native undo still works inside text inputs.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && String(e.key).toLowerCase() === 'z';
+      if (!isUndo) return;
+      const t = e.target;
+      const tag = t?.tagName ? t.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable) return;
+      if (permRef.current.role === 'user') return;
+      const stack = undoStackRef.current;
+      if (stack.length === 0) return;
+      e.preventDefault();
+      const snapshot = stack[stack.length - 1];
+      undoStackRef.current = stack.slice(0, -1);
+      setAppState({
+        ...snapshot,
+        meta: { ...snapshot.meta, updatedAt: new Date().toISOString() }
+      });
+      setUndoToastMsg('↩️ បានត្រឡប់សកម្មភាពចុងក្រោយវិញ (Undo)');
+      setTimeout(() => setUndoToastMsg(''), 2200);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // View-Only users cannot stay on the OCR tab
+  useEffect(() => {
+    if (!canUploadOcr && activeTab === 'upload') {
+      setActiveTab('leave');
+    }
+  }, [canUploadOcr, activeTab]);
+
+  const handleLoginSubmit = useCallback((username, pin) => {
+    const res = authenticateUser(username, pin);
+    if (res.ok) {
+      setAuthSession(res.session);
+    }
+    return res;
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    setAuthSession(logoutAuthSession());
+    undoStackRef.current = [];
+  }, []);
+
+  const mutateToggleMonthLock = useCallback((monthKey) => {
+    commitUserEdit(prev => {
+      const prevLocked = Array.isArray(prev.meta?.lockedMonths) ? prev.meta.lockedMonths : [];
+      const prevUnlocked = Array.isArray(prev.meta?.unlockedMonths) ? prev.meta.unlockedMonths : [];
+      const currentlyLocked = isMonthLockedByRule(monthKey, prev.meta);
+      return {
+        ...prev,
+        meta: {
+          ...prev.meta,
+          lockedMonths: currentlyLocked
+            ? prevLocked.filter(k => k !== monthKey)
+            : Array.from(new Set([...prevLocked, monthKey])),
+          unlockedMonths: currentlyLocked
+            ? Array.from(new Set([...prevUnlocked, monthKey]))
+            : prevUnlocked.filter(k => k !== monthKey)
+        }
+      };
+    }, { permission: 'owner' });
+  }, [commitUserEdit, isMonthLockedByRule]);
+
   // 2. Central Mutator Functions (with 3-Channel Real-Time Auto-Sync)
   const mutateLeaves = useCallback((updatedLeaves) => {
-    setAppState(prev => {
+    commitUserEdit(prev => {
       const nextLeaves = {
         ...prev.leaves,
         [currentMonthKey]: updatedLeaves
@@ -369,10 +613,10 @@ export default function App() {
         finance: nextFinance
       };
     });
-  }, [currentMonthKey]);
+  }, [currentMonthKey, commitUserEdit]);
 
   const mutateIdCards = useCallback((updatedIdCards) => {
-    setAppState(prev => {
+    commitUserEdit(prev => {
       const nextIdCards = {
         ...(prev.idCards || INITIAL_ID_CARD_DATA),
         [currentMonthKey]: updatedIdCards
@@ -389,10 +633,19 @@ export default function App() {
         finance: nextFinance
       };
     });
-  }, [currentMonthKey]);
+  }, [currentMonthKey, commitUserEdit]);
 
   const mutateAddIdCardToMonth = useCallback((targetMonthKey, newRecord) => {
-    setAppState(prev => {
+    const perm = permRef.current;
+    if (perm.role === 'user') {
+      alert('គណនីនេះបានត្រឹមតែមើលប៉ុណ្ណោះ (View-Only)។');
+      return;
+    }
+    if (!perm.isOwner && isMonthLockedByRule(targetMonthKey, appStateRef.current?.meta)) {
+      alert(`ទិន្នន័យខែចាស់ (${targetMonthKey}) ត្រូវបានចាក់សោការពារ (ចាប់ពីថ្ងៃទី ១០ នៃខែថ្មី)។ មានតែ Owner ប៉ុណ្ណោះដែលអាចបន្ថែម ឬកែប្រែបាន។`);
+      return;
+    }
+    commitUserEdit(prev => {
       const existingIdCards = prev.idCards || INITIAL_ID_CARD_DATA;
       const existingMonthList = existingIdCards[targetMonthKey] || [];
       const nextIdCards = {
@@ -414,11 +667,11 @@ export default function App() {
           currentMonth: targetMonthKey
         }
       };
-    });
-  }, []);
+    }, { permission: 'any' });
+  }, [commitUserEdit, isMonthLockedByRule]);
 
   const mutateFinance = useCallback((updatedFinance) => {
-    setAppState(prev => {
+    commitUserEdit(prev => {
       const rawNextFinance = {
         ...prev.finance,
         [currentMonthKey]: updatedFinance
@@ -434,28 +687,48 @@ export default function App() {
         finance: nextFinance
       };
     });
-  }, [currentMonthKey]);
+  }, [currentMonthKey, commitUserEdit]);
 
   const mutateStudents = useCallback((updatedStudents) => {
-    setAppState(prev => ({
-      ...prev,
-      studentMaster: updatedStudents
-    }));
-  }, []);
+    commitUserEdit(prev => {
+      // Clear manual student-count override on the active month so the Admin Report auto-syncs from the roster
+      const prevReports = prev.adminReports || {};
+      const activeReport = prevReports[currentMonthKey];
+      const nextReports = activeReport && activeReport.manualStudentStatsOverride
+        ? { ...prevReports, [currentMonthKey]: { ...activeReport, manualStudentStatsOverride: false } }
+        : prevReports;
+      return {
+        ...prev,
+        studentMaster: updatedStudents,
+        adminReports: nextReports,
+        meta: { ...prev.meta, hasCustomizedStudents: true }
+      };
+    }, { permission: 'students' });
+  }, [currentMonthKey, commitUserEdit]);
 
   const mutateAdminReport = useCallback((reportKey, updatedReportData) => {
-    setAppState(prev => ({
+    const isMonthReport = /^\d{4}-\d{2}$/.test(String(reportKey || ''));
+    if (isMonthReport && !permRef.current.isOwner && isMonthLockedByRule(reportKey, appStateRef.current?.meta)) {
+      alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ មានតែ Owner ប៉ុណ្ណោះដែលអាចកែប្រែបាន។');
+      return;
+    }
+    commitUserEdit(prev => ({
       ...prev,
       adminReports: {
         ...INITIAL_ADMIN_REPORTS,
         ...(prev.adminReports || {}),
         [reportKey]: updatedReportData
       }
-    }));
-  }, []);
+    }), { permission: 'any' });
+  }, [commitUserEdit, isMonthLockedByRule]);
 
   const mutateResetAdminReport = useCallback((reportKey) => {
-    setAppState(prev => {
+    const isMonthReport = /^\d{4}-\d{2}$/.test(String(reportKey || ''));
+    if (isMonthReport && !permRef.current.isOwner && isMonthLockedByRule(reportKey, appStateRef.current?.meta)) {
+      alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ មានតែ Owner ប៉ុណ្ណោះដែលអាចកែប្រែបាន។');
+      return;
+    }
+    commitUserEdit(prev => {
       const nextReports = {
         ...INITIAL_ADMIN_REPORTS,
         ...(prev.adminReports || {})
@@ -465,10 +738,13 @@ export default function App() {
         ...prev,
         adminReports: nextReports
       };
-    });
-  }, []);
+    }, { permission: 'any' });
+  }, [commitUserEdit, isMonthLockedByRule]);
 
   const mutateMonth = useCallback((monthKey) => {
+    if (isHydratedRef.current) {
+      isRemoteUpdateRef.current = true;
+    }
     setAppState(prev => ({
       ...prev,
       meta: {
@@ -476,39 +752,6 @@ export default function App() {
         currentMonth: monthKey
       }
     }));
-  }, []);
-
-  const mutateAddNewMonth = useCallback((newMonthKey) => {
-    setAppState(prev => {
-      const nextLeaves = {
-        ...prev.leaves,
-        [newMonthKey]: prev.leaves[newMonthKey] || []
-      };
-      const nextIdCards = {
-        ...(prev.idCards || INITIAL_ID_CARD_DATA),
-        [newMonthKey]: (prev.idCards && prev.idCards[newMonthKey]) || []
-      };
-      const rawNextFinance = {
-        ...prev.finance,
-        [newMonthKey]: prev.finance[newMonthKey] || { income: [], expense: [] }
-      };
-      const nextFinance = recomputeLinkedFinance(
-        rawNextFinance,
-        nextLeaves,
-        nextIdCards,
-        [newMonthKey]
-      );
-      return {
-        ...prev,
-        leaves: nextLeaves,
-        idCards: nextIdCards,
-        finance: nextFinance,
-        meta: {
-          ...prev.meta,
-          currentMonth: newMonthKey
-        }
-      };
-    });
   }, []);
 
   const mutateToggleNumerals = useCallback(() => {
@@ -1163,9 +1406,17 @@ export default function App() {
   };
 
   const handleImportBackup = async (file) => {
+    if (!isOwner) {
+      alert('មានតែ Owner ប៉ុណ្ណោះដែលអាចបញ្ចូលទិន្នន័យបម្រុងទុក (Backup) បាន។');
+      return;
+    }
     try {
       const restored = await importBackup(file);
-      setAppState(restored);
+      undoStackRef.current = [...undoStackRef.current, appStateRef.current].slice(-20);
+      setAppState({
+        ...restored,
+        meta: { ...(restored.meta || {}), updatedAt: new Date().toISOString() }
+      });
       alert('បានបញ្ចូលទិន្នន័យបម្រុងទុកដោយជោគជ័យ!');
     } catch (err) {
       alert('មានបញ្ហាក្នុងការអាន File Backup: ' + err.message);
@@ -1189,6 +1440,10 @@ export default function App() {
         trainingCount={trainingCount}
         hasApiKey={Boolean(apiKey || getGeminiKeyPool().length > 0)}
         cloudStatus={cloudStatus}
+        authSession={authSession}
+        canAddNewYear={canAddNewYear}
+        onLoginSubmit={handleLoginSubmit}
+        onLogout={handleLogout}
         onExportTrainingDataset={exportTrainingDataset}
         onOpenStudentMaster={() => setIsStudentModalOpen(true)}
         onOpenSettings={() => setIsApiKeyModalOpen(true)}
@@ -1204,7 +1459,6 @@ export default function App() {
           currentMonth={currentMonthKey}
           availableMonths={availableMonths}
           onSelectMonth={mutateMonth}
-          onAddNewMonth={mutateAddNewMonth}
           useKhmerNumerals={appState.meta.useKhmerNumerals}
           onToggleNumerals={mutateToggleNumerals}
           isMobile={isMobile}
@@ -1212,6 +1466,10 @@ export default function App() {
           onToggleMobilePreviewA4={() => setMobilePreviewA4(prev => !prev)}
           appMode={appMode}
           onToggleAppMode={() => setAppMode(prev => (prev === 'admin_report' ? 'main' : 'admin_report'))}
+          isOldLockedMonth={isOldLockedMonth}
+          isMonthLocked={(mKey) => isMonthLockedByRule(mKey, appState.meta)}
+          authRole={authRole}
+          onToggleMonthLock={mutateToggleMonthLock}
         />
 
         {/* View Switcher Banner for Mobile users who manually forced PC view */}
@@ -1252,10 +1510,15 @@ export default function App() {
             currentMonthKey={currentMonthKey}
             activeYear={activeYear}
             adminReports={appState.adminReports}
+            studentMaster={appState.studentMaster}
             metadata={appState.meta}
             useKhmerNumerals={appState.meta.useKhmerNumerals}
             isMobile={isMobile}
             mobilePreviewA4={mobilePreviewA4}
+            canEdit={canEditCurrentMonth}
+            canEditSummary={isOwner || isAdmin}
+            canDownloadPdf={canDownloadPdf}
+            canExportOffice={canExportOffice}
             onUpdateAdminReport={mutateAdminReport}
             onResetSynthesizedReport={mutateResetAdminReport}
           />
@@ -1269,6 +1532,7 @@ export default function App() {
                 leaveCount={currentLeaves.length}
                 queueCount={queue.filter(q => q.status === 'pending').length}
                 useKhmerNumerals={appState.meta.useKhmerNumerals}
+                canUploadOcr={canUploadOcr}
               />
             )}
 
@@ -1287,6 +1551,8 @@ export default function App() {
                   onPrint={handlePrint}
                   onSwitchToDesktop={() => setViewMode('desktop')}
                   mobilePreviewA4={mobilePreviewA4}
+                  canEdit={canEditCurrentMonth}
+                  canDownloadPdf={canDownloadPdf}
                 />
               ) : (
                 <LeaveTableView
@@ -1297,6 +1563,9 @@ export default function App() {
                   studentMaster={appState.studentMaster}
                   onUpdateRecords={mutateLeaves}
                   onPrint={handlePrint}
+                  canEdit={canEditCurrentMonth}
+                  canDownloadPdf={canDownloadPdf}
+                  canExportOffice={canExportOffice}
                 />
               )
             )}
@@ -1315,6 +1584,8 @@ export default function App() {
                   onUpdateRecords={mutateIdCards}
                   onAddRecordToMonth={mutateAddIdCardToMonth}
                   mobilePreviewA4={mobilePreviewA4}
+                  canEdit={canEditCurrentMonth}
+                  canDownloadPdf={canDownloadPdf}
                 />
               ) : (
                 <IdCardTableView
@@ -1326,6 +1597,9 @@ export default function App() {
                   onUpdateRecords={mutateIdCards}
                   onAddRecordToMonth={mutateAddIdCardToMonth}
                   onPrint={handlePrint}
+                  canEdit={canEditCurrentMonth}
+                  canDownloadPdf={canDownloadPdf}
+                  canExportOffice={canExportOffice}
                 />
               )
             )}
@@ -1344,6 +1618,8 @@ export default function App() {
                   onPrint={handlePrint}
                   onSwitchToDesktop={() => setViewMode('desktop')}
                   mobilePreviewA4={mobilePreviewA4}
+                  canEdit={canEditCurrentMonth}
+                  canDownloadPdf={canDownloadPdf}
                 />
               ) : (
                 <FinanceTableView
@@ -1353,6 +1629,9 @@ export default function App() {
                   useKhmerNumerals={appState.meta.useKhmerNumerals}
                   onUpdateFinance={mutateFinance}
                   onPrint={handlePrint}
+                  canEdit={canEditCurrentMonth}
+                  canDownloadPdf={canDownloadPdf}
+                  canExportOffice={canExportOffice}
                 />
               )
             )}
@@ -1360,7 +1639,7 @@ export default function App() {
             {/* ======================================================== */}
             {/* VIEW 3: UPLOAD & OCR SCANNER                             */}
             {/* ======================================================== */}
-            {activeTab === 'upload' && (
+            {activeTab === 'upload' && canUploadOcr && (
               <UploadSection
                 queue={queue}
                 studentMaster={appState.studentMaster}
@@ -1395,6 +1674,7 @@ export default function App() {
                   onSelectMonth={mutateMonth}
                   onSelectYear={mutateSelectYear}
                   mobilePreviewA4={mobilePreviewA4}
+                  canDownloadPdf={canDownloadPdf}
                 />
               ) : (
                 <SummaryTableView
@@ -1407,6 +1687,8 @@ export default function App() {
                   useKhmerNumerals={appState.meta.useKhmerNumerals}
                   onSelectMonth={mutateMonth}
                   onSelectYear={mutateSelectYear}
+                  canDownloadPdf={canDownloadPdf}
+                  canExportOffice={canExportOffice}
                 />
               )
             )}
@@ -1427,7 +1709,32 @@ export default function App() {
           useKhmerNumerals={appState.meta.useKhmerNumerals}
           isForcedDesktop={overrideMode === 'desktop'}
           onToggleViewMode={() => setViewMode(overrideMode === 'desktop' ? 'mobile' : 'desktop')}
+          canUploadOcr={canUploadOcr}
         />
+      )}
+
+      {/* Hidden Ctrl+Z Undo confirmation toast */}
+      {undoToastMsg && (
+        <div
+          className="no-print"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: isMobile ? 96 : 28,
+            transform: 'translateX(-50%)',
+            background: 'rgba(15, 23, 42, 0.92)',
+            color: '#ffffff',
+            padding: '8px 16px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            zIndex: 1300,
+            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.3)',
+            pointerEvents: 'none'
+          }}
+        >
+          {undoToastMsg}
+        </div>
       )}
 
       {/* Modals */}
@@ -1436,6 +1743,9 @@ export default function App() {
         onClose={() => setIsStudentModalOpen(false)}
         students={appState.studentMaster}
         onUpdateStudents={mutateStudents}
+        canEdit={canEditStudentMaster}
+        canUploadExcel={canExportOffice}
+        canReset={isOwner}
       />
 
       <ApiKeyModal

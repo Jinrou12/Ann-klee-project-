@@ -18,6 +18,7 @@ import {
 } from '../../utils/idCardCatalog';
 import OfficialIdCardDocument from '../OfficialIdCardDocument';
 import A4SheetScaler from '../A4SheetScaler';
+import MobileCustomSelect from './MobileCustomSelect';
 
 export default function IdCardMobileView({
   records = [],
@@ -27,7 +28,9 @@ export default function IdCardMobileView({
   studentMaster = [],
   onUpdateRecords,
   onAddRecordToMonth,
-  mobilePreviewA4 = false
+  mobilePreviewA4 = false,
+  canEdit = true,
+  canDownloadPdf = true
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -221,35 +224,38 @@ export default function IdCardMobileView({
   return (
     <div className="mobile-idcard-container" style={{ paddingBottom: 85 }}>
       {/* 1. Mobile Top PDF Export Button */}
-      <div style={{ marginBottom: 12 }}>
-        <button
-          type="button"
-          onClick={handleDownloadPdf}
-          disabled={isExportingPdf}
-          style={{
-            width: '100%',
-            background: '#b91c1c',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: 10,
-            padding: '10px 14px',
-            fontSize: 13,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            cursor: isExportingPdf ? 'wait' : 'pointer',
-            opacity: isExportingPdf ? 0.7 : 1,
-            boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
-          }}
-        >
-          {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-          <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
-        </button>
-      </div>
+      {canDownloadPdf && (
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={isExportingPdf}
+            style={{
+              width: '100%',
+              background: '#b91c1c',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 10,
+              padding: '10px 14px',
+              fontSize: 13,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              cursor: isExportingPdf ? 'wait' : 'pointer',
+              opacity: isExportingPdf ? 0.7 : 1,
+              boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+            }}
+          >
+            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. Mobile Smart Quick-Entry Box (វាយឈ្មោះ -> ណែនាំ ៨០ អង្គ -> ចុចមុខទំនិញ -> Auto Price & Auto Date) */}
+      {canEdit && (
       <form
         onSubmit={handleQuickAddSubmit}
         style={{
@@ -376,12 +382,12 @@ export default function IdCardMobileView({
             )}
           </div>
 
-          <select
+          <MobileCustomSelect
             value={quickGrade}
             onChange={e => setQuickGrade(e.target.value)}
             style={{
               width: 90,
-              padding: '8px 4px',
+              padding: '8px 6px',
               borderRadius: 8,
               border: '1.5px solid #cbd5e1',
               background: '#fffbeb',
@@ -394,7 +400,7 @@ export default function IdCardMobileView({
             <option value="១">ថ្នាក់ ១</option>
             <option value="២">ថ្នាក់ ២</option>
             <option value="៣">ថ្នាក់ ៣</option>
-          </select>
+          </MobileCustomSelect>
         </div>
 
         {/* Step 2: 4 Quick Item Buttons (Single tap = 1 item, Double tap 2nd item = combine) */}
@@ -529,6 +535,7 @@ export default function IdCardMobileView({
           </div>
         )}
       </form>
+      )}
 
       {/* 3. Search Bar */}
       <div style={{
@@ -640,16 +647,16 @@ export default function IdCardMobileView({
                         placeholder="ឈ្មោះសមណសិស្ស"
                         style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #0284c7', fontSize: 13 }}
                       />
-                      <select
+                      <MobileCustomSelect
                         value={editForm.grade || '១'}
                         onChange={e => setEditForm({ ...editForm, grade: e.target.value })}
-                        style={{ width: 85, padding: '7px 4px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+                        style={{ width: 92, padding: '7px 6px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5 }}
                       >
                         <option value="មត្តេយ្យ">មត្តេយ្យ</option>
                         <option value="១">ថ្នាក់ ១</option>
                         <option value="២">ថ្នាក់ ២</option>
                         <option value="៣">ថ្នាក់ ៣</option>
-                      </select>
+                      </MobileCustomSelect>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5 }}>
@@ -765,20 +772,24 @@ export default function IdCardMobileView({
                       <span style={{ fontSize: 13.5, fontWeight: 800, color: '#15803d', whiteSpace: 'nowrap' }}>
                         {formatKhmerCurrency(r.price || 0, useKhmerNumerals)}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleStartEdit(r)}
-                        style={{ background: '#f1f5f9', color: '#334155', border: 'none', borderRadius: 6, padding: 6 }}
-                      >
-                        <Edit3 size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(r.id, r.name)}
-                        style={{ background: '#fef2f2', color: '#dc2626', border: 'none', borderRadius: 6, padding: 6 }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {canEdit && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(r)}
+                            style={{ background: '#f1f5f9', color: '#334155', border: 'none', borderRadius: 6, padding: 6 }}
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(r.id, r.name)}
+                            style={{ background: '#fef2f2', color: '#dc2626', border: 'none', borderRadius: 6, padding: 6 }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

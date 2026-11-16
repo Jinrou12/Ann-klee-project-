@@ -6,9 +6,10 @@ export default function TabNavigation({
   activeTab,
   onSelectTab,
   queueCount = 0,
-  useKhmerNumerals = true
+  useKhmerNumerals = true,
+  canUploadOcr = true
 }) {
-  const tabs = [
+  const allTabs = [
     {
       id: 'leave',
       label: 'សមណសិស្សសុំច្បាប់',
@@ -50,6 +51,7 @@ export default function TabNavigation({
       badge: null
     }
   ];
+  const tabs = canUploadOcr ? allTabs : allTabs.filter(t => t.id !== 'upload');
 
   return (
     <div className="no-print" style={{

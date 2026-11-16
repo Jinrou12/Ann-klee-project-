@@ -213,7 +213,7 @@ export function sanitizeLeaveState(rawLeaves = {}) {
   };
 
   Object.keys(rawLeaves || {}).forEach(month => {
-    if (month === '2025-01' || month === '2027-01') return;
+    if (month === '2025-01') return;
     const records = rawLeaves[month];
     if (!Array.isArray(records)) return;
 
@@ -388,7 +388,7 @@ export function sanitizeFinanceState(rawFinance = {}) {
 
   // 1. Copy over non-test months & filter out known test items
   Object.keys(rawFinance || {}).forEach(mKey => {
-    if (mKey === '2025-01' || mKey === '2027-01') return;
+    if (mKey === '2025-01') return;
     const mData = rawFinance[mKey];
     if (!mData) return;
 
@@ -469,14 +469,16 @@ export function recomputeLinkedFinance(rawFinance = {}, allLeaves = {}, allIdCar
     ...Object.keys(allLeaves || {}).filter(k => Array.isArray(allLeaves[k]) && allLeaves[k].length > 0),
     ...Object.keys(allIdCards || {}).filter(k => Array.isArray(allIdCards[k]) && allIdCards[k].length > 0)
   ]))
-    .filter(k => k && k !== '2025-01' && k !== '2027-01')
+    .filter(k => k && k !== '2025-01')
     .sort();
 
   let prevNetBalance = null;
   let prevMonthKey = null;
 
   activeMonthKeys.forEach(mKey => {
-    const [, mStr] = mKey.split('-');
+    const [mYear, mStr] = mKey.split('-');
+    const prevYear = prevMonthKey ? prevMonthKey.split('-')[0] : null;
+    const isCrossingIntoNewYear = Boolean(prevYear && mYear && prevYear !== mYear);
     const mIdx = Math.max(0, Math.min(11, (parseInt(mStr, 10) || 7) - 1));
     const monthName = KHMER_MONTH_NAMES_LIST[mIdx];
     const prevMIdx = prevMonthKey
@@ -502,6 +504,8 @@ export function recomputeLinkedFinance(rawFinance = {}, allLeaves = {}, allIdCar
 
     // Note: In official May 2026 PDF report, May starts with ប្រាក់តម្កល់សល់ពីឆ្នាំចាស់ (2,000,000 KHR)
     // and ends with 3,802,831 KHR, which cascades into June 2026 as ប្រាក់សល់ពីខែឧសភា (3,802,831 KHR).
+    // When crossing into a new year (e.g. 2026 -> 2027), positive ending balance carries over,
+    // while negative ending balance resets to 0 (000).
     if (mKey === '2026-05') {
       const targetCarryDesc = 'ប្រាក់តម្កល់សល់ពីឆ្នាំចាស់';
       if (carryIdx >= 0) {
@@ -522,20 +526,26 @@ export function recomputeLinkedFinance(rawFinance = {}, allLeaves = {}, allIdCar
         });
       }
     } else if (prevNetBalance !== null) {
+      const effectiveCarryTotal = isCrossingIntoNewYear
+        ? (prevNetBalance > 0 ? prevNetBalance : 0)
+        : prevNetBalance;
+      const carryDesc = isCrossingIntoNewYear
+        ? 'ប្រាក់តម្កល់សល់ពីឆ្នាំចាស់'
+        : `ប្រាក់សល់ពីខែ${prevMonthName}`;
       if (carryIdx >= 0) {
         income[carryIdx] = {
           ...income[carryIdx],
-          desc: `ប្រាក់សល់ពីខែ${prevMonthName}`,
-          total: prevNetBalance
+          desc: carryDesc,
+          total: effectiveCarryTotal
         };
       } else {
         income.unshift({
           id: `inc-${mKey}-carry`,
           autoChannel: 'carryover',
-          desc: `ប្រាក់សល់ពីខែ${prevMonthName}`,
+          desc: carryDesc,
           qty: '',
           unitPrice: '',
-          total: prevNetBalance,
+          total: effectiveCarryTotal,
           note: ''
         });
       }
@@ -808,13 +818,17 @@ export function loadAppState() {
     // Filter out old mock records
     let loadedStudents = rawStudents.filter(s => !legacyMockNames.has(s.name) && !legacyMockIds.has(String(s.id)));
 
-    // Guarantee all 80 official students from DEFAULT_STUDENT_MASTER are present
-    const currentNames = new Set(loadedStudents.map(s => s.name));
-    DEFAULT_STUDENT_MASTER.forEach(def => {
-      if (!currentNames.has(def.name)) {
-        loadedStudents.push(def);
-      }
-    });
+    // Guarantee all 80 official students from DEFAULT_STUDENT_MASTER are present unless user explicitly customized/deleted students
+    if (!mergedMeta.hasCustomizedStudents) {
+      const currentNames = new Set(loadedStudents.map(s => s.name));
+      DEFAULT_STUDENT_MASTER.forEach(def => {
+        if (!currentNames.has(def.name)) {
+          loadedStudents.push(def);
+        }
+      });
+    } else if (loadedStudents.length === 0) {
+      loadedStudents = [...DEFAULT_STUDENT_MASTER];
+    }
 
     // Synchronize metadata (id, grade, aliases) from DEFAULT_STUDENT_MASTER
     loadedStudents = loadedStudents.map(s => {
@@ -1671,6 +1685,10 @@ export async function fetchCloudAppState() {
       const mergedAdminReports = sanitizeAdminReportsState(data.data.adminReports);
       return {
         ...data.data,
+        meta: {
+          ...(data.data.meta || {}),
+          updatedAt: data.data.meta?.updatedAt || data.updated_at || null
+        },
         leaves: cleanLeaves,
         idCards: mergedIdCards,
         adminReports: mergedAdminReports,
@@ -1722,6 +1740,10 @@ export function subscribeToCloudAppState(onRemoteUpdate) {
             const mergedAdminReports = sanitizeAdminReportsState(payload.new.data.adminReports);
             onRemoteUpdate({
               ...payload.new.data,
+              meta: {
+                ...(payload.new.data.meta || {}),
+                updatedAt: payload.new.data.meta?.updatedAt || payload.new.updated_at || null
+              },
               leaves: cleanLeaves,
               idCards: mergedIdCards,
               adminReports: mergedAdminReports,

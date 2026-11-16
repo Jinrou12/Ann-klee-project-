@@ -27,7 +27,10 @@ export default function IdCardTableView({
   studentMaster = [],
   onUpdateRecords,
   onAddRecordToMonth,
-  onPrint
+  onPrint,
+  canEdit = true,
+  canDownloadPdf = true,
+  canExportOffice = true
 }) {
   const [editingRowId, setEditingRowId] = useState(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -220,6 +223,7 @@ export default function IdCardTableView({
       {/* ==================================================================== */}
       {/* SMART QUICK-ENTRY PANEL (វាយឈ្មោះ -> ណែនាំ ៨០ អង្គ -> ជ្រើសរើសមុខទំនិញ -> Auto Price & Auto Date) */}
       {/* ==================================================================== */}
+      {canEdit && (
       <form
         onSubmit={handleQuickAddSubmit}
         className="no-print"
@@ -585,6 +589,7 @@ export default function IdCardTableView({
           </div>
         )}
       </form>
+      )}
 
       {/* ==================================================================== */}
       {/* ACTION TOOLBAR (hidden on print)                                     */}
@@ -602,25 +607,27 @@ export default function IdCardTableView({
         padding: '10px 16px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <button
-            onClick={handleAddBlankRow}
-            style={{
-              background: '#b45309',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            <Plus size={16} />
-            <span>បន្ថែមជួរថ្មីក្នុងតារាង</span>
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleAddBlankRow}
+              style={{
+                background: '#b45309',
+                color: '#ffffff',
+                padding: '7px 14px',
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <Plus size={16} />
+              <span>បន្ថែមជួរថ្មីក្នុងតារាង</span>
+            </button>
+          )}
           <span style={{ fontSize: 13, color: '#475569' }}>
             សរុបសមណសិស្សទិញកាត៖{' '}
             <strong style={{ color: '#0f172a' }}>
@@ -633,89 +640,101 @@ export default function IdCardTableView({
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            onClick={handleExportExcel}
-            style={{
-              background: '#15803d',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            <FileSpreadsheet size={16} />
-            <span>Export Excel</span>
-          </button>
+        {(canExportOffice || canDownloadPdf) && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {canExportOffice && (
+              <>
+                <button
+                  onClick={handleExportExcel}
+                  style={{
+                    background: '#15803d',
+                    color: '#ffffff',
+                    padding: '7px 14px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <FileSpreadsheet size={16} />
+                  <span>Export Excel</span>
+                </button>
 
-          <button
-            onClick={handleExportWord}
-            style={{
-              background: '#1d4ed8',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            <FileText size={16} />
-            <span>Download Word</span>
-          </button>
+                <button
+                  onClick={handleExportWord}
+                  style={{
+                    background: '#1d4ed8',
+                    color: '#ffffff',
+                    padding: '7px 14px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <FileText size={16} />
+                  <span>Download Word</span>
+                </button>
+              </>
+            )}
 
-          <button
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
-            style={{
-              background: '#b91c1c',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: isExportingPdf ? 'not-allowed' : 'pointer',
-              opacity: isExportingPdf ? 0.7 : 1
-            }}
-          >
-            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
-          </button>
+            {canDownloadPdf && (
+              <>
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={isExportingPdf}
+                  style={{
+                    background: '#b91c1c',
+                    color: '#ffffff',
+                    padding: '7px 14px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    border: 'none',
+                    cursor: isExportingPdf ? 'not-allowed' : 'pointer',
+                    opacity: isExportingPdf ? 0.7 : 1
+                  }}
+                >
+                  {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                  <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
+                </button>
 
-          <button
-            onClick={onPrint}
-            style={{
-              background: '#0f172a',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            <Printer size={16} />
-            <span>បោះពុម្ពជា PDF</span>
-          </button>
-        </div>
+                {canExportOffice && (
+                  <button
+                    onClick={onPrint}
+                    style={{
+                      background: '#0f172a',
+                      color: '#ffffff',
+                      padding: '7px 14px',
+                      borderRadius: 6,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Printer size={16} />
+                    <span>បោះពុម្ពជា PDF</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Authentic A4 Paper Sheet */}
@@ -728,7 +747,7 @@ export default function IdCardTableView({
           yearDisplay={yearDisplay}
           useKhmerNumerals={useKhmerNumerals}
           monthKey={monthKey}
-          isEditable={true}
+          isEditable={canEdit}
           editingRowId={editingRowId}
           setEditingRowId={setEditingRowId}
           handleCellChange={handleCellChange}

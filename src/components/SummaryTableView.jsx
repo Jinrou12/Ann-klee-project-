@@ -58,7 +58,9 @@ export default function SummaryTableView({
   metadata = {},
   useKhmerNumerals = true,
   onSelectMonth,
-  onSelectYear
+  onSelectYear,
+  canDownloadPdf = true,
+  canExportOffice = true
 }) {
   // 0. Top-Level Section Switch: 'students' (ច្បាប់ឈប់) | 'idcards' (ទិញ ID កាត) | 'finance' (ចំណូល-ចំណាយ)
   const [sectionMode, setSectionMode] = useState('students'); // 'students' | 'idcards' | 'finance'
@@ -732,72 +734,78 @@ export default function SummaryTableView({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              style={{
-                background: '#15803d',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '8px 14px',
-                fontSize: 13,
-                fontWeight: 600,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                cursor: 'pointer'
-              }}
-            >
-              <FileSpreadsheet size={16} />
-              <span>Export Excel</span>
-            </button>
+            {canExportOffice && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  style={{
+                    background: '#15803d',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 14px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <FileSpreadsheet size={16} />
+                  <span>Export Excel</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={handleExportWord}
-              style={{
-                background: '#1d4ed8',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '8px 14px',
-                fontSize: 13,
-                fontWeight: 600,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                cursor: 'pointer'
-              }}
-            >
-              <FileText size={16} />
-              <span>Download Word</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={handleExportWord}
+                  style={{
+                    background: '#1d4ed8',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 14px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <FileText size={16} />
+                  <span>Download Word</span>
+                </button>
+              </>
+            )}
 
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={isExportingPdf}
-              style={{
-                background: '#b91c1c',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '8px 16px',
-                fontSize: 13,
-                fontWeight: 700,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                cursor: isExportingPdf ? 'not-allowed' : 'pointer',
-                opacity: isExportingPdf ? 0.7 : 1,
-                boxShadow: '0 2px 6px rgba(185, 28, 28, 0.25)'
-              }}
-              title="ទាញយករបាយការណ៍ផ្លូវការជា PDF តាមខែ/ឆមាស/ឆ្នាំដែលបានជ្រើសរើស"
-            >
-              {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-              <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
-            </button>
+            {canDownloadPdf && (
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isExportingPdf}
+                style={{
+                  background: '#b91c1c',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '8px 16px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  cursor: isExportingPdf ? 'not-allowed' : 'pointer',
+                  opacity: isExportingPdf ? 0.7 : 1,
+                  boxShadow: '0 2px 6px rgba(185, 28, 28, 0.25)'
+                }}
+                title="ទាញយករបាយការណ៍ផ្លូវការជា PDF តាមខែ/ឆមាស/ឆ្នាំដែលបានជ្រើសរើស"
+              >
+                {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2084,7 +2092,7 @@ export default function SummaryTableView({
                   <FileText size={14} />
                   <span>{financeViewType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
                 </button>
-                <A4SheetScaler>
+                <A4SheetScaler orientation={financeViewType === 'summary' ? 'landscape' : 'portrait'}>
                   {financeViewType === 'summary' ? (
                     <OfficialFinanceSummaryDocument
                       id="printable-summary-finance-brief-document"

@@ -14,7 +14,10 @@ import {
   CheckCircle2,
   Download,
   Smartphone,
-  Share
+  Share,
+  Lock,
+  ShieldCheck,
+  LogOut
 } from 'lucide-react';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 
@@ -28,6 +31,10 @@ export default function Header({
   trainingCount = 0,
   hasApiKey = true,
   cloudStatus = 'idle',
+  authSession = { role: 'user' },
+  canAddNewYear = false,
+  onLoginSubmit,
+  onLogout,
   onExportTrainingDataset,
   onOpenStudentMaster,
   onOpenSettings,
@@ -39,6 +46,10 @@ export default function Header({
   const [isYearDrawerOpen, setIsYearDrawerOpen] = useState(false);
   const [newYearInput, setNewYearInput] = useState('');
   const [showAddYearForm, setShowAddYearForm] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPin, setLoginPin] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [deferredPrompt, setDeferredPrompt] = useState(() => window.__deferredPwaPrompt || null);
   const [isStandalone, setIsStandalone] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -359,13 +370,21 @@ export default function Header({
                   <img
                     src="/logo.png"
                     alt="Logo"
+                    onClick={() => {
+                      setIsYearDrawerOpen(false);
+                      setLoginError('');
+                      setLoginUsername('');
+                      setLoginPin('');
+                      setShowLoginModal(true);
+                    }}
                     style={{
                       width: 42,
                       height: 42,
                       borderRadius: '50%',
                       background: '#ffffff',
                       padding: 2,
-                      objectFit: 'contain'
+                      objectFit: 'contain',
+                      cursor: 'pointer'
                     }}
                   />
                   <div>
@@ -486,91 +505,376 @@ export default function Header({
               </div>
             </div>
 
-            {/* Bottom Add New Year Action */}
+            {/* Bottom Add New Year Action (Owner Only) */}
+            {canAddNewYear && (
+              <div style={{
+                padding: 14,
+                borderTop: '1px solid #e2e8f0',
+                background: '#f8fafc'
+              }}>
+                {!showAddYearForm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddYearForm(true)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      border: '1.5px dashed #cbd5e1',
+                      background: '#ffffff',
+                      color: '#334155',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Plus size={16} color="#b45309" />
+                    <span>បន្ថែមឆ្នាំសិក្សាថ្មី (ឧ. ២០២៨)...</span>
+                  </button>
+                ) : (
+                  <form onSubmit={handleCreateNewYear} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
+                      វាយបញ្ចូលឆ្នាំថ្មី (ជាលេខ ៤ ខ្ទង់ ឧ. 2028)៖
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="number"
+                        min="2020"
+                        max="2100"
+                        placeholder="2028"
+                        value={newYearInput}
+                        onChange={e => setNewYearInput(e.target.value)}
+                        style={{
+                          flex: 1,
+                          padding: '7px 10px',
+                          fontSize: 14,
+                          fontWeight: 700,
+                          borderRadius: 8,
+                          border: '1px solid #cbd5e1'
+                        }}
+                      />
+                      <button
+                        type="submit"
+                        style={{
+                          background: '#b45309',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '7px 12px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        យល់ព្រម
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddYearForm(false)}
+                        style={{
+                          background: '#e2e8f0',
+                          color: '#475569',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '7px 10px',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        បិទ
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* STEALTH LOGIN MODAL (Triggered by Click 2 on Logo in Year Drawer)  */}
+      {/* ================================================================== */}
+      {showLoginModal && (
+        <div
+          className="no-print"
+          onClick={() => setShowLoginModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              background: '#ffffff',
+              borderRadius: 18,
+              overflow: 'hidden',
+              boxShadow: '0 22px 48px rgba(15, 23, 42, 0.35)',
+              border: '1.5px solid #fde68a'
+            }}
+          >
+            {/* Header */}
             <div style={{
-              padding: 14,
-              borderTop: '1px solid #e2e8f0',
-              background: '#f8fafc'
+              background: 'linear-gradient(135deg, #78350f 0%, #b45309 65%, #d97706 100%)',
+              color: '#ffffff',
+              padding: '16px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10
             }}>
-              {!showAddYearForm ? (
-                <button
-                  type="button"
-                  onClick={() => setShowAddYearForm(true)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <img
+                  src="/logo.png"
+                  alt="Logo"
                   style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 10,
-                    border: '1.5px dashed #cbd5e1',
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
                     background: '#ffffff',
-                    color: '#334155',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    cursor: 'pointer'
+                    padding: 2,
+                    objectFit: 'contain'
                   }}
-                >
-                  <Plus size={16} color="#b45309" />
-                  <span>បន្ថែមឆ្នាំសិក្សាថ្មី (ឧ. ២០២៨)...</span>
-                </button>
-              ) : (
-                <form onSubmit={handleCreateNewYear} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>
-                    វាយបញ្ចូលឆ្នាំថ្មី (ជាលេខ ៤ ខ្ទង់ ឧ. 2028)៖
+                />
+                <div>
+                  <div className="font-moul" style={{ fontSize: 13 }}>
+                    ផ្ទៀងផ្ទាត់សិទ្ធិប្រើប្រាស់
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input
-                      type="number"
-                      min="2020"
-                      max="2100"
-                      placeholder="2028"
-                      value={newYearInput}
-                      onChange={e => setNewYearInput(e.target.value)}
-                      style={{
-                        flex: 1,
-                        padding: '7px 10px',
-                        fontSize: 14,
-                        fontWeight: 700,
-                        borderRadius: 8,
-                        border: '1px solid #cbd5e1'
-                      }}
-                    />
-                    <button
-                      type="submit"
-                      style={{
-                        background: '#b45309',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '7px 12px',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      យល់ព្រម
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddYearForm(false)}
-                      style={{
-                        background: '#e2e8f0',
-                        color: '#475569',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '7px 10px',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      បិទ
-                    </button>
+                  <div style={{ fontSize: 11, opacity: 0.9, marginTop: 2 }}>
+                    {metadata.school}
                   </div>
-                </form>
-              )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLoginModal(false)}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  color: '#ffffff',
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '18px 18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Current Role Status Badge */}
+              <div style={{
+                background: authSession?.role === 'owner'
+                  ? '#fef3c7'
+                  : authSession?.role === 'admin'
+                    ? '#e0f2fe'
+                    : '#f1f5f9',
+                border: authSession?.role === 'owner'
+                  ? '1px solid #f59e0b'
+                  : authSession?.role === 'admin'
+                    ? '1px solid #38bdf8'
+                    : '1px solid #cbd5e1',
+                borderRadius: 10,
+                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <ShieldCheck
+                    size={18}
+                    color={
+                      authSession?.role === 'owner'
+                        ? '#b45309'
+                        : authSession?.role === 'admin'
+                          ? '#0284c7'
+                          : '#64748b'
+                    }
+                  />
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>
+                      សិទ្ធិបច្ចុប្បន្នលើឧបករណ៍នេះ៖
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>
+                      {authSession?.role === 'owner'
+                        ? 'Owner (ម្ចាស់ប្រព័ន្ធ • សិទ្ធិពេញ ១០០%)'
+                        : authSession?.role === 'admin'
+                          ? 'Admin (អ្នកគ្រប់គ្រងគម្រោង)'
+                          : 'User (អ្នកទស្សនា • បានត្រឹមតែមើល)'}
+                    </div>
+                  </div>
+                </div>
+                {authSession?.role && authSession.role !== 'user' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onLogout) onLogout();
+                      setShowLoginModal(false);
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: '#fee2e2',
+                      border: '1px solid #fca5a5',
+                      color: '#b91c1c',
+                      padding: '5px 9px',
+                      borderRadius: 8,
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      flexShrink: 0
+                    }}
+                  >
+                    <LogOut size={13} />
+                    <span>ចាកចេញ</span>
+                  </button>
+                )}
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!onLoginSubmit) return;
+                  const res = onLoginSubmit(loginUsername, loginPin);
+                  if (res && res.ok) {
+                    setLoginError('');
+                    setLoginUsername('');
+                    setLoginPin('');
+                    setShowLoginModal(false);
+                  } else {
+                    setLoginError(res?.error || 'ឈ្មោះគណនី ឬលេខសម្ងាត់មិនត្រឹមត្រូវទេ!');
+                  }
+                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+              >
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 5 }}>
+                    ឈ្មោះគណនី (Username)
+                  </label>
+                  <input
+                    type="text"
+                    autoFocus
+                    autoComplete="username"
+                    placeholder="វាយឈ្មោះគណនី..."
+                    value={loginUsername}
+                    onChange={(e) => {
+                      setLoginUsername(e.target.value);
+                      if (loginError) setLoginError('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 5 }}>
+                    លេខសម្ងាត់ (PIN)
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="••••••"
+                    value={loginPin}
+                    onChange={(e) => {
+                      setLoginPin(e.target.value);
+                      if (loginError) setLoginError('');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 10,
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                {loginError && (
+                  <div style={{
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#dc2626',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    fontSize: 12,
+                    fontWeight: 700
+                  }}>
+                    {loginError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <button
+                    type="submit"
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #b45309 0%, #d97706 100%)',
+                      color: '#ffffff',
+                      fontSize: 13.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      boxShadow: '0 4px 10px rgba(180, 83, 9, 0.25)'
+                    }}
+                  >
+                    <Lock size={15} />
+                    <span>ចូលប្រើប្រាស់ (Login)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginModal(false)}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#475569',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    បិទ
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

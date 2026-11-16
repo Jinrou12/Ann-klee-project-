@@ -5,6 +5,7 @@ import { parseDurationShorthand, getDurationSuggestions, normalizeCurrency, getC
 import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
 import CurrencyToggle from './CurrencyToggle';
 import OcrNameReviewHint from './OcrNameReviewHint';
+import MobileCustomSelect from './mobile/MobileCustomSelect';
 
 export default function ReviewModal({
   isOpen,
@@ -1895,7 +1896,8 @@ export default function ReviewModal({
                             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
                               ថ្នាក់ទី៖
                             </label>
-                            <select
+                            <MobileCustomSelect
+                              mobileOnly
                               value={leaveItem.grade}
                               onChange={e => applyLeavePatch({ grade: e.target.value })}
                               style={{ width: '100%', fontSize: 14, fontWeight: 600, padding: '8px 10px' }}
@@ -1904,7 +1906,7 @@ export default function ReviewModal({
                               <option value="១">ថ្នាក់ទី ១</option>
                               <option value="២">ថ្នាក់ទី ២</option>
                               <option value="៣">ថ្នាក់ទី ៣</option>
-                            </select>
+                            </MobileCustomSelect>
                           </div>
                         </div>
 

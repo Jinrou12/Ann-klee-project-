@@ -290,7 +290,7 @@ function cellRef(row1, col0) {
 /**
  * Package a styled worksheet into a valid .xlsx file and trigger browser download
  */
-function downloadStyledXlsx({ sheetName = 'របាយការណ៍', colWidths = [], rows = [], merges = [], fileName = 'Report.xlsx', logoBytes = null }) {
+function downloadStyledXlsx({ sheetName = 'របាយការណ៍', colWidths = [], rows = [], merges = [], fileName = 'Report.xlsx', logoBytes = null, orientation = 'portrait' }) {
   const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
   const colsXml = colWidths.map((w, i) => (
     `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`
@@ -325,7 +325,7 @@ function downloadStyledXlsx({ sheetName = 'របាយការណ៍', colWidt
   ${mergesXml}
   <printOptions horizontalCentered="1"/>
   <pageMargins left="0.3" right="0.3" top="0.45" bottom="0.45" header="0.2" footer="0.2"/>
-  <pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>
+  <pageSetup paperSize="9" orientation="${orientation}" fitToWidth="1" fitToHeight="0"/>
   ${hasLogo ? '<drawing r:id="rId1"/>' : ''}
 </worksheet>`;
 
@@ -1042,11 +1042,12 @@ export async function exportFinanceSummaryReportToExcel(
 
   downloadStyledXlsx({
     sheetName: 'សង្ខេបចំណូលចំណាយ',
-    colWidths: [7, 39, 15, 20, 18],
+    colWidths: [8, 46, 17, 22, 20],
     rows,
     merges,
     fileName: `របាយការណ៍ចំណូលចំណាយសង្ខេប_${String(monthLabel).replace(/\s+/g, '_')}.xlsx`,
-    logoBytes
+    logoBytes,
+    orientation: 'landscape'
   });
 }
 

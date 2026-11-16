@@ -54,7 +54,8 @@ export default function SummaryMobileView({
   useKhmerNumerals = true,
   onSelectMonth,
   onSelectYear,
-  mobilePreviewA4 = false
+  mobilePreviewA4 = false,
+  canDownloadPdf = true
 }) {
   // 0. Top-Level Section Switch: 'students' ⇄ 'idcards' ⇄ 'finance'
   const [sectionMode, setSectionMode] = useState('students'); // 'students' | 'idcards' | 'finance'
@@ -606,30 +607,32 @@ export default function SummaryMobileView({
             isMobile={true}
           />
 
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
-            style={{
-              flex: 1,
-              background: '#b91c1c',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 12px',
-              fontSize: 12.5,
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              whiteSpace: 'nowrap',
-              opacity: isExportingPdf ? 0.7 : 1
-            }}
-          >
-            {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-            <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
-          </button>
+          {canDownloadPdf && (
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              style={{
+                flex: 1,
+                background: '#b91c1c',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '9px 12px',
+                fontSize: 12.5,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                whiteSpace: 'nowrap',
+                opacity: isExportingPdf ? 0.7 : 1
+              }}
+            >
+              {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+              <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1416,7 +1419,7 @@ export default function SummaryMobileView({
                   <FileText size={12} />
                   <span>{financeViewType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
                 </button>
-                <A4SheetScaler>
+                <A4SheetScaler orientation={financeViewType === 'summary' ? 'landscape' : 'portrait'}>
                   {financeViewType === 'summary' ? (
                     <OfficialFinanceSummaryDocument
                       id="preview-mobile-summary-finance-brief-document"

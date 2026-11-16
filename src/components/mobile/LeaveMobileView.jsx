@@ -9,6 +9,7 @@ import { exportLeaveToWord } from '../../utils/wordExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
 import A4SheetScaler from '../A4SheetScaler';
 import OfficialLeaveDocument from '../OfficialLeaveDocument';
+import MobileCustomSelect from './MobileCustomSelect';
 
 export default function LeaveMobileView({
   records = [],
@@ -19,7 +20,9 @@ export default function LeaveMobileView({
   onUpdateRecords,
   onPrint,
   onSwitchToDesktop,
-  mobilePreviewA4 = false
+  mobilePreviewA4 = false,
+  canEdit = true,
+  canDownloadPdf = true
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -147,61 +150,67 @@ export default function LeaveMobileView({
   return (
     <div className="mobile-leave-container" style={{ paddingBottom: 80 }}>
       {/* 1. Mobile Top Quick Actions (+ បន្ថែមច្បាប់ & Download PDF side-by-side) */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 8,
-        marginBottom: 12
-      }}>
-        <button
-          onClick={() => setShowAddModal(true)}
-          style={{
-            background: '#b45309',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: 10,
-            padding: '10px 12px',
-            fontSize: 13,
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            cursor: 'pointer',
-            width: '100%',
-            boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
-          }}
-        >
-          <Plus size={16} />
-          <span>បន្ថែមច្បាប់</span>
-        </button>
+      {(canEdit || canDownloadPdf) && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: canEdit && canDownloadPdf ? '1fr 1fr' : '1fr',
+          gap: 8,
+          marginBottom: 12
+        }}>
+          {canEdit && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              style={{
+                background: '#b45309',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 10,
+                padding: '10px 12px',
+                fontSize: 13,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                width: '100%',
+                boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
+              }}
+            >
+              <Plus size={16} />
+              <span>បន្ថែមច្បាប់</span>
+            </button>
+          )}
 
-        <button
-          type="button"
-          onClick={handleDownloadPdf}
-          disabled={isExportingPdf}
-          style={{
-            width: '100%',
-            background: '#b91c1c',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: 10,
-            padding: '10px 12px',
-            fontSize: 13,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            cursor: isExportingPdf ? 'wait' : 'pointer',
-            opacity: isExportingPdf ? 0.75 : 1,
-            boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
-          }}
-        >
-          {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-          <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
-        </button>
-      </div>
+          {canDownloadPdf && (
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              style={{
+                width: '100%',
+                background: '#b91c1c',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 10,
+                padding: '10px 12px',
+                fontSize: 13,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                cursor: isExportingPdf ? 'wait' : 'pointer',
+                opacity: isExportingPdf ? 0.75 : 1,
+                boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+              }}
+            >
+              {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 2. Search & Filter Bar */}
       <div style={{
@@ -232,7 +241,7 @@ export default function LeaveMobileView({
             }}
           />
         </div>
-        <select
+        <MobileCustomSelect
           value={filterGrade}
           onChange={(e) => setFilterGrade(e.target.value)}
           style={{
@@ -250,7 +259,7 @@ export default function LeaveMobileView({
           <option value="២">ថ្នាក់ទី ២</option>
           <option value="៣">ថ្នាក់ទី ៣</option>
           <option value="មត្តេយ្យ">មត្តេយ្យ</option>
-        </select>
+        </MobileCustomSelect>
       </div>
 
       {/* 2.5. Summary Count & Total Leave Fee Strip below Search Bar */}
@@ -408,7 +417,7 @@ export default function LeaveMobileView({
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>ថ្នាក់ទី</label>
-                        <select
+                        <MobileCustomSelect
                           value={editForm.grade || '៣'}
                           onChange={(e) => setEditForm({ ...editForm, grade: e.target.value })}
                           style={{
@@ -424,7 +433,7 @@ export default function LeaveMobileView({
                           <option value="២">ថ្នាក់ទី ២</option>
                           <option value="៣">ថ្នាក់ទី ៣</option>
                           <option value="មត្តេយ្យ">មត្តេយ្យ</option>
-                        </select>
+                        </MobileCustomSelect>
                       </div>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>ចំនួនថ្ងៃឈប់ (ឧ. 1, 1.5, 1a, 1p)</label>
@@ -593,43 +602,45 @@ export default function LeaveMobileView({
                   </div>
 
                   {/* Actions */}
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button
-                      onClick={() => handleStartEdit(record)}
-                      style={{
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        color: '#b45309',
-                        padding: '4px 8px',
-                        borderRadius: 6,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 3,
-                        fontSize: 12
-                      }}
-                      title="កែសម្រួល"
-                    >
-                      <Edit3 size={13} />
-                      <span>កែ</span>
-                    </button>
-                    <button
-                      onClick={() => handleDelete(record.id, record.name)}
-                      style={{
-                        background: '#fef2f2',
-                        border: '1px solid #fee2e2',
-                        color: '#dc2626',
-                        padding: '4px 8px',
-                        borderRadius: 6,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}
-                      title="លុប"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
+                  {canEdit && (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button
+                        onClick={() => handleStartEdit(record)}
+                        style={{
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          color: '#b45309',
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 3,
+                          fontSize: 12
+                        }}
+                        title="កែសម្រួល"
+                      >
+                        <Edit3 size={13} />
+                        <span>កែ</span>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(record.id, record.name)}
+                        style={{
+                          background: '#fef2f2',
+                          border: '1px solid #fee2e2',
+                          color: '#dc2626',
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}
+                        title="លុប"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {record.note && (
@@ -717,7 +728,7 @@ export default function LeaveMobileView({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>ថ្នាក់ទី</label>
-                  <select
+                  <MobileCustomSelect
                     value={newLeave.grade}
                     onChange={(e) => setNewLeave({ ...newLeave, grade: e.target.value })}
                     style={{
@@ -734,7 +745,7 @@ export default function LeaveMobileView({
                     <option value="២">ថ្នាក់ទី ២</option>
                     <option value="៣">ថ្នាក់ទី ៣</option>
                     <option value="មត្តេយ្យ">មត្តេយ្យ</option>
-                  </select>
+                  </MobileCustomSelect>
                 </div>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>ចំនួនថ្ងៃឈប់ (ឧ. 1, 1.5, 1a, 1p)</label>

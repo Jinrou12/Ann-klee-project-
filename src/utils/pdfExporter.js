@@ -167,29 +167,41 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
   });
 
   // 2. Temporarily apply PDF rendering class so margins are controlled cleanly by jsPDF
+  const isLandscape =
+    element.dataset?.orientation === 'landscape' ||
+    element.classList.contains('printable-document-landscape');
+  const targetCapturePx = isLandscape ? 1009 : 703;
+  const pageWidthMm = isLandscape ? 297 : 210;
+  const pageHeightMm = isLandscape ? 210 : 297;
+  const pageOrientation = isLandscape ? 'landscape' : 'portrait';
+
   element.classList.add('pdf-rendering-active');
   const prevInlinePadding = element.style.padding;
   const prevInlineWidth = element.style.width;
   const prevInlineMaxWidth = element.style.maxWidth;
+  const prevInlineMinWidth = element.style.minWidth;
   const prevInlineMinHeight = element.style.minHeight;
   const prevInlineBoxShadow = element.style.boxShadow;
   const prevInlineBoxSizing = element.style.boxSizing;
 
   element.style.padding = '0px';
-  element.style.width = '703px';
-  element.style.maxWidth = '703px';
+  element.style.width = `${targetCapturePx}px`;
+  element.style.maxWidth = `${targetCapturePx}px`;
+  element.style.minWidth = `${targetCapturePx}px`;
   element.style.boxSizing = 'border-box';
   element.style.boxShadow = 'none';
 
-  // Test single-page-fit layout first and measure exact height vs A4 printable ratio (273mm / 186mm)
+  // Test single-page-fit layout first and measure exact height vs A4 printable ratio
   const isSpaciousSinglePage = element.dataset?.spaciousSinglePage === 'true';
   if (!isSpaciousSinglePage) {
     element.classList.add('pdf-single-page-fit');
   }
   const dataRowCount = element.querySelectorAll('tbody tr').length;
-  const elemWidth = element.offsetWidth || 703;
+  const elemWidth = element.offsetWidth || targetCapturePx;
   const fitHeight = element.scrollHeight || element.offsetHeight || 0;
-  const maxSinglePagePx = Math.floor(elemWidth * (273 / 186)) - 12;
+  const maxSinglePagePx = isLandscape
+    ? Math.floor(elemWidth * (180 / 267)) - 8
+    : Math.floor(elemWidth * (273 / 186)) - 12;
 
   // Case A: Moderate rows (<= 16 table rows and fits within 1 A4 page height) -> 1 single A4 sheet
   // Case B: Many rows (> 16 rows or exceeds 1 A4 page height) -> restore normal spacing and split into 2+ A4 sheets
@@ -198,11 +210,13 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     element.classList.remove('pdf-single-page-fit');
   }
 
-  const pdfMargins = isSpaciousSinglePage
-    ? [14, 12, 14, 12]
-    : isSinglePageCandidate
-      ? [12, 12, 12, 12] // 12mm left/right = 186mm printable width = exact 1:1 with 703px element
-      : [14, 12, 14, 12]; // Generous top/bottom margins for multi-page documents while preserving 186mm width
+  const pdfMargins = isLandscape
+    ? [15, 15, 15, 15] // 15mm margins on A4 Landscape (297x210mm -> 267x180mm printable = exact 1:1 with 1009px)
+    : isSpaciousSinglePage
+      ? [14, 12, 14, 12]
+      : isSinglePageCandidate
+        ? [12, 12, 12, 12] // 12mm left/right = 186mm printable width = exact 1:1 with 703px element
+        : [14, 12, 14, 12]; // Generous top/bottom margins for multi-page documents while preserving 186mm width
 
   const finalFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
 
@@ -222,7 +236,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
 
     // Measure fallback coordinates from live DOM in case onclone is bypassed
     const fallbackRect = element.getBoundingClientRect();
-    const fallbackDomWidth = Math.round(fallbackRect.width) || 703;
+    const fallbackDomWidth = Math.round(fallbackRect.width) || targetCapturePx;
     const fallbackDomHeight = Math.ceil(element.scrollHeight || fallbackRect.height || 1);
 
     let clonedMetrics = null;
@@ -236,7 +250,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
       onclone: (clonedDoc, clonedEl) => {
         if (!clonedEl) return;
 
-        // 1. Neutralize any ancestor CSS transforms/clipping (e.g. A4SheetScaler on mobile/narrow viewports)
+        // 1. Neutralize any ancestor CSS transforms/clipping (e.g. A4SheetScaler on mobile/narrow viewports or offscreen containers)
         let curr = clonedEl.parentElement;
         while (curr && curr !== clonedDoc.body && curr !== clonedDoc.documentElement) {
           curr.style.transform = 'none';
@@ -244,11 +258,14 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
           curr.style.overflow = 'visible';
           curr.style.height = 'auto';
           curr.style.maxHeight = 'none';
+          curr.style.width = 'auto';
+          curr.style.maxWidth = 'none';
+          curr.style.minWidth = '0';
           curr = curr.parentElement;
         }
 
         const rootRect = clonedEl.getBoundingClientRect();
-        const domW = rootRect.width || 703;
+        const domW = rootRect.width || targetCapturePx;
         const domH = Math.max(rootRect.height, clonedEl.scrollHeight || 0, 1);
 
         // 2. Measure every .official-grid table's exact bounding box inside html2canvas's clone
@@ -302,8 +319,8 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     const scaleY = masterCanvas.height / totalDomHeight;
 
     const [marginTopMm, marginLeftMm, marginBottomMm, marginRightMm] = pdfMargins;
-    const printableWidthMm = 210 - marginLeftMm - marginRightMm; // 186mm
-    const printableHeightMm = 297 - marginTopMm - marginBottomMm;
+    const printableWidthMm = pageWidthMm - marginLeftMm - marginRightMm;
+    const printableHeightMm = pageHeightMm - marginTopMm - marginBottomMm;
     const maxPageCanvasH = Math.floor(masterCanvas.width * (printableHeightMm / printableWidthMm));
 
     const canvasTables = (clonedMetrics?.tables || []).map(t => ({
@@ -428,7 +445,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     const pdf = new jsPDF({
       unit: 'mm',
       format: 'a4',
-      orientation: 'portrait'
+      orientation: pageOrientation
     });
 
     for (let i = 0; i < slices.length; i++) {
@@ -479,7 +496,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
       }
 
       if (i > 0) {
-        pdf.addPage('a4', 'portrait');
+        pdf.addPage('a4', pageOrientation);
       }
       pdf.setPage(i + 1);
       const sliceHeightMm = (srcH / masterCanvas.width) * printableWidthMm;
@@ -502,6 +519,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
     element.style.padding = prevInlinePadding;
     element.style.width = prevInlineWidth;
     element.style.maxWidth = prevInlineMaxWidth;
+    element.style.minWidth = prevInlineMinWidth;
     element.style.minHeight = prevInlineMinHeight;
     element.style.boxShadow = prevInlineBoxShadow;
     element.style.boxSizing = prevInlineBoxSizing;

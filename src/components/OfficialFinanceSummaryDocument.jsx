@@ -5,8 +5,8 @@ import { getAdaptiveMoneyFontSize } from '../utils/khmerNumerals';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 
 /**
- * OfficialFinanceSummaryDocument: Authentic 1-Page A4 Ministry Summary Replica
- * matching របាយការណ៍ចំណូលចំណាយសង្ខេប (.docx templates for July & September 2026)
+ * OfficialFinanceSummaryDocument: Authentic 1-Page A4 Landscape Ministry Summary Replica
+ * matching របាយការណ៍ចំណូលចំណាយសង្ខេប (.docx templates for July & September 2026 — A4 Landscape 297mm × 210mm)
  */
 export default function OfficialFinanceSummaryDocument({
   id = 'printable-finance-summary-document',
@@ -47,14 +47,19 @@ export default function OfficialFinanceSummaryDocument({
   const { isDeficit } = summaryModel;
 
   return (
-    <div id={id} className="printable-document" data-spacious-single-page="true">
+    <div
+      id={id}
+      className="printable-document printable-document-landscape"
+      data-orientation="landscape"
+      data-spacious-single-page="true"
+    >
       {/* Header Block */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
-          marginBottom: 14
+          marginBottom: 10
         }}
       >
         {/* Left: Ministry & School with Centered Logo */}
@@ -88,7 +93,7 @@ export default function OfficialFinanceSummaryDocument({
       </div>
 
       {/* Report Title */}
-      <div style={{ textAlign: 'center', marginTop: 8, marginBottom: 18 }}>
+      <div style={{ textAlign: 'center', marginTop: 4, marginBottom: 14 }}>
         <div className="font-moul" style={{ fontSize: '14pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
           របាយការណ៍
         </div>
@@ -100,7 +105,7 @@ export default function OfficialFinanceSummaryDocument({
         </div>
       </div>
 
-      {/* Unified 5-Column Summary Table */}
+      {/* Unified 5-Column Summary Table (Proportional to Original Landscape Template: 818 : 6690 : 2268 : 2779 : 2571) */}
       <table
         className="official-grid"
         style={{
@@ -112,20 +117,20 @@ export default function OfficialFinanceSummaryDocument({
         }}
       >
         <thead>
-          <tr style={{ background: '#ffffff', textAlign: 'center', height: 28 }}>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '6%', padding: '3px 4px', fontSize: '11pt' }}>
+          <tr style={{ background: '#ffffff', textAlign: 'center', height: 30 }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '5.5%', padding: '4px 4px', fontSize: '11pt' }}>
               ល.រ
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '44%', padding: '3px 8px', fontSize: '11pt' }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '44.2%', padding: '4px 10px', fontSize: '11pt' }}>
               បរិយាយ
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '15%', padding: '3px 6px', fontSize: '11pt' }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '15%', padding: '4px 6px', fontSize: '11pt' }}>
               ចំនួន
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '19%', padding: '3px 6px', fontSize: '11pt' }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '18.3%', padding: '4px 8px', fontSize: '11pt' }}>
               ចំនួនថវិកា
             </th>
-            <th className="font-moul" style={{ border: '1px solid #000', width: '16%', padding: '3px 6px', fontSize: '11pt' }}>
+            <th className="font-moul" style={{ border: '1px solid #000', width: '17%', padding: '4px 6px', fontSize: '11pt' }}>
               ផ្សេងៗ
             </th>
           </tr>

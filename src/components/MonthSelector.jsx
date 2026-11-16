@@ -1,29 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Smartphone, Monitor, FileText, LayoutGrid } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Calendar, Smartphone, Monitor, FileText, LayoutGrid, Lock, Unlock, ChevronDown, Check } from 'lucide-react';
 import { KHMER_SOLAR_MONTHS } from '../utils/khmerCalendar';
-import { toKhmerDigits } from '../utils/khmerNumerals';
-import { SEMESTER_1_MONTH_NUMS, SEMESTER_2_MONTH_NUMS, isAcademicMonthKey } from '../utils/summaryAnalytics';
+import { isAcademicMonthKey } from '../utils/summaryAnalytics';
 
 export default function MonthSelector({
   currentMonth,
   availableMonths,
   onSelectMonth,
-  onAddNewMonth,
-  useKhmerNumerals,
   isMobile = false,
   mobilePreviewA4 = false,
   onToggleMobilePreviewA4,
   appMode = 'main',
-  onToggleAppMode
+  onToggleAppMode,
+  isOldLockedMonth = false,
+  isMonthLocked,
+  authRole = 'user',
+  onToggleMonthLock
 }) {
-  const activeYearFromMonth = (currentMonth || '2026-07').split('-')[0] || '2026';
-  const [showAddMonth, setShowAddMonth] = useState(false);
-  const [newYear, setNewYear] = useState(activeYearFromMonth);
-  const [newMonthNum, setNewMonthNum] = useState('08');
+  const [isMobileMonthOpen, setIsMobileMonthOpen] = useState(false);
+  const mobileDropdownRef = useRef(null);
 
   useEffect(() => {
-    setNewYear(activeYearFromMonth);
-  }, [activeYearFromMonth]);
+    if (!isMobileMonthOpen) return undefined;
+
+    const handleOutside = (e) => {
+      if (mobileDropdownRef.current && !mobileDropdownRef.current.contains(e.target)) {
+        setIsMobileMonthOpen(false);
+      }
+    };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setIsMobileMonthOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside, { passive: true });
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isMobileMonthOpen]);
 
   const formatMonthLabel = (mKey) => {
     // mKey is in format "YYYY-MM"
@@ -32,17 +49,125 @@ export default function MonthSelector({
     return `ខែ${monthName}`;
   };
 
-  const handleCreateMonth = (e) => {
-    e.preventDefault();
-    const createdKey = `${newYear}-${newMonthNum}`;
-    onAddNewMonth(createdKey);
-    setShowAddMonth(false);
-  };
-
-  // Filter out March (03) & April (04) and group available months by Semester 1 & Semester 2
+  // Filter out March (03) & April (04)
   const cleanAvailableMonths = (availableMonths || []).filter(isAcademicMonthKey);
-  const sem1Available = cleanAvailableMonths.filter(k => SEMESTER_1_MONTH_NUMS.includes(k.split('-')[1]));
-  const sem2Available = cleanAvailableMonths.filter(k => SEMESTER_2_MONTH_NUMS.includes(k.split('-')[1]));
+
+  const renderMonthPopover = (minWidth = 188) => (
+    <div
+      className="month-popover-shell"
+      style={{
+        position: 'absolute',
+        top: 'calc(100% + 8px)',
+        left: 0,
+        minWidth,
+        background: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: 14,
+        overflow: 'hidden',
+        boxShadow: '0 12px 28px -4px rgba(15, 23, 42, 0.14), 0 4px 10px -2px rgba(15, 23, 42, 0.06)',
+        zIndex: 1100
+      }}
+    >
+      <div
+        role="listbox"
+        className="month-popover-scroll"
+        style={{
+          maxHeight: 212,
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+          WebkitOverflowScrolling: 'touch',
+          padding: '5px 6px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 3
+        }}
+      >
+        {cleanAvailableMonths.map((mKey, idx) => {
+          const isSelected = mKey === currentMonth;
+          const isOldMonth = typeof isMonthLocked === 'function' ? isMonthLocked(mKey) : idx > 0;
+          return (
+            <button
+              key={mKey}
+              type="button"
+              role="option"
+              aria-selected={isSelected}
+              className={`month-popover-item${isSelected ? ' is-selected' : ''}`}
+              onClick={() => {
+                onSelectMonth(mKey);
+                setIsMobileMonthOpen(false);
+              }}
+              style={{
+                width: '100%',
+                height: 38,
+                minHeight: 38,
+                flexShrink: 0,
+                boxSizing: 'border-box',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '0 10px',
+                borderRadius: 9,
+                border: isSelected ? '1px solid #fcd34d' : '1px solid transparent',
+                background: isSelected
+                  ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)'
+                  : 'transparent',
+                boxShadow: isSelected ? '0 1px 2px rgba(180, 83, 9, 0.08)' : 'none',
+                color: isSelected ? '#b45309' : (isOldMonth ? '#94a3b8' : '#0f172a'),
+                fontSize: 13.5,
+                fontWeight: isSelected ? 700 : (isOldMonth ? 500 : 700),
+                opacity: !isSelected && isOldMonth ? 0.78 : 1,
+                textAlign: 'left',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  width: !isOldMonth ? 8 : 6,
+                  height: !isOldMonth ? 8 : 6,
+                  borderRadius: '50%',
+                  background: !isOldMonth
+                    ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
+                    : (isSelected ? '#d97706' : '#cbd5e1'),
+                  boxShadow: !isOldMonth ? '0 0 0 3px rgba(37, 99, 235, 0.16)' : 'none',
+                  flexShrink: 0
+                }} />
+                <span>{formatMonthLabel(mKey)}</span>
+                {!isOldMonth && (
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: '1px 6px',
+                    borderRadius: 999,
+                    background: '#dbeafe',
+                    color: '#1d4ed8',
+                    lineHeight: 1.4
+                  }}>
+                    ថ្មី
+                  </span>
+                )}
+              </span>
+              {isSelected && (
+                <span style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  background: '#fde68a',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Check size={12} strokeWidth={2.8} color="#b45309" />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
     <div className="no-print" style={{
@@ -54,17 +179,17 @@ export default function MonthSelector({
       background: '#ffffff',
       border: '1px solid #e2e8f0',
       borderRadius: 12,
-      padding: '12px 16px',
+      padding: isMobile ? '10px 12px' : '12px 16px',
       marginBottom: 16,
       boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
     }}>
-      {/* Single-Row Top Bar: Month picker [+] [ខែ ▾] on Left + Sliding Toggle Switch (📱 ⇄ 🖥️) on Right */}
+      {/* Single-Row Top Bar: Month picker [ខែ ▾] on Left + Report & Toggle Switch on Right */}
       <div style={{
         width: '100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        flexWrap: 'nowrap',
+        flexWrap: isMobile ? 'wrap' : 'nowrap',
         gap: 6
       }}>
         <div style={{
@@ -75,84 +200,212 @@ export default function MonthSelector({
           flex: 1,
           minWidth: 0
         }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: isMobile ? 4 : 6,
-            color: '#b45309',
-            fontWeight: 600,
-            fontSize: isMobile ? 13 : 14,
-            whiteSpace: 'nowrap',
-            flexShrink: 0
-          }}>
-            <Calendar size={isMobile ? 16 : 18} />
-            <span>ខែប្រចាំការ៖</span>
-          </div>
+          {isMobile ? (
+            <>
+              {/* Mobile Compact Month Trigger + Semester-Free Popover */}
+              <div
+                ref={mobileDropdownRef}
+                style={{ position: 'relative', flexShrink: 0 }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMonthOpen(prev => !prev)}
+                  aria-haspopup="listbox"
+                  aria-expanded={isMobileMonthOpen}
+                  style={{
+                    height: 34,
+                    padding: '0 10px',
+                    borderRadius: 9,
+                    border: isMobileMonthOpen ? '1.5px solid #d97706' : '1.5px solid #cbd5e1',
+                    background: isMobileMonthOpen ? '#fffbeb' : '#f8fafc',
+                    color: '#0f172a',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Calendar size={15} color="#b45309" style={{ flexShrink: 0 }} />
+                  <span>{formatMonthLabel(currentMonth)}</span>
+                  <ChevronDown
+                    size={14}
+                    color="#64748b"
+                    style={{
+                      flexShrink: 0,
+                      transform: isMobileMonthOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.16s ease'
+                    }}
+                  />
+                </button>
 
-          {/* [+] Compact Add Month Button */}
-          <button
-            type="button"
-            onClick={() => setShowAddMonth(!showAddMonth)}
-            title="បង្កើតខែថ្មី"
-            style={{
-              background: showAddMonth ? '#b45309' : '#f1f5f9',
-              border: '1px solid #cbd5e1',
-              color: showAddMonth ? '#ffffff' : '#334155',
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-              flexShrink: 0
-            }}
-          >
-            <Plus size={16} />
-          </button>
+                {isMobileMonthOpen && renderMonthPopover(184)}
+              </div>
 
-          {/* [ខែ ▾] Month Dropdown grouped by 2 Semesters (excluding March & April) */}
-          <select
-            value={currentMonth}
-            onChange={e => onSelectMonth(e.target.value)}
-            style={{
-              fontSize: 14,
-              fontWeight: 700,
-              color: '#0f172a',
-              borderColor: '#cbd5e1',
-              background: '#f8fafc',
-              padding: isMobile ? '5px 8px' : '6px 14px',
-              borderRadius: 8,
-              cursor: 'pointer',
-              maxWidth: isMobile ? 115 : 'none',
-              minWidth: 0
-            }}
-          >
-            {sem1Available.length > 0 && (
-              <optgroup label="ឆមាសទី ១ (ឧសភា - កញ្ញា)">
-                {sem1Available.map(mKey => (
-                  <option key={mKey} value={mKey}>
-                    {formatMonthLabel(mKey)}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {sem2Available.length > 0 && (
-              <optgroup label="ឆមាសទី ២ (តុលា - កុម្ភៈ)">
-                {sem2Available.map(mKey => (
-                  <option key={mKey} value={mKey}>
-                    {formatMonthLabel(mKey)}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {sem1Available.length === 0 && sem2Available.length === 0 && cleanAvailableMonths.map(mKey => (
-              <option key={mKey} value={mKey}>
-                {formatMonthLabel(mKey)}
-              </option>
-            ))}
-          </select>
+              {/* Old Month Lock Indicator / Owner Toggle */}
+              {authRole === 'owner' && onToggleMonthLock ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleMonthLock(currentMonth)}
+                  title={
+                    isOldLockedMonth
+                      ? 'ខែនេះកំពុងចាក់សោការពារពីការលុបសម្រាប់ Admin (ចុចដើម្បីដោះសោ)'
+                      : 'ខែនេះអនុញ្ញាតឱ្យ Admin កែប្រែបាន (ចុចដើម្បីចាក់សោការពារ)'
+                  }
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: isOldLockedMonth ? '#fef3c7' : '#ecfdf5',
+                    border: `1px solid ${isOldLockedMonth ? '#f59e0b' : '#6ee7b7'}`,
+                    color: isOldLockedMonth ? '#b45309' : '#047857',
+                    padding: '4px 6px',
+                    borderRadius: 8,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  {isOldLockedMonth ? <Lock size={13} /> : <Unlock size={13} />}
+                </button>
+              ) : isOldLockedMonth && authRole === 'admin' ? (
+                <span
+                  title="ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារមិនឱ្យលុប ឬកែប្រែច្រឡំ"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#b91c1c',
+                    padding: '3px 6px',
+                    borderRadius: 8,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  <Lock size={12} />
+                  <span>ខែចាស់</span>
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                color: '#b45309',
+                fontWeight: 600,
+                fontSize: 14,
+                whiteSpace: 'nowrap',
+                flexShrink: 0
+              }}>
+                <Calendar size={18} />
+                <span>ខែប្រចាំការ៖</span>
+              </div>
+
+              {/* [ខែ ▾] Custom Semester-Free Month Dropdown */}
+              <div
+                ref={mobileDropdownRef}
+                style={{ position: 'relative', flexShrink: 0 }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMonthOpen(prev => !prev)}
+                  aria-haspopup="listbox"
+                  aria-expanded={isMobileMonthOpen}
+                  style={{
+                    height: 36,
+                    padding: '0 12px',
+                    borderRadius: 8,
+                    border: isMobileMonthOpen ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                    background: isMobileMonthOpen ? '#fffbeb' : '#f8fafc',
+                    color: '#0f172a',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <span>{formatMonthLabel(currentMonth)}</span>
+                  <ChevronDown
+                    size={15}
+                    color="#64748b"
+                    style={{
+                      flexShrink: 0,
+                      transform: isMobileMonthOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.16s ease'
+                    }}
+                  />
+                </button>
+
+                {isMobileMonthOpen && renderMonthPopover(196)}
+              </div>
+
+              {/* Old Month Lock Indicator / Owner Toggle */}
+              {authRole === 'owner' && onToggleMonthLock ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleMonthLock(currentMonth)}
+                  title={
+                    isOldLockedMonth
+                      ? 'ខែនេះកំពុងចាក់សោការពារពីការលុបសម្រាប់ Admin (ចុចដើម្បីដោះសោ)'
+                      : 'ខែនេះអនុញ្ញាតឱ្យ Admin កែប្រែបាន (ចុចដើម្បីចាក់សោការពារ)'
+                  }
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: isOldLockedMonth ? '#fef3c7' : '#ecfdf5',
+                    border: `1px solid ${isOldLockedMonth ? '#f59e0b' : '#6ee7b7'}`,
+                    color: isOldLockedMonth ? '#b45309' : '#047857',
+                    padding: '5px 9px',
+                    borderRadius: 8,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  {isOldLockedMonth ? <Lock size={13} /> : <Unlock size={13} />}
+                  <span>{isOldLockedMonth ? 'ចាក់សោខែចាស់' : 'បើកសិទ្ធិកែ'}</span>
+                </button>
+              ) : isOldLockedMonth && authRole === 'admin' ? (
+                <span
+                  title="ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារមិនឱ្យលុប ឬកែប្រែច្រឡំ"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    color: '#b91c1c',
+                    padding: '4px 8px',
+                    borderRadius: 8,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  <Lock size={12} />
+                  <span>ខែចាស់ (ការពារការលុប)</span>
+                </span>
+              ) : null}
+            </>
+          )}
         </div>
 
         {/* Right Side Controls:
@@ -290,63 +543,6 @@ export default function MonthSelector({
           )}
         </div>
       </div>
-
-      {/* New Month Popover Form (Grouped by Semester 1 & Semester 2, excluding March & April) */}
-      {showAddMonth && (
-        <form onSubmit={handleCreateMonth} style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          paddingTop: 10,
-          borderTop: '1px dashed #e2e8f0',
-          marginTop: 6
-        }}>
-          <span style={{ fontSize: 13, color: '#64748b' }}>ជ្រើសរើសខែថ្មីក្នុងឆ្នាំ {useKhmerNumerals ? toKhmerDigits(newYear) : newYear}៖</span>
-          <select
-            value={newMonthNum}
-            onChange={e => setNewMonthNum(e.target.value)}
-            style={{ fontSize: 13, padding: '4px 8px' }}
-          >
-            <optgroup label="ឆមាសទី ១ (ឧសភា - កញ្ញា)">
-              {SEMESTER_1_MONTH_NUMS.map(val => {
-                const mName = KHMER_SOLAR_MONTHS[parseInt(val, 10) - 1] || val;
-                return <option key={val} value={val}>ខែ{mName}</option>;
-              })}
-            </optgroup>
-            <optgroup label="ឆមាសទី ២ (តុលា - កុម្ភៈ)">
-              {SEMESTER_2_MONTH_NUMS.map(val => {
-                const mName = KHMER_SOLAR_MONTHS[parseInt(val, 10) - 1] || val;
-                return <option key={val} value={val}>ខែ{mName}</option>;
-              })}
-            </optgroup>
-          </select>
-          <button
-            type="submit"
-            style={{
-              background: '#b45309',
-              color: '#ffffff',
-              padding: '6px 12px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600
-            }}
-          >
-            យល់ព្រម
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAddMonth(false)}
-            style={{
-              background: 'transparent',
-              color: '#64748b',
-              fontSize: 12
-            }}
-          >
-            បោះបង់
-          </button>
-        </form>
-      )}
     </div>
   );
 }

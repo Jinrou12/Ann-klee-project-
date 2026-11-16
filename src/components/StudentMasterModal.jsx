@@ -2,12 +2,16 @@ import React, { useState } from 'react';
 import { X, Upload, Search, UserPlus, Trash2, CheckCircle2, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import { parseStudentFile, DEFAULT_STUDENT_MASTER } from '../utils/studentMaster';
 import { toKhmerDigits } from '../utils/khmerNumerals';
+import MobileCustomSelect from './mobile/MobileCustomSelect';
 
 export default function StudentMasterModal({
   isOpen,
   onClose,
   students,
-  onUpdateStudents
+  onUpdateStudents,
+  canEdit = true,
+  canUploadExcel = true,
+  canReset = false
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [newName, setNewName] = useState('');
@@ -118,41 +122,43 @@ export default function StudentMasterModal({
         {/* Body */}
         <div style={{ padding: '16px 20px', overflowY: 'auto', maxHeight: 'calc(90vh - 140px)' }}>
           {/* Subtle File Upload Banner */}
-          <div style={{
-            background: '#f1f5f9',
-            border: '1.5px dashed #cbd5e1',
-            borderRadius: 10,
-            padding: 14,
-            marginBottom: 16,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 10
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Upload size={20} color="#b45309" />
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>បញ្ចូលឯកសារ Excel ឬ CSV</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>គាំទ្រ .xlsx, .xls, .csv ដែលមានជួរឈរឈ្មោះ និងថ្នាក់</div>
-              </div>
-            </div>
-            <label style={{
-              background: '#b45309',
-              color: '#ffffff',
-              padding: '6px 14px',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
+          {canEdit && canUploadExcel && (
+            <div style={{
+              background: '#f1f5f9',
+              border: '1.5px dashed #cbd5e1',
+              borderRadius: 10,
+              padding: 14,
+              marginBottom: 16,
+              display: 'flex',
               alignItems: 'center',
-              gap: 6
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 10
             }}>
-              <span>ជ្រើសរើស File</span>
-              <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} style={{ display: 'none' }} />
-            </label>
-          </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Upload size={20} color="#b45309" />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>បញ្ចូលឯកសារ Excel ឬ CSV</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>គាំទ្រ .xlsx, .xls, .csv ដែលមានជួរឈរឈ្មោះ និងថ្នាក់</div>
+                </div>
+              </div>
+              <label style={{
+                background: '#b45309',
+                color: '#ffffff',
+                padding: '6px 14px',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}>
+                <span>ជ្រើសរើស File</span>
+                <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} style={{ display: 'none' }} />
+              </label>
+            </div>
+          )}
 
           {/* Alert Status */}
           {uploadStatus && (
@@ -173,47 +179,50 @@ export default function StudentMasterModal({
           )}
 
           {/* Add Student Quick Form */}
-          <form onSubmit={handleAddStudent} style={{
-            display: 'flex',
-            gap: 8,
-            marginBottom: 16,
-            flexWrap: 'wrap'
-          }}>
-            <input
-              type="text"
-              placeholder="គោត្តនាម-នាម សមណសិស្ស..."
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              style={{ flex: '1 1 180px', fontSize: 13 }}
-            />
-            <select
-              value={newGrade}
-              onChange={e => setNewGrade(e.target.value)}
-              style={{ width: 120, fontSize: 13 }}
-            >
-              <option value="មត្តេយ្យ">ថ្នាក់មត្តេយ្យ</option>
-              <option value="១">ថ្នាក់ទី ១</option>
-              <option value="២">ថ្នាក់ទី ២</option>
-              <option value="៣">ថ្នាក់ទី ៣</option>
-            </select>
-            <button
-              type="submit"
-              style={{
-                background: '#0f766e',
-                color: '#ffffff',
-                padding: '8px 14px',
-                borderRadius: 6,
-                fontSize: 13,
-                fontWeight: 600,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6
-              }}
-            >
-              <UserPlus size={16} />
-              <span>បន្ថែម</span>
-            </button>
-          </form>
+          {canEdit && (
+            <form onSubmit={handleAddStudent} style={{
+              display: 'flex',
+              gap: 8,
+              marginBottom: 16,
+              flexWrap: 'wrap'
+            }}>
+              <input
+                type="text"
+                placeholder="គោត្តនាម-នាម សមណសិស្ស..."
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                style={{ flex: '1 1 180px', fontSize: 13 }}
+              />
+              <MobileCustomSelect
+                mobileOnly
+                value={newGrade}
+                onChange={e => setNewGrade(e.target.value)}
+                style={{ width: 120, fontSize: 13 }}
+              >
+                <option value="មត្តេយ្យ">ថ្នាក់មត្តេយ្យ</option>
+                <option value="១">ថ្នាក់ទី ១</option>
+                <option value="២">ថ្នាក់ទី ២</option>
+                <option value="៣">ថ្នាក់ទី ៣</option>
+              </MobileCustomSelect>
+              <button
+                type="submit"
+                style={{
+                  background: '#0f766e',
+                  color: '#ffffff',
+                  padding: '8px 14px',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <UserPlus size={16} />
+                <span>បន្ថែម</span>
+              </button>
+            </form>
+          )}
 
           {/* Search bar & Stats */}
           <div style={{
@@ -252,13 +261,13 @@ export default function StudentMasterModal({
                   <th style={{ padding: '8px 12px', width: 40, textAlign: 'center' }}>ល.រ</th>
                   <th style={{ padding: '8px 12px' }}>ឈ្មោះ</th>
                   <th style={{ padding: '8px 12px', width: 120, textAlign: 'center' }}>ថ្នាក់</th>
-                  <th style={{ padding: '8px 12px', width: 50, textAlign: 'center' }}>លុប</th>
+                  {canEdit && <th style={{ padding: '8px 12px', width: 50, textAlign: 'center' }}>លុប</th>}
                 </tr>
               </thead>
               <tbody>
                 {filteredStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', padding: 20, color: '#94a3b8' }}>
+                    <td colSpan={canEdit ? 4 : 3} style={{ textAlign: 'center', padding: 20, color: '#94a3b8' }}>
                       មិនមានទិន្នន័យ
                     </td>
                   </tr>
@@ -283,20 +292,22 @@ export default function StudentMasterModal({
                           {String(s.grade || '').includes('មត្តេយ្យ') ? 'ថ្នាក់មត្តេយ្យ' : `ថ្នាក់ទី ${toKhmerDigits(s.grade)}`}
                         </span>
                       </td>
-                      <td style={{ padding: '6px 12px', textAlign: 'center' }}>
-                        <button
-                          onClick={() => handleDeleteStudent(s.id)}
-                          style={{
-                            background: 'transparent',
-                            color: '#ef4444',
-                            padding: 4,
-                            borderRadius: 4
-                          }}
-                          title="លុបឈ្មោះនេះ"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
+                      {canEdit && (
+                        <td style={{ padding: '6px 12px', textAlign: 'center' }}>
+                          <button
+                            onClick={() => handleDeleteStudent(s.id)}
+                            style={{
+                              background: 'transparent',
+                              color: '#ef4444',
+                              padding: 4,
+                              borderRadius: 4
+                            }}
+                            title="លុបឈ្មោះនេះ"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -308,23 +319,25 @@ export default function StudentMasterModal({
         {/* Footer */}
         <div style={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: canReset ? 'space-between' : 'flex-end',
           alignItems: 'center',
           padding: '12px 20px',
           borderTop: '1px solid #e2e8f0',
           background: '#f8fafc'
         }}>
-          <button
-            onClick={handleResetDefault}
-            style={{
-              background: 'transparent',
-              color: '#64748b',
-              fontSize: 12,
-              textDecoration: 'underline'
-            }}
-          >
-            កំណត់ទៅបញ្ជីដើមវិញ
-          </button>
+          {canReset && (
+            <button
+              onClick={handleResetDefault}
+              style={{
+                background: 'transparent',
+                color: '#64748b',
+                fontSize: 12,
+                textDecoration: 'underline'
+              }}
+            >
+              កំណត់ទៅបញ្ជីដើមវិញ
+            </button>
+          )}
           <button
             onClick={onClose}
             style={{

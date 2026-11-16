@@ -267,6 +267,13 @@ input:focus, select:focus, textarea:focus {
   justify-content: flex-start;
 }
 
+/* Official A4 Landscape Paper Sheet (297mm × 210mm = 1123px × 794px at 96 DPI) */
+.printable-document.printable-document-landscape {
+  width: 1123px;
+  min-height: 794px;
+  padding: 15mm 15mm 15mm 15mm;
+}
+
 .signature-block {
   page-break-inside: avoid;
   break-inside: avoid;
@@ -281,7 +288,7 @@ input:focus, select:focus, textarea:focus {
   display: table-header-group;
 }
 
-/* Temporary PDF Rendering Guard (703px matches 186mm printable A4 width at 96 DPI for 1:1 pt font fidelity) */
+/* Temporary PDF Rendering Guard (703px matches 186mm printable A4 Portrait width at 96 DPI for 1:1 pt font fidelity) */
 .printable-document.pdf-rendering-active {
   padding: 0 !important;
   margin: 0 !important;
@@ -294,6 +301,13 @@ input:focus, select:focus, textarea:focus {
   min-height: auto !important;
   display: block !important;
   background: #ffffff !important;
+}
+
+/* Landscape A4 PDF Rendering Guard (1009px matches 267mm printable A4 Landscape width at 96 DPI) */
+.printable-document.printable-document-landscape.pdf-rendering-active {
+  width: 1009px !important;
+  max-width: 1009px !important;
+  min-width: 1009px !important;
 }
 
 /* Single-Page Fit Mode (when rows <= 16 and content fits on 1 A4 sheet) */
@@ -482,6 +496,35 @@ input:focus, select:focus, textarea:focus {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Custom Slim Scrollbar & Item Hover for Month Selector Popover (Scoped under .monastic-app) */
+.monastic-app .month-popover-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.monastic-app .month-popover-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.monastic-app .month-popover-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 6px 0;
+}
+
+.monastic-app .month-popover-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.monastic-app .month-popover-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.monastic-app .month-popover-item:not(.is-selected):hover {
+  background: #f8fafc !important;
+  opacity: 0.95 !important;
 }
 
 /* Responsive adjustments (Mobile Scope Isolation) */

@@ -55,8 +55,8 @@ export function useStandalonePinchZoom(containerRef, isMobile) {
       if (nz <= 1.01) return { x: 0, y: 0 };
       const vw = window.innerWidth || 360;
       const vh = window.innerHeight || 640;
-      const maxX = Math.max(0, (vw * (nz - 1)) / 2 + 16);
-      const maxY = Math.max(0, vh * (nz - 1) + 40);
+      const maxX = Math.max(64, (vw * (nz - 1)) / 2 + Math.round(vw * 0.25));
+      const maxY = Math.max(48, vh * (nz - 1) + 80);
       return {
         x: Math.min(maxX, Math.max(-maxX, nx)),
         y: Math.min(maxY, Math.max(-maxY, ny))
@@ -122,6 +122,8 @@ export function useStandalonePinchZoom(containerRef, isMobile) {
           st.mode = 'pan';
           st.startTouchX = e.touches[0].clientX;
           st.startTouchY = e.touches[0].clientY;
+          st.lastTouchX = e.touches[0].clientX;
+          st.lastTouchY = e.touches[0].clientY;
           st.startPanX = st.panX;
           st.startPanY = st.panY;
         }
@@ -166,16 +168,25 @@ export function useStandalonePinchZoom(containerRef, isMobile) {
         st.panY = clamped.y;
         applyTransform(st.zoom, st.panX, st.panY, st.originY, false);
       } else if (e.touches.length === 1 && st.mode === 'pan' && st.zoom > 1.02) {
-        const dx = e.touches[0].clientX - st.startTouchX;
-        const dy = e.touches[0].clientY - st.startTouchY;
-        const clamped = clampPan(st.startPanX + dx, st.startPanY + dy, st.zoom);
-        // Only prevent default horizontal pan or in-bounds pan so user can still scroll when at edge
-        if (Math.abs(dx) > Math.abs(dy) || Math.abs(clamped.y - st.panY) > 0.5) {
-          e.preventDefault();
-        }
+        const t = e.touches[0];
+        const dx = t.clientX - (st.lastTouchX ?? st.startTouchX);
+        const dy = t.clientY - (st.lastTouchY ?? st.startTouchY);
+        st.lastTouchX = t.clientX;
+        st.lastTouchY = t.clientY;
+
+        const prevPanY = st.panY;
+        const clamped = clampPan(st.panX + dx, prevPanY + dy, st.zoom);
+        const usedDy = clamped.y - prevPanY;
+        const leftoverDy = dy - usedDy;
+
+        e.preventDefault();
         st.panX = clamped.x;
         st.panY = clamped.y;
         applyTransform(st.zoom, st.panX, st.panY, st.originY, false);
+
+        if (Math.abs(leftoverDy) > 0.2 && typeof window !== 'undefined') {
+          window.scrollBy(0, -leftoverDy);
+        }
       }
     };
 
@@ -194,6 +205,8 @@ export function useStandalonePinchZoom(containerRef, isMobile) {
           st.mode = 'pan';
           st.startTouchX = e.touches[0].clientX;
           st.startTouchY = e.touches[0].clientY;
+          st.lastTouchX = e.touches[0].clientX;
+          st.lastTouchY = e.touches[0].clientY;
           st.startPanX = st.panX;
           st.startPanY = st.panY;
         } else {

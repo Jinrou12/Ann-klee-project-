@@ -216,7 +216,7 @@ const OFFICIAL_PAGE_MARGINS = { top: 709, right: 567, bottom: 568, left: 567 };
  * Build the 2-column Official Ministry & Kingdom Header Table
  * (school name printed exactly as in the original template, without an extra 'សាលា' prefix)
  */
-function buildWordOfficialHeader(metadata = {}, _includeSalaPrefix = false, hasLogo = false) {
+function buildWordOfficialHeader(metadata = {}, _includeSalaPrefix = false, hasLogo = false, totalWidthDxa = OFFICIAL_CONTENT_DXA) {
   const ministry = metadata.ministry || 'មន្ទីរធម្មការ និងសាសនា ខេត្តកំពង់ចាម';
   const school = String(metadata.school || 'ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង').replace(/^សាលា(?=ពុទ្ធិក)/, '');
   const location = metadata.location || 'ក្រុងកំពង់ចាម';
@@ -234,7 +234,8 @@ function buildWordOfficialHeader(metadata = {}, _includeSalaPrefix = false, hasL
     wTacteingDividerParagraph({ color: '000000', sizePt: 28 })
   ].join('');
 
-  const widths = [5500, OFFICIAL_CONTENT_DXA - 5500];
+  const leftW = Math.round((5500 / OFFICIAL_CONTENT_DXA) * totalWidthDxa);
+  const widths = [leftW, totalWidthDxa - leftW];
   const rowXml = `<w:tr>
     ${wCell(leftParas, { widthDxa: widths[0], vAlign: 'top', marginsDxa: ZERO_MARGINS })}
     ${wCell(rightParas, { widthDxa: widths[1], vAlign: 'top', marginsDxa: ZERO_MARGINS })}
@@ -257,7 +258,7 @@ function buildWordReportTitle(titleText) {
 /**
  * Build the 2-column Official Director & Reporter Signatures Block Table
  */
-function buildWordOfficialSignatures(metadata = {}, reportDates = {}, isFinance = false) {
+function buildWordOfficialSignatures(metadata = {}, reportDates = {}, isFinance = false, totalWidthDxa = OFFICIAL_CONTENT_DXA) {
   const directorTitle = (!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
     ? 'នាយកសាលា'
     : metadata.directorTitle;
@@ -286,7 +287,8 @@ function buildWordOfficialSignatures(metadata = {}, reportDates = {}, isFinance 
     wParagraph(reporterTitle, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: 30, spaceAfter: 0 })
   ].join('');
 
-  const widths = [5000, OFFICIAL_CONTENT_DXA - 5000];
+  const leftW = Math.round((5000 / OFFICIAL_CONTENT_DXA) * totalWidthDxa);
+  const widths = [leftW, totalWidthDxa - leftW];
   const rowXml = `<w:tr>
     <w:trPr><w:cantSplit/></w:trPr>
     ${wCell(leftParas, { widthDxa: widths[0], vAlign: 'top', marginsDxa: ZERO_MARGINS })}
@@ -372,7 +374,7 @@ function downloadDocxDocument(bodyContentXml, fileName = 'Report.docx', logoByte
     <w:sectPr>
       ${hasHeader ? '<w:headerReference w:type="default" r:id="rIdHdr1"/>' : ''}
       ${hasFooter ? '<w:footerReference w:type="default" r:id="rIdFtr1"/>' : ''}
-      <w:pgSz w:w="${pgSz.w}" w:h="${pgSz.h}"/>
+      <w:pgSz w:w="${pgSz.w}" w:h="${pgSz.h}"${pgSz.orient ? ` w:orient="${pgSz.orient}"` : ''}/>
       <w:pgMar w:top="${m.top}" w:right="${m.right}" w:bottom="${m.bottom}" w:left="${m.left}" w:header="${m.header ?? 284}" w:footer="${m.footer ?? 284}" w:gutter="0"/>
     </w:sectPr>
   </w:body>
@@ -820,9 +822,10 @@ export async function exportFinanceSummaryReportToWord(
     useKhmerNumerals: useKhmer
   });
 
-  // 5 columns proportional to official template (818 : 6690 : 2268 : 2779 : 2571)
-  const colWidths = fitColumns([818, 6690, 2268, 2779, 2571]);
-  const mergedLabelWidth = colWidths[0] + colWidths[1] + colWidths[2]; // 6,720 dxa
+  // 5 columns matching official A4 Landscape template (818 + 6690 + 2268 + 2779 + 2571 = 15,126 dxa)
+  const LANDSCAPE_CONTENT_DXA = 15126;
+  const colWidths = [818, 6690, 2268, 2779, 2571];
+  const mergedLabelWidth = colWidths[0] + colWidths[1] + colWidths[2]; // 9,776 dxa
   const headers = ['ល.រ', 'បរិយាយ', 'ចំនួន', 'ចំនួនថវិកា', 'ផ្សេងៗ'];
   const { isDeficit } = summaryModel;
   const deficitColor = isDeficit ? 'B91C1C' : '000000';
@@ -903,18 +906,22 @@ export async function exportFinanceSummaryReportToWord(
   ];
 
   const bodyXml = [
-    buildWordOfficialHeader(metadata, false, hasLogo),
+    buildWordOfficialHeader(metadata, false, hasLogo, LANDSCAPE_CONTENT_DXA),
     buildWordReportTitle(summaryModel.reportTitle),
     wTable(colWidths, allTableRowsXml, { bordered: true }),
-    wParagraph('', { sizePt: 10, spaceAfter: 140 }),
-    buildWordOfficialSignatures(metadata, reportDates, true)
+    wParagraph('', { sizePt: 10, spaceAfter: 120 }),
+    buildWordOfficialSignatures(metadata, reportDates, true, LANDSCAPE_CONTENT_DXA)
   ].join('');
 
   downloadDocxDocument(
     bodyXml,
     `របាយការណ៍ចំណូលចំណាយសង្ខេប_${String(monthLabel).replace(/\s+/g, '_')}.docx`,
     logoBytes,
-    { tacteingOdttf }
+    {
+      tacteingOdttf,
+      pageSize: { w: 16838, h: 11906, orient: 'landscape' },
+      pageMargins: { top: 850, right: 856, bottom: 850, left: 856 }
+    }
   );
 }
 

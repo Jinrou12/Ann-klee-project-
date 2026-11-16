@@ -15,7 +15,10 @@ export default function FinanceTableView({
   metadata,
   useKhmerNumerals,
   onUpdateFinance,
-  onPrint
+  onPrint,
+  canEdit = true,
+  canDownloadPdf = true,
+  canExportOffice = true
 }) {
   const [editingId, setEditingId] = useState(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -162,40 +165,44 @@ export default function FinanceTableView({
         padding: '10px 16px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            onClick={() => handleAddRow('income')}
-            style={{
-              background: '#15803d',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-          >
-            <Plus size={16} />
-            <span>+ បន្ថែមចំណូល</span>
-          </button>
-          <button
-            onClick={() => handleAddRow('expense')}
-            style={{
-              background: '#b45309',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-          >
-            <Plus size={16} />
-            <span>+ បន្ថែមចំណាយ</span>
-          </button>
+          {canEdit && (
+            <>
+              <button
+                onClick={() => handleAddRow('income')}
+                style={{
+                  background: '#15803d',
+                  color: '#ffffff',
+                  padding: '7px 14px',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Plus size={16} />
+                <span>+ បន្ថែមចំណូល</span>
+              </button>
+              <button
+                onClick={() => handleAddRow('expense')}
+                style={{
+                  background: '#b45309',
+                  color: '#ffffff',
+                  padding: '7px 14px',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Plus size={16} />
+                <span>+ បន្ថែមចំណាយ</span>
+              </button>
+            </>
+          )}
 
           {/* Quick Balance Status */}
           <div style={{
@@ -214,89 +221,101 @@ export default function FinanceTableView({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button
-            onClick={handleExportExcel}
-            style={{
-              background: '#15803d',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            <FileSpreadsheet size={16} />
-            <span>Export Excel</span>
-          </button>
+        {(canExportOffice || canDownloadPdf) && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {canExportOffice && (
+              <>
+                <button
+                  onClick={handleExportExcel}
+                  style={{
+                    background: '#15803d',
+                    color: '#ffffff',
+                    padding: '7px 14px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <FileSpreadsheet size={16} />
+                  <span>Export Excel</span>
+                </button>
 
-          <button
-            onClick={handleExportWord}
-            style={{
-              background: '#1d4ed8',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            <FileText size={16} />
-            <span>Download Word</span>
-          </button>
+                <button
+                  onClick={handleExportWord}
+                  style={{
+                    background: '#1d4ed8',
+                    color: '#ffffff',
+                    padding: '7px 14px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <FileText size={16} />
+                  <span>Download Word</span>
+                </button>
+              </>
+            )}
 
-          <button
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
-            style={{
-              background: '#b91c1c',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: isExportingPdf ? 'wait' : 'pointer',
-              opacity: isExportingPdf ? 0.75 : 1
-            }}
-          >
-            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
-          </button>
+            {canDownloadPdf && (
+              <>
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={isExportingPdf}
+                  style={{
+                    background: '#b91c1c',
+                    color: '#ffffff',
+                    padding: '7px 14px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    border: 'none',
+                    cursor: isExportingPdf ? 'wait' : 'pointer',
+                    opacity: isExportingPdf ? 0.75 : 1
+                  }}
+                >
+                  {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                  <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
+                </button>
 
-          <button
-            onClick={onPrint}
-            style={{
-              background: '#0f172a',
-              color: '#ffffff',
-              padding: '7px 14px',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            <Printer size={16} />
-            <span>បោះពុម្ពជា PDF</span>
-          </button>
-        </div>
+                {canExportOffice && (
+                  <button
+                    onClick={onPrint}
+                    style={{
+                      background: '#0f172a',
+                      color: '#ffffff',
+                      padding: '7px 14px',
+                      borderRadius: 6,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Printer size={16} />
+                    <span>បោះពុម្ពជា PDF</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Authentic A4 Paper Sheet (100% Exact PDF 1 Replica) + ពេញ ⇄ សង្ខេប Toggle */}
@@ -331,7 +350,7 @@ export default function FinanceTableView({
           <span>{financeViewType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
         </button>
 
-        <A4SheetScaler>
+        <A4SheetScaler orientation={financeViewType === 'summary' ? 'landscape' : 'portrait'}>
           {financeViewType === 'summary' ? (
             <OfficialFinanceSummaryDocument
               id="preview-finance-summary-document"
@@ -352,7 +371,7 @@ export default function FinanceTableView({
               yearDisplay={yearDisplay}
               useKhmerNumerals={useKhmerNumerals}
               monthKey={monthKey}
-              isEditable={true}
+              isEditable={canEdit}
               editingId={editingId}
               setEditingId={setEditingId}
               handleCellChange={handleCellChange}
@@ -369,9 +388,9 @@ export default function FinanceTableView({
           position: 'fixed',
           top: 0,
           left: -9999,
-          width: 794,
-          minWidth: 794,
-          maxWidth: 794,
+          width: 1123,
+          minWidth: 1123,
+          maxWidth: 1123,
           pointerEvents: 'none'
         }}
         aria-hidden="true"

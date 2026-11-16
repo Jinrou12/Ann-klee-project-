@@ -6,6 +6,7 @@ import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
 import ReviewModal from './ReviewModal';
 import CurrencyToggle from './CurrencyToggle';
 import OcrNameReviewHint from './OcrNameReviewHint';
+import MobileCustomSelect from './mobile/MobileCustomSelect';
 
 // Keep typed amounts as raw text (so "12." / "12.5" for USD cents can be typed), Khmer digits -> Arabic
 const sanitizeAmountInput = (raw) => toArabicDigits(String(raw ?? '')).replace(/[^0-9.]/g, '');
@@ -2013,7 +2014,8 @@ export default function UploadSection({
                               <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
                                 ថ្នាក់ទី៖
                               </label>
-                              <select
+                              <MobileCustomSelect
+                                mobileOnly
                                 value={leaveItem.grade || '៣'}
                                 onChange={e => updateLeaveField('grade', e.target.value)}
                                 style={{
@@ -2029,7 +2031,7 @@ export default function UploadSection({
                                 <option value="១">ថ្នាក់ទី ១</option>
                                 <option value="២">ថ្នាក់ទី ២</option>
                                 <option value="៣">ថ្នាក់ទី ៣</option>
-                              </select>
+                              </MobileCustomSelect>
                             </div>
                           </div>
 

@@ -11,24 +11,31 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
  *   after release they are removed so the browser re-rasterizes text sharply at the new zoom level.
  * - On real PCs (scale = 1) the gesture engine is inactive.
  */
-const A4_WIDTH = 794;
+const A4_PORTRAIT_WIDTH = 794;
+const A4_PORTRAIT_HEIGHT = 1123;
+const A4_LANDSCAPE_WIDTH = 1123;
+const A4_LANDSCAPE_HEIGHT = 794;
 const MAX_ZOOM = 4;
 const VIEWPORT_PAD_TOP = 10;
 
-export default function A4SheetScaler({ children }) {
+export default function A4SheetScaler({ children, orientation = 'portrait' }) {
   const containerRef = useRef(null);
   const viewportRef = useRef(null);
   const layerRef = useRef(null);
   const contentRef = useRef(null);
 
+  const isLandscapeProp = orientation === 'landscape';
+  const [sheetWidth, setSheetWidth] = useState(isLandscapeProp ? A4_LANDSCAPE_WIDTH : A4_PORTRAIT_WIDTH);
+  const defaultSheetHeight = sheetWidth === A4_LANDSCAPE_WIDTH ? A4_LANDSCAPE_HEIGHT : A4_PORTRAIT_HEIGHT;
+
   // Rarely-changing layout state (React-managed)
   const [scale, setScale] = useState(1);
-  const [contentHeight, setContentHeight] = useState(1123);
+  const [contentHeight, setContentHeight] = useState(defaultSheetHeight);
 
   // High-frequency gesture state (ref-managed, never causes re-render)
   const zoomRef = useRef({ zoom: 1, panX: 0, panY: 0 });
-  const layoutRef = useRef({ scale: 1, contentHeight: 1123 });
-  layoutRef.current = { scale, contentHeight };
+  const layoutRef = useRef({ scale: 1, contentHeight: defaultSheetHeight, sheetWidth });
+  layoutRef.current = { scale, contentHeight, sheetWidth };
 
   const gestureRef = useRef({
     active: false,
@@ -41,13 +48,15 @@ export default function A4SheetScaler({ children }) {
     startMidY: 0,
     startTouchX: 0,
     startTouchY: 0,
+    lastTouchX: 0,
+    lastTouchY: 0,
     lastTapTime: 0,
     rafId: 0,
     settleTimer: 0,
     pendingMeasure: false
   });
 
-  const isScaled = scale < 0.98;
+  const isScaled = scale < 0.99;
 
   /** Write the current zoom/pan straight to the DOM (no React render). */
   const writeTransform = useCallback((animate = false) => {
@@ -58,7 +67,7 @@ export default function A4SheetScaler({ children }) {
     const { scale: baseScale } = layoutRef.current;
 
     // Real PC / wide screens: no transform at all (identical to the original layout)
-    if (baseScale >= 0.98) {
+    if (baseScale >= 0.99) {
       layer.style.transition = '';
       layer.style.transform = '';
       layer.style.willChange = '';
@@ -94,19 +103,21 @@ export default function A4SheetScaler({ children }) {
   const clampPan = useCallback((nextX, nextY, nextZoom) => {
     if (nextZoom <= 1.01) return { x: 0, y: 0 };
     const vp = viewportRef.current;
-    const { scale: baseScale, contentHeight: cHeight } = layoutRef.current;
-    const vpWidth = vp ? vp.clientWidth : A4_WIDTH * baseScale;
+    const { scale: baseScale, contentHeight: cHeight, sheetWidth: sWidth } = layoutRef.current;
+    const vpWidth = vp ? vp.clientWidth : sWidth * baseScale;
     const vpHeight = vp ? vp.clientHeight - VIEWPORT_PAD_TOP * 2 : cHeight * baseScale;
 
-    const scaledW = A4_WIDTH * baseScale * nextZoom;
+    const scaledW = sWidth * baseScale * nextZoom;
     const scaledH = cHeight * baseScale * nextZoom;
 
-    const maxX = Math.max(0, (scaledW - vpWidth) / 2 + 24);
-    const minY = Math.min(0, vpHeight - scaledH - 24);
+    // Generous horizontal & vertical margins so edges are never blocked at moderate zoom
+    const maxX = Math.max(72, (scaledW - vpWidth) / 2 + Math.round(vpWidth * 0.28));
+    const maxY = 56;
+    const minY = Math.min(0, vpHeight - scaledH - 72);
 
     return {
       x: Math.min(maxX, Math.max(-maxX, nextX)),
-      y: Math.min(20, Math.max(minY, nextY))
+      y: Math.min(maxY, Math.max(minY, nextY))
     };
   }, []);
 
@@ -115,19 +126,30 @@ export default function A4SheetScaler({ children }) {
     if (!containerRef.current) return;
     const containerWidth = containerRef.current.clientWidth;
 
+    const hasLandscapeChild =
+      isLandscapeProp ||
+      Boolean(
+        contentRef.current &&
+        contentRef.current.querySelector('.printable-document-landscape, [data-orientation="landscape"]')
+      );
+    const activeSheetW = hasLandscapeChild ? A4_LANDSCAPE_WIDTH : A4_PORTRAIT_WIDTH;
+    const fallbackH = hasLandscapeChild ? A4_LANDSCAPE_HEIGHT : A4_PORTRAIT_HEIGHT;
+
+    setSheetWidth(prev => (prev !== activeSheetW ? activeSheetW : prev));
+
     let nextScale = 1;
-    if (containerWidth < 820) {
+    if (containerWidth < activeSheetW + 26) {
       const availWidth = Math.max(280, containerWidth - 16);
-      nextScale = Math.min(1, availWidth / A4_WIDTH);
+      nextScale = Math.min(1, availWidth / activeSheetW);
     }
 
     setScale(prev => (Math.abs(prev - nextScale) > 0.001 ? nextScale : prev));
 
     if (contentRef.current) {
-      const h = contentRef.current.offsetHeight || 1123;
+      const h = contentRef.current.offsetHeight || fallbackH;
       setContentHeight(prev => (prev !== h ? h : prev));
     }
-  }, []);
+  }, [isLandscapeProp]);
 
   useEffect(() => {
     const g = gestureRef.current;
@@ -165,11 +187,11 @@ export default function A4SheetScaler({ children }) {
     // Re-attach the observer when the scaled/unscaled branch swaps the content node
   }, [measure, isScaled]);
 
-  // When the base fit-scale changes (rotation / resize), reset zoom and re-apply transform
+  // When the base fit-scale or orientation changes (rotation / resize / toggle), reset zoom and re-apply transform
   useLayoutEffect(() => {
     zoomRef.current = { zoom: 1, panX: 0, panY: 0 };
     writeTransform(false);
-  }, [scale, isScaled, writeTransform]);
+  }, [scale, isScaled, sheetWidth, writeTransform]);
 
   // ---- Touch gesture engine (only active when the sheet is scaled down on mobile) ----
   useEffect(() => {
@@ -235,6 +257,8 @@ export default function A4SheetScaler({ children }) {
       g.mode = 'pan';
       g.startTouchX = t.clientX;
       g.startTouchY = t.clientY;
+      g.lastTouchX = t.clientX;
+      g.lastTouchY = t.clientY;
       g.startPanX = zoomRef.current.panX;
       g.startPanY = zoomRef.current.panY;
     };
@@ -296,13 +320,27 @@ export default function A4SheetScaler({ children }) {
       if (e.touches.length === 1 && g.mode === 'pan' && zoomRef.current.zoom > 1.02) {
         e.preventDefault();
         const t = e.touches[0];
+        const dx = t.clientX - g.lastTouchX;
+        const dy = t.clientY - g.lastTouchY;
+        g.lastTouchX = t.clientX;
+        g.lastTouchY = t.clientY;
+
+        const prevPanY = zoomRef.current.panY;
         const clamped = clampPan(
-          g.startPanX + (t.clientX - g.startTouchX),
-          g.startPanY + (t.clientY - g.startTouchY),
+          zoomRef.current.panX + dx,
+          prevPanY + dy,
           zoomRef.current.zoom
         );
+        const usedDy = clamped.y - prevPanY;
+        const leftoverDy = dy - usedDy;
+
         zoomRef.current = { ...zoomRef.current, panX: clamped.x, panY: clamped.y };
         scheduleWrite();
+
+        // Seamlessly scroll the window when panY reaches top/bottom bounds so the user never hits a wall
+        if (Math.abs(leftoverDy) > 0.2 && typeof window !== 'undefined') {
+          window.scrollBy(0, -leftoverDy);
+        }
       }
     };
 
@@ -365,7 +403,7 @@ export default function A4SheetScaler({ children }) {
           <div
             ref={layerRef}
             style={{
-              width: A4_WIDTH,
+              width: sheetWidth,
               transformOrigin: 'top center',
               flexShrink: 0
               // transform / transition / willChange are written directly to the DOM (no re-render)
@@ -390,7 +428,7 @@ export default function A4SheetScaler({ children }) {
           <div
             ref={layerRef}
             style={{
-              width: A4_WIDTH,
+              width: sheetWidth,
               margin: '0 auto',
               flexShrink: 0
             }}

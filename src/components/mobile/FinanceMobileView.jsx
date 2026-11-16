@@ -20,7 +20,9 @@ export default function FinanceMobileView({
   onUpdateFinance,
   onPrint,
   onSwitchToDesktop,
-  mobilePreviewA4 = false
+  mobilePreviewA4 = false,
+  canEdit = true,
+  canDownloadPdf = true
 }) {
   const [activeSubTab, setActiveSubTab] = useState('expense'); // 'expense' | 'income'
   const [editingId, setEditingId] = useState(null);
@@ -302,90 +304,110 @@ export default function FinanceMobileView({
       </div>
 
       {/* 2. 3-Button Action Row (+ បន្ថែមចំណូល | + បន្ថែមចំណាយ | Download PDF) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 12 }}>
-        <button
-          type="button"
-          onClick={() => {
-            setActiveSubTab('income');
-            setShowAddModal(true);
-          }}
+      {(canEdit || canDownloadPdf) && (
+        <div
           style={{
-            background: '#15803d',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '10px 6px',
-            fontSize: 12,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            width: '100%',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 4px rgba(21, 128, 61, 0.2)'
+            display: 'grid',
+            gridTemplateColumns:
+              canEdit && canDownloadPdf
+                ? 'repeat(3, 1fr)'
+                : canEdit
+                  ? 'repeat(2, 1fr)'
+                  : '1fr',
+            gap: 6,
+            marginBottom: 12
           }}
         >
-          <Plus size={14} strokeWidth={2.5} />
-          <span>បន្ថែមចំណូល</span>
-        </button>
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSubTab('income');
+                  setShowAddModal(true);
+                }}
+                style={{
+                  background: '#15803d',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '10px 6px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  cursor: 'pointer',
+                  width: '100%',
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 2px 4px rgba(21, 128, 61, 0.2)'
+                }}
+              >
+                <Plus size={14} strokeWidth={2.5} />
+                <span>បន្ថែមចំណូល</span>
+              </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setActiveSubTab('expense');
-            setShowAddModal(true);
-          }}
-          style={{
-            background: '#b45309',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '10px 6px',
-            fontSize: 12,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 4,
-            cursor: 'pointer',
-            width: '100%',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
-          }}
-        >
-          <Plus size={14} strokeWidth={2.5} />
-          <span>បន្ថែមចំណាយ</span>
-        </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSubTab('expense');
+                  setShowAddModal(true);
+                }}
+                style={{
+                  background: '#b45309',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '10px 6px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  cursor: 'pointer',
+                  width: '100%',
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
+                }}
+              >
+                <Plus size={14} strokeWidth={2.5} />
+                <span>បន្ថែមចំណាយ</span>
+              </button>
+            </>
+          )}
 
-        <button
-          type="button"
-          onClick={handleDownloadPdf}
-          disabled={isExportingPdf}
-          style={{
-            width: '100%',
-            background: '#b91c1c',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '10px 6px',
-            fontSize: 12,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 4,
-            cursor: isExportingPdf ? 'wait' : 'pointer',
-            opacity: isExportingPdf ? 0.75 : 1,
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
-          }}
-        >
-          {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-          <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
-        </button>
-      </div>
+          {canDownloadPdf && (
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              style={{
+                width: '100%',
+                background: '#b91c1c',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 6px',
+                fontSize: 12,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                cursor: isExportingPdf ? 'wait' : 'pointer',
+                opacity: isExportingPdf ? 0.75 : 1,
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+              }}
+            >
+              {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 3. Search */}
       <div style={{ position: 'relative', marginBottom: 12 }}>
@@ -435,7 +457,7 @@ export default function FinanceMobileView({
             <FileText size={12} />
             <span>{financeViewType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
           </button>
-          <A4SheetScaler>
+          <A4SheetScaler orientation={financeViewType === 'summary' ? 'landscape' : 'portrait'}>
             {financeViewType === 'summary' ? (
               <OfficialFinanceSummaryDocument
                 id="preview-mobile-finance-summary-document"
@@ -695,47 +717,49 @@ export default function FinanceMobileView({
                 )}
 
                 {/* Actions */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: 6,
-                  paddingTop: 6,
-                  borderTop: '1px solid #f1f5f9'
-                }}>
-                  <button
-                    onClick={() => handleStartEdit(item)}
-                    style={{
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      color: '#b45309',
-                      padding: '4px 8px',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 3,
-                      fontSize: 12
-                    }}
-                  >
-                    <Edit3 size={13} />
-                    <span>កែ</span>
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id, item.desc)}
-                    style={{
-                      background: '#fef2f2',
-                      border: '1px solid #fee2e2',
-                      color: '#dc2626',
-                      padding: '4px 8px',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center'
-                    }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+                {canEdit && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: 6,
+                    paddingTop: 6,
+                    borderTop: '1px solid #f1f5f9'
+                  }}>
+                    <button
+                      onClick={() => handleStartEdit(item)}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        color: '#b45309',
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        fontSize: 12
+                      }}
+                    >
+                      <Edit3 size={13} />
+                      <span>កែ</span>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item.id, item.desc)}
+                      style={{
+                        background: '#fef2f2',
+                        border: '1px solid #fee2e2',
+                        color: '#dc2626',
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}

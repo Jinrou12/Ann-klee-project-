@@ -18,7 +18,8 @@ import A4SheetScaler from './A4SheetScaler';
 import {
   buildAdminReportDisplayModel,
   synthesizeMultiMonthAdminReport,
-  importAdminReportFile
+  importAdminReportFile,
+  syncMonthlyDropoutChallengeLine
 } from '../utils/adminReportBuilder';
 import { exportElementToPdf } from '../utils/pdfExporter';
 import { exportAdminReportToWord } from '../utils/wordExporter';
@@ -29,14 +30,20 @@ export default function AdminReportView({
   currentMonthKey = '2026-07',
   activeYear = '2026',
   adminReports = {},
+  studentMaster = [],
   metadata = {},
   useKhmerNumerals = true,
   isMobile = false,
   mobilePreviewA4 = false,
+  canEdit: canEditMonth = true,
+  canEditSummary,
+  canDownloadPdf = true,
+  canExportOffice = true,
   onUpdateAdminReport,
   onResetSynthesizedReport
 }) {
   const [periodType, setPeriodType] = useState('month'); // 'month' | 'sem1' | 'sem2' | 'year'
+  const canEdit = periodType === 'month' ? canEditMonth : (canEditSummary ?? canEditMonth);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -52,13 +59,21 @@ export default function AdminReportView({
         monthKey: currentMonthKey,
         year: activeYear,
         adminReports,
+        studentMaster,
         useKhmerNumerals
       }),
-    [periodType, currentMonthKey, activeYear, adminReports, useKhmerNumerals]
+    [periodType, currentMonthKey, activeYear, adminReports, studentMaster, useKhmerNumerals]
   );
 
   const hasCustomMultiMonthOverride =
     periodType !== 'month' && Boolean(adminReports && adminReports[displayModel.storageKey]);
+
+  const formatLinesWithBullet = (items = [], bullet = '❖') =>
+    (items || [])
+      .map(s => String(s || '').replace(/^[-•❖▪◦\s]+/, '').trim())
+      .filter(Boolean)
+      .map(s => `${bullet} ${s}`)
+      .join('\n');
 
   const handleOpenEditor = () => {
     const raw = displayModel.rawReport || {};
@@ -78,18 +93,100 @@ export default function AdminReportView({
       schoolMinutes: ad.schoolMinutes ?? 1,
       schoolReportsToMinistry: ad.schoolReportsToMinistry ?? 0,
       ministryMeetings: ad.ministryMeetings ?? 0,
-      activitiesText: (displayModel.activities || []).join('\n'),
-      appendixText: (displayModel.appendixItems || []).join('\n'),
-      challengesText: (displayModel.challenges || []).join('\n'),
-      solutionsText: (displayModel.solutions || []).join('\n'),
-      requestsText: (displayModel.requests || []).join('\n'),
-      directionsText: (displayModel.directions || []).join('\n'),
+      activitiesText: formatLinesWithBullet(displayModel.activities, '❖'),
+      appendixText: formatLinesWithBullet(displayModel.appendixItems, '-'),
+      challengesText: formatLinesWithBullet(displayModel.challenges, '-'),
+      solutionsText: formatLinesWithBullet(displayModel.solutions, '-'),
+      requestsText: formatLinesWithBullet(displayModel.requests, '-'),
+      directionsText: formatLinesWithBullet(displayModel.directions, '-'),
       conclusionText: displayModel.conclusionText || '',
       lunarDateLine: displayModel.lunarDateLine || '',
       solarDateLine: displayModel.solarDateLine || '',
       signerTitle: displayModel.signerTitle || 'ព្រះនាយក'
     });
     setIsEditing(true);
+  };
+
+  const handleBulletFocus = (fieldKey, bullet = '❖') => {
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      const currentVal = String(prev[fieldKey] ?? '');
+      if (!currentVal.trim()) {
+        return { ...prev, [fieldKey]: `${bullet} ` };
+      }
+      return prev;
+    });
+  };
+
+  const handleBulletChange = (e, fieldKey, bullet = '❖') => {
+    let nextVal = e.target.value;
+    const prevVal = String(editDraft?.[fieldKey] ?? '');
+    if (prevVal === '' && nextVal.length > 0 && !/^[-•❖▪◦]/.test(nextVal.trim())) {
+      nextVal = `${bullet} ${nextVal}`;
+    }
+    setEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
+  };
+
+  const handleBulletKeyDown = (e, fieldKey, bullet = '❖') => {
+    if (e.key !== 'Enter' || e.nativeEvent?.isComposing) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? start;
+    const val = String(editDraft?.[fieldKey] ?? '');
+
+    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+    const lineEndIdx = val.indexOf('\n', end);
+    const lineEnd = lineEndIdx === -1 ? val.length : lineEndIdx;
+    const currentLine = val.slice(lineStart, lineEnd);
+
+    const strippedCurrentLine = currentLine.replace(/^[-•❖▪◦\s]+/, '').trim();
+    if (!strippedCurrentLine && currentLine.trim().length > 0) {
+      const beforeLine = val.slice(0, lineStart);
+      const afterLine = val.slice(lineEnd);
+      const nextVal = beforeLine + afterLine.replace(/^\n/, '');
+      const nextCursor = beforeLine.length;
+      setEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(nextCursor, nextCursor);
+      });
+      return;
+    }
+
+    const insertStr = `\n${bullet} `;
+    const nextVal = val.slice(0, start) + insertStr + val.slice(end);
+    const nextCursor = start + insertStr.length;
+    setEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
+
+  const handleTotalStudentsChange = (rawVal) => {
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      if (periodType !== 'month') {
+        return { ...prev, totalStudents: rawVal };
+      }
+      const currentChallengeLines = String(prev.challengesText || '')
+        .split('\n')
+        .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
+        .filter(Boolean);
+      const nextChallenges = syncMonthlyDropoutChallengeLine({
+        monthKey: currentMonthKey,
+        prevTotal: displayModel.prevMonthTotalStudents,
+        currTotal: Number(rawVal),
+        challenges: currentChallengeLines,
+        useKhmerNumerals
+      });
+      return {
+        ...prev,
+        totalStudents: rawVal,
+        challengesText: formatLinesWithBullet(nextChallenges, '-')
+      };
+    });
   };
 
   const handleSaveEditor = (e) => {
@@ -99,8 +196,29 @@ export default function AdminReportView({
     const splitClean = (txt) =>
       String(txt || '')
         .split('\n')
-        .map(s => s.replace(/^[-•❖▪◦\d+.)]+\s*/, '').trim())
+        .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
         .filter(Boolean);
+
+    const prevSt = displayModel.studentStats || {};
+    const didManuallyChangeStudentStats =
+      Number(editDraft.totalStudents) !== Number(prevSt.totalStudents) ||
+      Number(editDraft.gradeKindergarten) !== Number(prevSt.gradeKindergarten) ||
+      Number(editDraft.grade1) !== Number(prevSt.grade1) ||
+      Number(editDraft.grade2) !== Number(prevSt.grade2) ||
+      Number(editDraft.grade3) !== Number(prevSt.grade3);
+
+    const cleanedChallenges = splitClean(editDraft.challengesText);
+    const autoSyncedChallenges = periodType === 'month'
+      ? syncMonthlyDropoutChallengeLine({
+          monthKey: currentMonthKey,
+          prevTotal: displayModel.prevMonthTotalStudents,
+          currTotal: Number(editDraft.totalStudents) || 0,
+          challenges: cleanedChallenges,
+          useKhmerNumerals
+        })
+      : cleanedChallenges;
+    const didUserCustomEditChallengeText =
+      JSON.stringify(cleanedChallenges) !== JSON.stringify(autoSyncedChallenges);
 
     const updatedReport = {
       ...displayModel.rawReport,
@@ -111,6 +229,10 @@ export default function AdminReportView({
       docNumber: String(editDraft.docNumber || '').trim() || '......................',
       recipientTitle: String(editDraft.recipientTitle || '').trim(),
       customSubjectText: String(editDraft.customSubjectText || '').trim(),
+      manualStudentStatsOverride: didManuallyChangeStudentStats
+        ? true
+        : Boolean(displayModel.rawReport?.manualStudentStatsOverride),
+      manualChallengesOverride: didUserCustomEditChallengeText,
       studentStats: {
         ...(displayModel.studentStats || {}),
         classCount: 4,
@@ -129,7 +251,7 @@ export default function AdminReportView({
       },
       activities: splitClean(editDraft.activitiesText),
       appendixItems: splitClean(editDraft.appendixText),
-      challenges: splitClean(editDraft.challengesText),
+      challenges: cleanedChallenges,
       solutions: splitClean(editDraft.solutionsText),
       requests: splitClean(editDraft.requestsText),
       directions: splitClean(editDraft.directionsText),
@@ -337,7 +459,7 @@ export default function AdminReportView({
                 បានរៀបចំ និងច្រោះបន្ទាត់ស្ទួនត្រង់ <strong>III.វឌ្ឍនភាព, IV.បញ្ហាប្រឈម, V.ទិសដៅ និង VI.សេចក្ដីសន្និដ្ឋាន</strong> ឱ្យត្រូវតាមបទដ្ឋានរដ្ឋបាល។
               </span>
             </div>
-            {hasCustomMultiMonthOverride && (
+            {hasCustomMultiMonthOverride && canEdit && (
               <button
                 type="button"
                 onClick={handleResetToAutoSynthesis}
@@ -364,279 +486,214 @@ export default function AdminReportView({
 
         {/* Row 2: Side-by-Side Action Buttons */}
         {isMobile ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          (canEdit || canDownloadPdf) && (
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
+                gridTemplateColumns: canEdit && canDownloadPdf ? '1fr 1fr' : '1fr',
                 gap: 8
               }}
             >
-              <button
-                type="button"
-                onClick={() => (isEditing ? setIsEditing(false) : handleOpenEditor())}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  background: isEditing ? '#0f172a' : '#f1f5f9',
-                  border: '1px solid #cbd5e1',
-                  color: isEditing ? '#ffffff' : '#1e293b',
-                  padding: '9px 10px',
-                  borderRadius: 8,
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  width: '100%'
-                }}
-              >
-                <Edit3 size={15} />
-                <span>{isEditing ? 'បិទផ្ទាំងកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => (isEditing ? setIsEditing(false) : handleOpenEditor())}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    background: isEditing ? '#0f172a' : '#f1f5f9',
+                    border: '1px solid #cbd5e1',
+                    color: isEditing ? '#ffffff' : '#1e293b',
+                    padding: '9px 10px',
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    width: '100%'
+                  }}
+                >
+                  <Edit3 size={15} />
+                  <span>{isEditing ? 'បិទផ្ទាំងកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={handleTriggerImport}
-                disabled={isImporting}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '9px 10px',
-                  borderRadius: 8,
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: isImporting ? 'wait' : 'pointer',
-                  boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)',
-                  width: '100%'
-                }}
-              >
-                <Upload size={15} />
-                <span>{isImporting ? 'កំពុងអាន...' : 'Import Word / Excel'}</span>
-              </button>
+              {canDownloadPdf && (
+                <button
+                  type="button"
+                  onClick={handleDownloadPdf}
+                  disabled={isExportingPdf}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    padding: '9px 10px',
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: isExportingPdf ? 'wait' : 'pointer',
+                    boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)',
+                    width: '100%'
+                  }}
+                >
+                  <FileText size={15} />
+                  <span>{isExportingPdf ? 'កំពុងផលិត PDF...' : 'Download PDF'}</span>
+                </button>
+              )}
             </div>
-
+          )
+        ) : (
+          (canEdit || canExportOffice || canDownloadPdf) && (
             <div
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr 1fr',
-                gap: 6
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8
               }}
             >
-              <button
-                type="button"
-                onClick={handleDownloadExcel}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 5,
-                  background: '#15803d',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '9px 6px',
-                  borderRadius: 8,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 5px rgba(21, 128, 61, 0.22)',
-                  width: '100%'
-                }}
-              >
-                <FileSpreadsheet size={14} />
-                <span>Excel</span>
-              </button>
+              {/* Left group: Edit button & Import Word/Excel button side-by-side */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => (isEditing ? setIsEditing(false) : handleOpenEditor())}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: isEditing ? '#0f172a' : '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      color: isEditing ? '#ffffff' : '#1e293b',
+                      padding: '8px 14px',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Edit3 size={15} />
+                    <span>{isEditing ? 'បិទផ្ទាំងកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
+                  </button>
+                )}
 
-              <button
-                type="button"
-                onClick={handleDownloadWord}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 5,
-                  background: '#1d4ed8',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '9px 6px',
-                  borderRadius: 8,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 5px rgba(29, 78, 216, 0.22)',
-                  width: '100%'
-                }}
-              >
-                <FileText size={14} />
-                <span>Word</span>
-              </button>
+                {canEdit && canExportOffice && (
+                  <button
+                    type="button"
+                    onClick={handleTriggerImport}
+                    disabled={isImporting}
+                    title="បញ្ចូលឯកសាររបាយការណ៍ប្រភេទ Word (.docx) ឬ Excel (.xlsx)"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                      border: 'none',
+                      color: '#ffffff',
+                      padding: '8px 14px',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: isImporting ? 'wait' : 'pointer',
+                      boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)'
+                    }}
+                  >
+                    <Upload size={15} />
+                    <span>{isImporting ? 'កំពុងអាន...' : 'Import Word / Excel'}</span>
+                  </button>
+                )}
+              </div>
 
-              <button
-                type="button"
-                onClick={handleDownloadPdf}
-                disabled={isExportingPdf}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 5,
-                  background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '9px 6px',
-                  borderRadius: 8,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: isExportingPdf ? 'wait' : 'pointer',
-                  boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)',
-                  width: '100%'
-                }}
-              >
-                <FileText size={14} />
-                <span>{isExportingPdf ? 'កំពុងផលិត...' : 'PDF'}</span>
-              </button>
+              {/* Right group: Download buttons (PC: Excel + Word + PDF) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {canExportOffice && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadExcel}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: '#15803d',
+                        border: 'none',
+                        color: '#ffffff',
+                        padding: '8px 14px',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 5px rgba(21, 128, 61, 0.22)'
+                      }}
+                    >
+                      <FileSpreadsheet size={16} />
+                      <span>Export Excel</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadWord}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: '#1d4ed8',
+                        border: 'none',
+                        color: '#ffffff',
+                        padding: '8px 14px',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: '0 2px 5px rgba(29, 78, 216, 0.22)'
+                      }}
+                    >
+                      <FileText size={16} />
+                      <span>Download Word</span>
+                    </button>
+                  </>
+                )}
+
+                {canDownloadPdf && (
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    disabled={isExportingPdf}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                      border: 'none',
+                      color: '#ffffff',
+                      padding: '8px 15px',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: isExportingPdf ? 'wait' : 'pointer',
+                      boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)'
+                    }}
+                  >
+                    <FileText size={15} />
+                    <span>{isExportingPdf ? 'កំពុងផលិត PDF...' : 'Download PDF'}</span>
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 8
-            }}
-          >
-            {/* Left group: Edit button & Import Word/Excel button side-by-side */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => (isEditing ? setIsEditing(false) : handleOpenEditor())}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: isEditing ? '#0f172a' : '#f1f5f9',
-                  border: '1px solid #cbd5e1',
-                  color: isEditing ? '#ffffff' : '#1e293b',
-                  padding: '8px 14px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                <Edit3 size={15} />
-                <span>{isEditing ? 'បិទផ្ទាំងកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleTriggerImport}
-                disabled={isImporting}
-                title="បញ្ចូលឯកសាររបាយការណ៍ប្រភេទ Word (.docx) ឬ Excel (.xlsx)"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '8px 14px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: isImporting ? 'wait' : 'pointer',
-                  boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)'
-                }}
-              >
-                <Upload size={15} />
-                <span>{isImporting ? 'កំពុងអាន...' : 'Import Word / Excel'}</span>
-              </button>
-            </div>
-
-            {/* Right group: Download buttons (PC: Excel + Word + PDF) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={handleDownloadExcel}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: '#15803d',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '8px 14px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 5px rgba(21, 128, 61, 0.22)'
-                }}
-              >
-                <FileSpreadsheet size={16} />
-                <span>Export Excel</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDownloadWord}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: '#1d4ed8',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '8px 14px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 5px rgba(29, 78, 216, 0.22)'
-                }}
-              >
-                <FileText size={16} />
-                <span>Download Word</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDownloadPdf}
-                disabled={isExportingPdf}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '8px 15px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: isExportingPdf ? 'wait' : 'pointer',
-                  boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)'
-                }}
-              >
-                <FileText size={15} />
-                <span>{isExportingPdf ? 'កំពុងផលិត PDF...' : 'Download PDF'}</span>
-              </button>
-            </div>
-          </div>
+          )
         )}
       </div>
 
       {/* ================================================================== */}
       {/* INLINE EDITOR PANEL (When user clicks "កែប្រែអត្ថបទ")               */}
       {/* ================================================================== */}
-      {isEditing && editDraft && (
+      {canEdit && isEditing && editDraft && (
         <form
           onSubmit={handleSaveEditor}
           className="no-print"
@@ -725,7 +782,7 @@ export default function AdminReportView({
               <input
                 type="number"
                 value={editDraft.totalStudents}
-                onChange={e => setEditDraft({ ...editDraft, totalStudents: e.target.value })}
+                onChange={e => handleTotalStudentsChange(e.target.value)}
                 style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
               />
             </div>
@@ -835,61 +892,71 @@ export default function AdminReportView({
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                III. ក. សកម្មភាពការងារ (១ បន្ទាត់ = ១ ចំណុច)
+                III. ក. សកម្មភាពការងារ (❖ ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <textarea
                 rows={6}
                 value={editDraft.activitiesText}
-                onChange={e => setEditDraft({ ...editDraft, activitiesText: e.target.value })}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
+                onFocus={() => handleBulletFocus('activitiesText', '❖')}
+                onChange={e => handleBulletChange(e, 'activitiesText', '❖')}
+                onKeyDown={e => handleBulletKeyDown(e, 'activitiesText', '❖')}
+                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
               />
             </div>
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                IV. ១-បញ្ហាប្រឈម (១ បន្ទាត់ = ១ ចំណុច)
+                IV. ១-បញ្ហាប្រឈម (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <textarea
                 rows={6}
                 value={editDraft.challengesText}
-                onChange={e => setEditDraft({ ...editDraft, challengesText: e.target.value })}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
+                onFocus={() => handleBulletFocus('challengesText', '-')}
+                onChange={e => handleBulletChange(e, 'challengesText', '-')}
+                onKeyDown={e => handleBulletKeyDown(e, 'challengesText', '-')}
+                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
               />
             </div>
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                IV. ២-ដំណោះស្រាយ (១ បន្ទាត់ = ១ ចំណុច)
+                IV. ២-ដំណោះស្រាយ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <textarea
                 rows={5}
                 value={editDraft.solutionsText}
-                onChange={e => setEditDraft({ ...editDraft, solutionsText: e.target.value })}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
+                onFocus={() => handleBulletFocus('solutionsText', '-')}
+                onChange={e => handleBulletChange(e, 'solutionsText', '-')}
+                onKeyDown={e => handleBulletKeyDown(e, 'solutionsText', '-')}
+                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
               />
             </div>
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                IV. ៣-សំណូមពរ (១ បន្ទាត់ = ១ ចំណុច)
+                IV. ៣-សំណូមពរ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <textarea
                 rows={5}
                 value={editDraft.requestsText}
-                onChange={e => setEditDraft({ ...editDraft, requestsText: e.target.value })}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
+                onFocus={() => handleBulletFocus('requestsText', '-')}
+                onChange={e => handleBulletChange(e, 'requestsText', '-')}
+                onKeyDown={e => handleBulletKeyDown(e, 'requestsText', '-')}
+                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
               />
             </div>
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                V. ទិសដៅបន្ត (១ បន្ទាត់ = ១ ចំណុច)
+                V. ទិសដៅបន្ត (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <textarea
                 rows={5}
                 value={editDraft.directionsText}
-                onChange={e => setEditDraft({ ...editDraft, directionsText: e.target.value })}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
+                onFocus={() => handleBulletFocus('directionsText', '-')}
+                onChange={e => handleBulletChange(e, 'directionsText', '-')}
+                onKeyDown={e => handleBulletKeyDown(e, 'directionsText', '-')}
+                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
               />
             </div>
 
@@ -902,50 +969,6 @@ export default function AdminReportView({
                 value={editDraft.conclusionText}
                 onChange={e => setEditDraft({ ...editDraft, conclusionText: e.target.value })}
                 style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
-              />
-            </div>
-          </div>
-
-          {/* Dates & Signer */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 180px',
-              gap: 10,
-              marginTop: 12
-            }}
-          >
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                កាលបរិច្ឆេទចន្ទគតិ
-              </label>
-              <input
-                type="text"
-                value={editDraft.lunarDateLine}
-                onChange={e => setEditDraft({ ...editDraft, lunarDateLine: e.target.value })}
-                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                កាលបរិច្ឆេទសុរិយគតិ
-              </label>
-              <input
-                type="text"
-                value={editDraft.solarDateLine}
-                onChange={e => setEditDraft({ ...editDraft, solarDateLine: e.target.value })}
-                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                តួនាទីចុះហត្ថលេខា
-              </label>
-              <input
-                type="text"
-                value={editDraft.signerTitle}
-                onChange={e => setEditDraft({ ...editDraft, signerTitle: e.target.value })}
-                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1' }}
               />
             </div>
           </div>
@@ -1074,7 +1097,7 @@ export default function AdminReportView({
                 }}
               >
                 {(displayModel.studentStatLines || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 3 }}>❖ {line}</div>
+                  <div key={i} style={{ marginBottom: 3 }}>- {line}</div>
                 ))}
               </div>
             </div>
@@ -1100,7 +1123,7 @@ export default function AdminReportView({
               </div>
               <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 10, lineHeight: 1.6 }}>
                 {(displayModel.activities || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>• {line}</div>
+                  <div key={i} style={{ marginBottom: 4 }}>❖ {line}</div>
                 ))}
               </div>
 
@@ -1118,7 +1141,7 @@ export default function AdminReportView({
                 }}
               >
                 {(displayModel.adminDocLines || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 3 }}>• {line}</div>
+                  <div key={i} style={{ marginBottom: 3 }}>- {line}</div>
                 ))}
               </div>
             </div>
@@ -1145,7 +1168,7 @@ export default function AdminReportView({
               </div>
               <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 8, lineHeight: 1.6 }}>
                 {(displayModel.challenges || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>• {line}</div>
+                  <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
                 ))}
               </div>
 
@@ -1154,7 +1177,7 @@ export default function AdminReportView({
               </div>
               <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 8, lineHeight: 1.6 }}>
                 {(displayModel.solutions || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>• {line}</div>
+                  <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
                 ))}
               </div>
 
@@ -1163,7 +1186,7 @@ export default function AdminReportView({
               </div>
               <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6 }}>
                 {(displayModel.requests || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>• {line}</div>
+                  <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
                 ))}
               </div>
             </div>
@@ -1186,7 +1209,7 @@ export default function AdminReportView({
               </div>
               <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 12, lineHeight: 1.6 }}>
                 {(displayModel.directions || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>• {line}</div>
+                  <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
                 ))}
               </div>
 

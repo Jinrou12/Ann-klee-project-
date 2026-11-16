@@ -6,9 +6,10 @@ export default function MobileBottomNav({
   activeTab,
   onSelectTab,
   queueCount = 0,
-  useKhmerNumerals = true
+  useKhmerNumerals = true,
+  canUploadOcr = true
 }) {
-  const tabs = [
+  const allTabs = [
     {
       id: 'leave',
       label: 'សុំច្បាប់',
@@ -70,6 +71,7 @@ export default function MobileBottomNav({
       badge: null
     }
   ];
+  const tabs = canUploadOcr ? allTabs : allTabs.filter(t => t.id !== 'upload');
 
   return (
     <nav

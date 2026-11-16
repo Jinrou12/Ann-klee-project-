@@ -84,8 +84,8 @@ export const INITIAL_ADMIN_REPORTS = {
     ],
     conclusionText:
       'ផ្អែកតាមសកម្មភាពការងារដែលបានអនុវត្តជាក់ស្តែងក្នុងខែនេះ បង្ហាញឱ្យឃើញថាគណៈគ្រប់គ្រងសាលាបានបំពេញតួនាទីដោយការយកព្រះទ័យទុកដាក់តាមភារកិច្ចរៀងៗខ្លួនបានយ៉ាងល្អ ជាមួយសាលាអនុគណនូវរាល់ការងារពាក់ព័ន្ធ លើសពីនេះទៅទៀត ព្រមទាំងបានចូលរួមគាំទ្រគោលនយោបាយរបស់រាជរដ្ឋាភិបាលកម្ពុជា ដើម្បីរក្សានូវសុខសន្តិភាពនិងការអភិវឌ្ឍប្រទេសជាតិ។',
-    lunarDateLine: 'ថ្ងៃសុក្រ១៣កើត ខែជេស្ឋ ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០',
-    solarDateLine: 'ក្រុងកំពង់ចាម ថ្ងៃទី២៩ ខែឧសភា ឆ្នាំ២០២៦',
+    lunarDateLine: 'ថ្ងៃ…………………..ខែ………………… ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០',
+    solarDateLine: 'ក្រុងកំពង់ចាម ថ្ងៃទី…………. ខែ……………ឆ្នាំ២០២៦',
     signerTitle: 'ព្រះនាយក'
   },
 
@@ -172,11 +172,11 @@ export const INITIAL_ADMIN_REPORTS = {
     staffStats: DEFAULT_STAFF_STATS,
     studentStats: {
       classCount: 4,
-      totalStudents: 91,
-      gradeKindergarten: 20,
-      grade1: 16,
-      grade2: 32,
-      grade3: 23
+      totalStudents: 83,
+      gradeKindergarten: 18,
+      grade1: 15,
+      grade2: 30,
+      grade3: 20
     },
     activities: [
       'ប្រកាសលទ្ធផលចំណាត់ថ្នាក់សមណសិស្សប្រចាំខែកក្កដានិងប្រគេនរង្វាន់លើកទឹកចិត្ត',
@@ -494,6 +494,114 @@ function cleanAdminLineText(str) {
     .trim();
 }
 
+export function computeStudentStatsFromMaster(studentMaster) {
+  if (!Array.isArray(studentMaster) || studentMaster.length === 0) return null;
+  let gradeKindergarten = 0;
+  let grade1 = 0;
+  let grade2 = 0;
+  let grade3 = 0;
+  studentMaster.forEach(s => {
+    const g = String(s?.grade || '').trim();
+    if (g.includes('មត្តេយ្យ') || g.includes('មតេយ្យ')) {
+      gradeKindergarten += 1;
+    } else if (g === '១' || g === '1' || g.includes('ទី១') || g.includes('ទី ១')) {
+      grade1 += 1;
+    } else if (g === '២' || g === '2' || g.includes('ទី២') || g.includes('ទី ២')) {
+      grade2 += 1;
+    } else if (g === '៣' || g === '3' || g.includes('ទី៣') || g.includes('ទី ៣')) {
+      grade3 += 1;
+    }
+  });
+  return {
+    classCount: 4,
+    totalStudents: studentMaster.length,
+    gradeKindergarten,
+    grade1,
+    grade2,
+    grade3
+  };
+}
+
+/**
+ * Find the previous month's totalStudents for a given monthKey (YYYY-MM).
+ * Returns null for May (-05), the first month of the school year.
+ */
+export function getPreviousMonthTotalStudents(monthKey, mergedReportsMap = {}) {
+  const mk = String(monthKey || '');
+  if (!/^\d{4}-\d{2}$/.test(mk) || mk.endsWith('-05')) return null;
+  const [yrStr, moStr] = mk.split('-');
+  const y = parseInt(yrStr, 10);
+  const m = parseInt(moStr, 10);
+  if (!y || !m) return null;
+  const prevY = m === 1 ? y - 1 : y;
+  const prevM = m === 1 ? 12 : m - 1;
+  const prevKey = `${prevY}-${String(prevM).padStart(2, '0')}`;
+  const directPrev = mergedReportsMap[prevKey]?.studentStats?.totalStudents;
+  if (directPrev != null && Number(directPrev) > 0) {
+    return Number(directPrev);
+  }
+  const priorKeys = Object.keys(mergedReportsMap)
+    .filter(k => /^\d{4}-\d{2}$/.test(k) && k.startsWith(`${yrStr}-`) && k >= `${yrStr}-05` && k < mk)
+    .sort()
+    .reverse();
+  for (const pk of priorKeys) {
+    const t = mergedReportsMap[pk]?.studentStats?.totalStudents;
+    if (t != null && Number(t) > 0) return Number(t);
+  }
+  return null;
+}
+
+/**
+ * Automatically synchronize the student dropout / new enrollment challenge sentence
+ * in Section IV (បញ្ហាប្រឈម) by comparing previous month's totalStudents with current month's totalStudents.
+ */
+export function syncMonthlyDropoutChallengeLine({
+  monthKey,
+  prevTotal,
+  currTotal,
+  challenges = [],
+  useKhmerNumerals = true
+}) {
+  const list = Array.isArray(challenges) ? [...challenges] : [];
+  const isDropoutLine = (line) => /បោះបង់ការសិក្សា|បោះបងការសិក្សា/.test(String(line || ''));
+  const fmt = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
+  const monthName = getKhmerMonthNameFromKey(monthKey);
+
+  // First month of academic year (May) or missing numbers -> no dropout line if May
+  if (String(monthKey || '').endsWith('-05')) {
+    return list.filter(line => !isDropoutLine(line));
+  }
+
+  const pTotal = Number(prevTotal);
+  const cTotal = Number(currTotal);
+  if (!Number.isFinite(pTotal) || pTotal <= 0 || !Number.isFinite(cTotal) || cTotal <= 0) {
+    return list;
+  }
+
+  // Case 1: Same student count -> no dropouts in this month, remove auto dropout line
+  if (cTotal === pTotal) {
+    return list.filter(line => !isDropoutLine(line));
+  }
+
+  // Case 2: Student count decreased -> students dropped out
+  let autoLine = '';
+  if (cTotal < pTotal) {
+    const diff = pTotal - cTotal;
+    autoLine = `សិស្សបោះបង់ការសិក្សា (ដើមខែ${monthName}មានចំនួន${fmt(pTotal)}អង្គ/នាក់ ចុងខែ${monthName}នៅសល់ចំនួន${fmt(cTotal)}អង្គ/នាក់) សមណសិស្សបោះបង់មានចំនួន${fmt(diff)}អង្គ/នាក់។`;
+  } else {
+    // Case 3: Student count increased -> 0 dropped out, new students enrolled (matches official September format)
+    const added = cTotal - pTotal;
+    autoLine = `សិស្សបោះបង់ការសិក្សាមានចំនួន${fmt(0)}អង្គ/នាក់ សមណសិស្សចូលថ្មី${fmt(added)}អង្គ (សមណសិស្សដើមខែ${monthName}មានចំនួន${fmt(pTotal)}អង្គ/នាក់ ចុងខែ${monthName}នៅសល់ចំនួន${fmt(cTotal)}អង្គ/នាក់)។`;
+  }
+
+  const existingIdx = list.findIndex(isDropoutLine);
+  if (existingIdx >= 0) {
+    list[existingIdx] = autoLine;
+    return list;
+  }
+  return [autoLine, ...list];
+}
+
 /**
  * SMART SYNTHESIS ENGINE for Semester 1, Semester 2, and Full Year Reports
  * Carefully synthesizes Sections II, III (វឌ្ឍនភាព), IV (បញ្ហាប្រឈម), V (ទិសដៅ), and VI (សេចក្ដីសន្និដ្ឋាន)
@@ -501,7 +609,8 @@ function cleanAdminLineText(str) {
 export function synthesizeMultiMonthAdminReport({
   periodType = 'sem1', // 'sem1' | 'sem2' | 'year'
   year = '2026',
-  adminReports = {}
+  adminReports = {},
+  studentMaster = null
 }) {
   const mergedMap = { ...INITIAL_ADMIN_REPORTS, ...(adminReports || {}) };
   const targetMonthNums = periodType === 'sem1'
@@ -548,7 +657,10 @@ export function synthesizeMultiMonthAdminReport({
 
   // 1. Section II: Student Statistics (Start vs End of Semester/Year — never sum headcount across months!)
   const startStats = firstRep.studentStats || { classCount: 4, totalStudents: 100, gradeKindergarten: 21, grade1: 22, grade2: 32, grade3: 25 };
-  const endStats = lastRep.studentStats || startStats;
+  const liveMasterStats = computeStudentStatsFromMaster(studentMaster);
+  const endStats = (!lastRep.manualStudentStatsOverride && liveMasterStats)
+    ? { ...(lastRep.studentStats || startStats), ...liveMasterStats }
+    : (lastRep.studentStats || startStats);
 
   // 2. Section III (ក): Smart Deduplication & Synthesis of Monthly Activities
   const synthesizedActivities = [];
@@ -831,6 +943,7 @@ export function buildAdminReportDisplayModel({
   monthKey = '2026-07',
   year = '2026',
   adminReports = {},
+  studentMaster = null,
   useKhmerNumerals = true
 }) {
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
@@ -844,17 +957,42 @@ export function buildAdminReportDisplayModel({
     : `${activeYear}-${periodType}`;
 
   const mergedMap = { ...INITIAL_ADMIN_REPORTS, ...(adminReports || {}) };
+  const liveMasterStats = computeStudentStatsFromMaster(studentMaster);
+  const isHistoricalFixedStartMonth = monthKey === '2026-05' || monthKey === '2026-06';
 
   let rawReport;
   if (periodType === 'month') {
-    rawReport = mergedMap[monthKey] || createDefaultMonthlyAdminReport(monthKey);
+    const baseMonthReport = mergedMap[monthKey] || createDefaultMonthlyAdminReport(monthKey);
+    if (!isHistoricalFixedStartMonth && !baseMonthReport.manualStudentStatsOverride && liveMasterStats) {
+      rawReport = {
+        ...baseMonthReport,
+        studentStats: {
+          ...(baseMonthReport.studentStats || {}),
+          ...liveMasterStats
+        }
+      };
+    } else {
+      rawReport = baseMonthReport;
+    }
   } else {
     // Use custom saved override if user edited this semester/year, otherwise synthesize dynamically
-    rawReport = mergedMap[storageKey] || synthesizeMultiMonthAdminReport({
+    const baseMultiReport = mergedMap[storageKey] || synthesizeMultiMonthAdminReport({
       periodType,
       year: activeYear,
-      adminReports: mergedMap
+      adminReports: mergedMap,
+      studentMaster
     });
+    if (!baseMultiReport.manualStudentStatsOverride && liveMasterStats) {
+      rawReport = {
+        ...baseMultiReport,
+        studentStats: {
+          ...(baseMultiReport.studentStats || {}),
+          ...liveMasterStats
+        }
+      };
+    } else {
+      rawReport = baseMultiReport;
+    }
   }
 
   const monthName = getKhmerMonthNameFromKey(monthKey);
@@ -977,6 +1115,20 @@ export function buildAdminReportDisplayModel({
         ? `ឆមាសទី២_${yrKh}`
         : `ប្រចាំឆ្នាំ_${yrKh}`;
 
+  const prevMonthTotalStudents = periodType === 'month'
+    ? getPreviousMonthTotalStudents(monthKey, mergedMap)
+    : null;
+
+  const resolvedChallenges = periodType === 'month' && !rawReport.manualChallengesOverride
+    ? syncMonthlyDropoutChallengeLine({
+        monthKey,
+        prevTotal: prevMonthTotalStudents,
+        currTotal: st.totalStudents,
+        challenges: rawReport.challenges || [],
+        useKhmerNumerals
+      })
+    : (rawReport.challenges || []).map(replaceLegacyTermWords);
+
   return {
     storageKey,
     periodType,
@@ -986,6 +1138,7 @@ export function buildAdminReportDisplayModel({
     inPeriodPhrase,
     shortFileNameTag,
     rawReport,
+    prevMonthTotalStudents,
     docNumber: rawReport.docNumber || '......................',
     recipientTitle: rawReport.recipientTitle || DEFAULT_RECIPIENT_TITLE,
     subjectText,
@@ -1003,16 +1156,16 @@ export function buildAdminReportDisplayModel({
     adminDocs: ad,
     adminDocLines,
     appendixItems: rawReport.appendixItems || [],
-    challenges: (rawReport.challenges || []).map(replaceLegacyTermWords),
+    challenges: resolvedChallenges,
     solutions: rawReport.solutions || [],
     requests: rawReport.requests || [],
     directions: rawReport.directions || [],
     conclusionText: rawReport.conclusionText || '',
     closingLine1: 'សេចក្ដីដូចបានប្រគេនខាងលើ សូម ព្រះអនុគណ ព្រះមេត្តាជ្រាបជារបាយការណ៍ដ៏ខ្ពង់ខ្ពស់។',
     closingLine2: 'សូម ព្រះធម្មសាលវង្ស ព្រះអនុគណ ព្រះមេត្តាទទួលនូវគារវកិច្ចដ៏ខ្ពង់ខ្ពស់ពីខ្ញុំព្រះករុណា។',
-    lunarDateLine: rawReport.lunarDateLine || 'ថ្ងៃ…………………..ខែ………………… ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០',
-    solarDateLine: rawReport.solarDateLine || `ក្រុងកំពង់ចាម ថ្ងៃទី…………. ខែ……………ឆ្នាំ${yrKh}`,
-    signerTitle: rawReport.signerTitle || 'ព្រះនាយក'
+    lunarDateLine: 'ថ្ងៃ…………………..ខែ………………… ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០',
+    solarDateLine: `ក្រុងកំពង់ចាម ថ្ងៃទី…………. ខែ……………ឆ្នាំ${yrKh}`,
+    signerTitle: 'ព្រះនាយក'
   };
 }
 
