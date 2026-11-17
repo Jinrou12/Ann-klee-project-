@@ -28,6 +28,7 @@ import {
   saveAppState,
   INITIAL_ID_CARD_DATA,
   sanitizeLeaveState,
+  sanitizeAdminReportsState,
   recomputeLinkedFinance,
   exportBackup,
   importBackup,
@@ -135,8 +136,19 @@ export default function App() {
           cloudMeta.directorTitle = 'នាយកសាលា';
           needsCloudUpdate = true;
         }
+        if (!cloudData.meta?.cleanedSeptUnlockV1) {
+          if (Array.isArray(cloudMeta.unlockedMonths)) {
+            cloudMeta.unlockedMonths = cloudMeta.unlockedMonths.filter(k => k !== '2026-09');
+          }
+          cloudMeta.cleanedSeptUnlockV1 = true;
+          needsCloudUpdate = true;
+        }
         const mergedIdCards = { ...INITIAL_ID_CARD_DATA, ...(appState.idCards || {}), ...(cloudData.idCards || {}) };
-        const mergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(appState.adminReports || {}), ...(cloudData.adminReports || {}) };
+        const rawMergedAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(appState.adminReports || {}), ...(cloudData.adminReports || {}) };
+        const mergedAdminReports = sanitizeAdminReportsState(rawMergedAdminReports);
+        if (JSON.stringify(mergedAdminReports) !== JSON.stringify(rawMergedAdminReports)) {
+          needsCloudUpdate = true;
+        }
         const normalizedCloudLeaves = sanitizeLeaveState(cloudData.leaves);
         const recomputedCloudFinance = recomputeLinkedFinance(
           cloudData.finance,
@@ -242,8 +254,18 @@ export default function App() {
           if (!mergedMeta.directorTitle || mergedMeta.directorTitle === 'ព្រះនាយក' || mergedMeta.directorTitle === 'ព្រះចៅអធិការ') {
             mergedMeta.directorTitle = 'នាយកសាលា';
           }
+          if (!remoteState.meta?.cleanedSeptUnlockV1) {
+            if (Array.isArray(mergedMeta.unlockedMonths)) {
+              mergedMeta.unlockedMonths = mergedMeta.unlockedMonths.filter(k => k !== '2026-09');
+            }
+            mergedMeta.cleanedSeptUnlockV1 = true;
+          }
           const mergedRemoteIdCards = { ...INITIAL_ID_CARD_DATA, ...(prev.idCards || {}), ...(remoteState.idCards || {}) };
-          const mergedRemoteAdminReports = { ...INITIAL_ADMIN_REPORTS, ...(prev.adminReports || {}), ...(remoteState.adminReports || {}) };
+          const mergedRemoteAdminReports = sanitizeAdminReportsState({
+            ...INITIAL_ADMIN_REPORTS,
+            ...(prev.adminReports || {}),
+            ...(remoteState.adminReports || {})
+          });
           const normalizedRemoteLeaves = sanitizeLeaveState(remoteState.leaves);
           const syncedRemoteFinance = recomputeLinkedFinance(
             remoteState.finance,
@@ -1511,6 +1533,7 @@ export default function App() {
             activeYear={activeYear}
             adminReports={appState.adminReports}
             studentMaster={appState.studentMaster}
+            allFinance={appState.finance}
             metadata={appState.meta}
             useKhmerNumerals={appState.meta.useKhmerNumerals}
             isMobile={isMobile}

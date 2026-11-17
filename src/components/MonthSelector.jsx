@@ -84,13 +84,16 @@ export default function MonthSelector({
       >
         {cleanAvailableMonths.map((mKey, idx) => {
           const isSelected = mKey === currentMonth;
-          const isOldMonth = typeof isMonthLocked === 'function' ? isMonthLocked(mKey) : idx > 0;
+          const isLatestMonth = idx === 0;
+          const isOldMonth = !isLatestMonth;
+          const isUnlockedOld = isOldMonth && typeof isMonthLocked === 'function' && !isMonthLocked(mKey);
           return (
             <button
               key={mKey}
               type="button"
               role="option"
               aria-selected={isSelected}
+              title={isUnlockedOld ? 'ខែចាស់ (បានបើកសិទ្ធិកែ)' : undefined}
               className={`month-popover-item${isSelected ? ' is-selected' : ''}`}
               onClick={() => {
                 onSelectMonth(mKey);
@@ -124,17 +127,17 @@ export default function MonthSelector({
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <span style={{
-                  width: !isOldMonth ? 8 : 6,
-                  height: !isOldMonth ? 8 : 6,
+                  width: isLatestMonth ? 8 : 6,
+                  height: isLatestMonth ? 8 : 6,
                   borderRadius: '50%',
-                  background: !isOldMonth
+                  background: isLatestMonth
                     ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
                     : (isSelected ? '#d97706' : '#cbd5e1'),
-                  boxShadow: !isOldMonth ? '0 0 0 3px rgba(37, 99, 235, 0.16)' : 'none',
+                  boxShadow: isLatestMonth ? '0 0 0 3px rgba(37, 99, 235, 0.16)' : 'none',
                   flexShrink: 0
                 }} />
                 <span>{formatMonthLabel(mKey)}</span>
-                {!isOldMonth && (
+                {isLatestMonth && (
                   <span style={{
                     fontSize: 10,
                     fontWeight: 700,

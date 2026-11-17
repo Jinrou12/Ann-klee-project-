@@ -1039,8 +1039,11 @@ export function buildAdminReportDisplayModel({
       ? 'ឃ. ចំណាយប្រចាំឆមាស (តារាងឧសម្ព័ន្ធ)'
       : 'ឃ. ចំណាយប្រចាំឆ្នាំ (តារាងឧសម្ព័ន្ធ)';
 
-  const subjectText = rawReport.customSubjectText ||
-    `របាយការណ៍បូកសរុបលទ្ធផលការងារ${periodTitlePhrase} និងលើកទិសដៅការងារបន្តរបស់សាលាពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម។`;
+  const rawCustomSubj = String(rawReport.customSubjectText || '').trim();
+  const isStandardAutoSubj = rawCustomSubj.startsWith('របាយការណ៍បូកសរុបលទ្ធផលការងារ');
+  const subjectText = (!isStandardAutoSubj && rawCustomSubj)
+    ? rawCustomSubj
+    : `របាយការណ៍បូកសរុបលទ្ធផលការងារ${periodTitlePhrase} និងលើកទិសដៅការងារបន្តរបស់សាលាពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម។`;
 
   const introParagraph = rawReport.customIntroParagraph ||
     `សេចក្ដីដូចមានចែងក្នុងកម្មវត្ថុខាងលើ ខ្ញុំព្រះករុណាមានកិត្តិយស សូមអនុញ្ញាតប្រគេន ព្រះធម្មសាលវង្ស ព្រះអនុគណ មេត្តាជ្រាបដ៏ខ្ពង់ខ្ពស់នូវរបាយការណ៍${inPeriodPhrase}កន្លងទៅនេះ គណៈគ្រប់គ្រងសាលាបានបំពេញការងារសម្រេចបានជាលទ្ធផលដូចខាងក្រោម៖`;

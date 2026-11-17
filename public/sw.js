@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hun-neng-app-v8';
+const CACHE_NAME = 'hun-neng-app-v9';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

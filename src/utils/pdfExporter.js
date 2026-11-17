@@ -53,14 +53,20 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
         )
       );
 
+      const firstIsLetter = discreteSheets[0]?.dataset?.pageFormat === 'letter';
       const pdf = new jsPDF({
         unit: 'mm',
-        format: 'a4',
+        format: firstIsLetter ? 'letter' : 'a4',
         orientation: 'portrait'
       });
 
       for (let idx = 0; idx < discreteSheets.length; idx++) {
         const sheet = discreteSheets[idx];
+        const isLetter = sheet.dataset?.pageFormat === 'letter';
+        const capW = isLetter ? 816 : 794;
+        const capH = isLetter ? 1056 : 1123;
+        const mmW = isLetter ? 215.9 : 210;
+        const mmH = isLetter ? 279.4 : 297;
         const prevShadow = sheet.style.boxShadow;
         const prevRadius = sheet.style.borderRadius;
         sheet.style.boxShadow = 'none';
@@ -75,8 +81,8 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
             backgroundColor: '#ffffff',
             x: 0,
             y: 0,
-            width: 794,
-            height: 1123,
+            width: capW,
+            height: capH,
             windowWidth: 1200,
             windowHeight: 1200,
             scrollX: 0,
@@ -96,7 +102,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
                 clonedDoc.body.style.padding = '0';
                 clonedDoc.body.style.overflow = 'visible';
                 clonedDoc.body.style.position = 'static';
-                clonedDoc.body.style.width = '794px';
+                clonedDoc.body.style.width = `${capW}px`;
                 clonedDoc.body.style.webkitTextSizeAdjust = '100%';
                 clonedDoc.body.style.textSizeAdjust = '100%';
               }
@@ -111,7 +117,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
                 curr.style.webkitTransform = 'none';
                 curr.style.overflow = 'visible';
                 curr.style.maxWidth = 'none';
-                curr.style.width = '794px';
+                curr.style.width = `${capW}px`;
                 curr.style.padding = '0';
                 curr.style.margin = '0';
                 curr.style.zIndex = 'auto';
@@ -121,12 +127,12 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
               clonedEl.style.position = 'fixed';
               clonedEl.style.left = '0px';
               clonedEl.style.top = '0px';
-              clonedEl.style.width = '794px';
-              clonedEl.style.minWidth = '794px';
-              clonedEl.style.maxWidth = '794px';
-              clonedEl.style.height = '1123px';
-              clonedEl.style.minHeight = '1123px';
-              clonedEl.style.maxHeight = '1123px';
+              clonedEl.style.width = `${capW}px`;
+              clonedEl.style.minWidth = `${capW}px`;
+              clonedEl.style.maxWidth = `${capW}px`;
+              clonedEl.style.height = `${capH}px`;
+              clonedEl.style.minHeight = `${capH}px`;
+              clonedEl.style.maxHeight = `${capH}px`;
               clonedEl.style.transform = 'none';
               clonedEl.style.boxSizing = 'border-box';
               clonedEl.style.margin = '0';
@@ -139,11 +145,11 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
           });
 
           if (idx > 0) {
-            pdf.addPage('a4', 'portrait');
+            pdf.addPage(isLetter ? 'letter' : 'a4', 'portrait');
           }
           pdf.setPage(idx + 1);
           const imgData = canvas.toDataURL('image/jpeg', 0.9);
-          pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+          pdf.addImage(imgData, 'JPEG', 0, 0, mmW, mmH);
         } finally {
           sheet.style.boxShadow = prevShadow;
           sheet.style.borderRadius = prevRadius;

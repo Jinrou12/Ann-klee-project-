@@ -1189,3 +1189,487 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   });
 }
 
+/**
+ * Export Ministry 10-Row Summary Report (របាយការណ៍សង្ខេបប្រចាំឆ្នាំ) to Styled Excel (.xlsx)
+ */
+export async function exportMinistrySummaryToExcel(ministryModel, metadata = {}) {
+  if (!ministryModel) return;
+  const logoBytes = await loadOfficialLogoBytes();
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const rows = [];
+  const merges = [];
+  const numCols = 4;
+
+  appendOfficialHeader(rows, merges, numCols, metadata, false, hasLogo);
+
+  const titleRow = rows.length + 1;
+  rows.push({ height: 28, cells: [{ v: ministryModel.summaryReportTitle, s: 2 }] });
+  merges.push(`${cellRef(titleRow, 0)}:${cellRef(titleRow, numCols - 1)}`);
+
+  rows.push(makeTableTopSpacerRow(numCols, 10));
+
+  const headers = ['ល.រ', 'បរិយាយ', 'ចំនួន', 'ផ្សេងៗ'];
+  rows.push({
+    height: 28,
+    cells: headers.map(h => ({ v: h, s: 4 }))
+  });
+
+  (ministryModel.summaryRows || []).forEach(r => {
+    const descFull = [r.desc, ...(r.subDescLines || []).map(s => `   ${s}`)].join('\n');
+    const countFull = [r.count, ...(r.subCountLines || [])].join('\n');
+    const isMultiLine = Array.isArray(r.subDescLines) && r.subDescLines.length > 0;
+    rows.push({
+      height: isMultiLine ? 58 : 26,
+      cells: [
+        { v: r.no, s: 5 },
+        { v: descFull, s: 6 },
+        { v: countFull, s: 5 },
+        { v: r.note || '', s: 5 }
+      ]
+    });
+  });
+
+  rows.push({ height: 14, cells: [] });
+  const pushSigRow = (leftText, leftStyle, rightText, rightStyle, height = 23) => {
+    const rNum = rows.length + 1;
+    rows.push({
+      height,
+      cells: [
+        { v: leftText, s: leftStyle },
+        { v: '', s: leftStyle },
+        { v: rightText, s: rightStyle },
+        { v: '', s: rightStyle }
+      ]
+    });
+    merges.push(`${cellRef(rNum, 0)}:${cellRef(rNum, 1)}`);
+    merges.push(`${cellRef(rNum, 2)}:${cellRef(rNum, 3)}`);
+  };
+
+  pushSigRow('', 13, ministryModel.lunarDateLine || '', 13);
+  pushSigRow('បានឃើញ និងឯកភាព', 1, `លេខ ${ministryModel.docNumber || '.....................................'}`, 13);
+  pushSigRow(ministryModel.lunarDateLine || '', 13, '', 13);
+  pushSigRow(ministryModel.solarDateLine || '', 13, '', 13);
+  pushSigRow(ministryModel.signerTitle || 'ព្រះនាយក', 1, '', 13);
+
+  downloadStyledXlsx({
+    sheetName: 'សង្ខេបប្រចាំឆ្នាំ',
+    colWidths: [8, 42, 24, 28],
+    rows,
+    merges,
+    fileName: `របាយការណ៍_${ministryModel.shortSummaryFileNameTag}.xlsx`,
+    logoBytes
+  });
+}
+
+/**
+ * Export Ministry Full Annual Report (របាយការណ៍ប្រចាំឆ្នាំ — មន្ទីរ) to Styled Excel (.xlsx)
+ */
+export async function exportMinistryReportToExcel(ministryModel, metadata = {}) {
+  if (!ministryModel) return;
+  const logoBytes = await loadOfficialLogoBytes();
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const rows = [];
+  const merges = [];
+  const numCols = 7;
+
+  const pushFullRow = (text, styleIdx = 0, height = 24) => {
+    const rNum = rows.length + 1;
+    rows.push({
+      height,
+      cells: [{ v: text, s: styleIdx }]
+    });
+    merges.push(`${cellRef(rNum, 0)}:${cellRef(rNum, numCols - 1)}`);
+  };
+
+  appendOfficialHeader(rows, merges, numCols, metadata, false, hasLogo);
+
+  pushFullRow('របាយការណ៍', 2, 24);
+  pushFullRow('ស្តីពី', 2, 23);
+  pushFullRow(ministryModel.fullReportTitle, 2, 25);
+  rows.push({ height: 8, cells: [] });
+
+  // ក.ព័ត៌មានទូទៅ
+  pushFullRow('ក.ព័ត៌មានទូទៅ', 12, 26);
+  (ministryModel.generalInfoLines || []).forEach(r => {
+    const txt = r.value ? `-${r.label}     ${r.value}` : `-${r.label}`;
+    pushFullRow(txt, 0, 24);
+  });
+
+  // ខ, គ, ឃ, ង, ង.១, ង.២
+  pushFullRow('ខ.អំពីសកម្មភាពនៅក្នុងសាលា៖ (គ្រូ និង សមណសិស្ស សិស្ស)', 12, 26);
+  pushFullRow('ខ.១. សកម្មភាពរបស់គ្រូ', 12, 24);
+  (ministryModel.teacherActivities || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+  pushFullRow('ខ.២. សកម្មភាពសមណសិស្ស សិស្ស', 12, 24);
+  (ministryModel.studentActivities || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+
+  pushFullRow('គ.អំពីសកម្មភាពនៅក្រៅសាលា (គ្រូ និង សមណសិស្ស សិស្ស)', 12, 26);
+  (ministryModel.outsideActivities || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+
+  pushFullRow('ឃ.អំពីការទទួលខុសត្រូវរបស់ព្រះគ្រូចៅអធិការ ឬអាណាព្យាបាល៖', 12, 26);
+  pushFullRow('ឃ.១. ការទទួលខុសត្រូវរបស់ព្រះគ្រូចៅអធិការ', 12, 24);
+  (ministryModel.abbotResponsibilities || []).forEach(l => pushFullRow(`-${l}`, 0, l.length > 90 ? 38 : 24));
+
+  pushFullRow('ង.អំពីសកម្មភាពគណៈគ្រប់គ្រង (ទាំងក្នុង និងក្រៅសាលា)', 12, 26);
+  (ministryModel.managementActivities || []).forEach(l => pushFullRow(`-${l}`, 0, l.length > 90 ? 44 : 24));
+  pushFullRow('ង.១. ពុទ្ធិកបណ្ណាល័យ', 12, 24);
+  (ministryModel.libraryLines || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+  pushFullRow('ង.២. ការទទួលជំនួយពីសប្បុរសជន', 12, 24);
+  (ministryModel.donationLines || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+
+  const appendHourlySemTable = (title, tblData) => {
+    pushFullRow(title, 12, 26);
+    rows.push({
+      height: 26,
+      cells: ['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួនម៉ោង', 'សមតុល្យ', 'ផ្សេងៗ'].map(h => ({ v: h, s: 4 }))
+    });
+    (tblData?.rows || []).forEach(r => {
+      rows.push({
+        height: 24,
+        cells: [
+          { v: r.no, s: 5 },
+          { v: r.label, s: 5 },
+          { v: r.incomeText, s: 5 },
+          { v: r.expenseText, s: 5 },
+          { v: r.hoursText, s: 5 },
+          { v: r.balanceText, s: 5 },
+          { v: r.note || '', s: 5 }
+        ]
+      });
+    });
+    const totR = rows.length + 1;
+    rows.push({
+      height: 26,
+      cells: [
+        { v: 'សមតុល្យសាច់ប្រាក់ចំណូល និងចំណាយនៅសល់', s: 9 },
+        { v: '', s: 9 },
+        { v: tblData?.sumIncomeText, s: 9 },
+        { v: tblData?.sumExpenseText, s: 9 },
+        { v: tblData?.sumHoursText, s: 9 },
+        { v: tblData?.totalBalanceText, s: 9 },
+        { v: '', s: 9 }
+      ]
+    });
+    merges.push(`${cellRef(totR, 0)}:${cellRef(totR, 1)}`);
+  };
+
+  appendHourlySemTable('ច. ចំណូល-ចំណាយ ប្រាក់ម៉ោង ប្រចាំឆមាសទី១', ministryModel.hourlySem1);
+  appendHourlySemTable('ច.១ ចំណូល-ចំណាយ ប្រាក់ម៉ោង ប្រចាំឆមាសទី២', ministryModel.hourlySem2);
+
+  // ច.២
+  pushFullRow(`ច.២ ចំណូលចំណាយប្រាក់ម៉ោងប្រចាំឆ្នាំ ${ministryModel.yearKhmer}`, 12, 26);
+  rows.push({
+    height: 26,
+    cells: ['ល.រ', 'បរិយាយ', 'ចំណូល', 'ចំណាយ', 'ចំនួនម៉ោង', 'សមតុល្យ', ''].map(h => ({ v: h, s: 4 }))
+  });
+  (ministryModel.hourlyAnnual?.rows || []).forEach(r => {
+    rows.push({
+      height: 24,
+      cells: [
+        { v: r.no, s: 5 },
+        { v: r.label, s: 5 },
+        { v: r.incomeText, s: 5 },
+        { v: r.expenseText, s: 5 },
+        { v: r.hoursText, s: 5 },
+        { v: r.balanceText, s: 5 },
+        { v: '', s: 5 }
+      ]
+    });
+  });
+  const hAnnTotR = rows.length + 1;
+  rows.push({
+    height: 26,
+    cells: [
+      { v: 'សមតុល្យសាច់ប្រាក់ចំណូល និងចំណាយនៅសល់', s: 9 },
+      { v: '', s: 9 },
+      { v: ministryModel.hourlyAnnual?.sumIncomeText, s: 9 },
+      { v: ministryModel.hourlyAnnual?.sumExpenseText, s: 9 },
+      { v: ministryModel.hourlyAnnual?.sumHoursText, s: 9 },
+      { v: ministryModel.hourlyAnnual?.totalBalanceText, s: 9 },
+      { v: '', s: 9 }
+    ]
+  });
+  merges.push(`${cellRef(hAnnTotR, 0)}:${cellRef(hAnnTotR, 1)}`);
+
+  // ច.៣ & ច.៤ Office Supplies Semester Tables
+  const appendOfficeSemTable = (title, semData) => {
+    pushFullRow(title, 12, 26);
+    const expHdrR = rows.length + 1;
+    rows.push({
+      height: 24,
+      cells: Array.from({ length: numCols }, (_, i) => ({ v: i === 0 ? 'តារាងចំណាយ' : '', s: 4 }))
+    });
+    merges.push(`${cellRef(expHdrR, 0)}:${cellRef(expHdrR, numCols - 1)}`);
+
+    rows.push({
+      height: 26,
+      cells: ['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'សមតុល្យ', 'ផ្សេងៗ'].map(h => ({ v: h, s: 4 }))
+    });
+
+    if ((semData?.expenseRows || []).length === 0) {
+      const emptyR = rows.length + 1;
+      rows.push({
+        height: 24,
+        cells: Array.from({ length: numCols }, (_, i) => ({ v: i === 0 ? 'គ្មាន' : '', s: 5 }))
+      });
+      merges.push(`${cellRef(emptyR, 0)}:${cellRef(emptyR, numCols - 1)}`);
+    } else {
+      (semData.expenseRows || []).forEach(r => {
+        rows.push({
+          height: 24,
+          cells: [
+            { v: r.no, s: 5 },
+            { v: r.desc, s: 6 },
+            { v: r.source, s: 5 },
+            { v: r.amountText, s: 5 },
+            { v: r.qty, s: 5 },
+            { v: r.balance || '', s: 5 },
+            { v: r.note || '', s: 5 }
+          ]
+        });
+      });
+    }
+
+    const expTotR = rows.length + 1;
+    rows.push({
+      height: 26,
+      cells: [
+        { v: 'ចំណាយសរុប', s: 9 },
+        { v: '', s: 9 },
+        { v: '', s: 9 },
+        { v: semData?.totalExpenseText, s: 9 },
+        { v: '', s: 9 },
+        { v: '', s: 9 },
+        { v: '', s: 9 }
+      ]
+    });
+    merges.push(`${cellRef(expTotR, 0)}:${cellRef(expTotR, 2)}`);
+
+    const incHdrR = rows.length + 1;
+    rows.push({
+      height: 24,
+      cells: Array.from({ length: numCols }, (_, i) => ({ v: i === 0 ? 'តារាងចំណូល' : '', s: 4 }))
+    });
+    merges.push(`${cellRef(incHdrR, 0)}:${cellRef(incHdrR, numCols - 1)}`);
+
+    rows.push({
+      height: 26,
+      cells: ['ល.រ', 'បរិយាយ', 'ថវិកា (រៀល)', 'ថវិកា (ដុល្លារ)', 'សេចក្ដីផ្សេងៗ', '', ''].map(h => ({ v: h, s: 4 }))
+    });
+
+    if ((semData?.incomeRows || []).length === 0) {
+      const emptyIncR = rows.length + 1;
+      rows.push({
+        height: 24,
+        cells: Array.from({ length: numCols }, (_, i) => ({ v: i === 0 ? 'គ្មាន' : '', s: 5 }))
+      });
+      merges.push(`${cellRef(emptyIncR, 0)}:${cellRef(emptyIncR, numCols - 1)}`);
+    } else {
+      (semData.incomeRows || []).forEach(r => {
+        rows.push({
+          height: 24,
+          cells: [
+            { v: r.no, s: 5 },
+            { v: r.desc, s: 6 },
+            { v: r.khrText, s: 5 },
+            { v: r.usdText, s: 5 },
+            { v: r.note || '', s: 5 },
+            { v: '', s: 5 },
+            { v: '', s: 5 }
+          ]
+        });
+      });
+    }
+
+    const incTotR = rows.length + 1;
+    rows.push({
+      height: 26,
+      cells: [
+        { v: 'សរុបចំណូល', s: 9 },
+        { v: '', s: 9 },
+        { v: semData?.totalIncomeKHRText, s: 9 },
+        { v: semData?.totalIncomeUSDText, s: 9 },
+        { v: semData?.inKindSummary || '', s: 5 },
+        { v: '', s: 9 },
+        { v: '', s: 9 }
+      ]
+    });
+    merges.push(`${cellRef(incTotR, 0)}:${cellRef(incTotR, 1)}`);
+  };
+
+  appendOfficeSemTable(
+    `ច.៣ ចំណាយ ចំណូល លើសម្ភារៈការិយាល័យ ប្រចាំឆមាសទី១ ឆ្នាំ${ministryModel.yearKhmer}`,
+    ministryModel.officeSem1
+  );
+  appendOfficeSemTable(
+    `ច.៤ ចំណាយ ចំណូល លើសម្ភារៈការិយាល័យ ប្រចាំឆមាសទី២ ឆ្នាំ${ministryModel.yearKhmer}`,
+    ministryModel.officeSem2
+  );
+
+  // ច.៥
+  pushFullRow(`ច.៥ ចំណូល ចំណាយ លើសម្ភារៈការិយាល័យ ប្រចាំឆ្នាំ ${ministryModel.yearKhmer}`, 12, 26);
+  rows.push({
+    height: 26,
+    cells: ['ល.រ', 'បរិយាយ', 'ចំណូល', 'ចំណាយ', 'ផ្សេងៗ', '', ''].map(h => ({ v: h, s: 4 }))
+  });
+  (ministryModel.officeAnnual?.rows || []).forEach(r => {
+    rows.push({
+      height: 24,
+      cells: [
+        { v: r.no, s: 5 },
+        { v: r.label, s: 5 },
+        { v: r.incomeText, s: 5 },
+        { v: r.expenseText, s: 5 },
+        { v: r.note || '', s: 5 },
+        { v: '', s: 5 },
+        { v: '', s: 5 }
+      ]
+    });
+  });
+  const offTotR = rows.length + 1;
+  rows.push({
+    height: 26,
+    cells: [
+      { v: 'សរុបទាំងពីរឆមាស', s: 9 },
+      { v: '', s: 9 },
+      { v: ministryModel.officeAnnual?.totalIncomeText, s: 9 },
+      { v: ministryModel.officeAnnual?.totalExpenseText, s: 9 },
+      { v: ministryModel.officeAnnual?.inKindSummary || '', s: 5 },
+      { v: '', s: 9 },
+      { v: '', s: 9 }
+    ]
+  });
+  merges.push(`${cellRef(offTotR, 0)}:${cellRef(offTotR, 1)}`);
+
+  // ចំណូល ចំណាយ កម្មវិធីចែកបណ្ណសរសើរ
+  pushFullRow('ចំណូល ចំណាយ កម្មវិធីចែកបណ្ណសរសើរ', 12, 26);
+  rows.push({
+    height: 24,
+    cells: [
+      { v: '១', s: 5 },
+      { v: 'ចំណូលពីការចែកបណ្ណសរសើរ', s: 6 },
+      { v: ministryModel.awardCeremonyTable?.income1Text, s: 5 },
+      { v: '', s: 5 },
+      { v: '', s: 5 },
+      { v: '', s: 5 },
+      { v: '', s: 5 }
+    ]
+  });
+  rows.push({
+    height: 24,
+    cells: [
+      { v: '២', s: 5 },
+      { v: 'ចំណូលពីវត្ត', s: 6 },
+      { v: ministryModel.awardCeremonyTable?.income2Text, s: 5 },
+      { v: '', s: 5 },
+      { v: '', s: 5 },
+      { v: '', s: 5 },
+      { v: '', s: 5 }
+    ]
+  });
+  const awIncTotR = rows.length + 1;
+  rows.push({
+    height: 26,
+    cells: [
+      { v: 'ចំណូលសរុបក្នុងកម្មវិធីចែកបណ្ណសរសើរ', s: 9 },
+      { v: '', s: 9 },
+      { v: ministryModel.awardCeremonyTable?.totalIncomeText, s: 9 },
+      { v: '', s: 9 },
+      { v: '', s: 9 },
+      { v: '', s: 9 },
+      { v: '', s: 9 }
+    ]
+  });
+  merges.push(`${cellRef(awIncTotR, 0)}:${cellRef(awIncTotR, 1)}`);
+
+  const awExpTotR = rows.length + 1;
+  rows.push({
+    height: 26,
+    cells: [
+      { v: 'ចំណាយសរុបក្នុងកម្មវិធីចែកបណ្ណសរសើរ', s: 9 },
+      { v: '', s: 9 },
+      { v: ministryModel.awardCeremonyTable?.totalExpenseText, s: 9 },
+      { v: '', s: 9 },
+      { v: '', s: 9 },
+      { v: '', s: 9 },
+      { v: '', s: 9 }
+    ]
+  });
+  merges.push(`${cellRef(awExpTotR, 0)}:${cellRef(awExpTotR, 1)}`);
+
+  // ចំណូល ចំណាយ សរុបរួមប្រចាំឆ្នាំ
+  pushFullRow(`ចំណូល ចំណាយ សរុបរួមប្រចាំឆ្នាំ${ministryModel.yearKhmer}`, 12, 26);
+  rows.push({
+    height: 26,
+    cells: ['ល.រ', 'បរិយាយ', 'រៀល', 'ដុល្លារ', 'ផ្សេងៗ', '', ''].map(h => ({ v: h, s: 4 }))
+  });
+  rows.push({
+    height: 24,
+    cells: [
+      { v: '១', s: 5 },
+      { v: 'ចំណូលរួមប្រចាំឆ្នាំ', s: 6 },
+      { v: ministryModel.grandAnnualTable?.incomeKHRText, s: 9 },
+      { v: ministryModel.grandAnnualTable?.incomeUSDText, s: 9 },
+      { v: '', s: 5 },
+      { v: '', s: 5 },
+      { v: '', s: 5 }
+    ]
+  });
+  rows.push({
+    height: 24,
+    cells: [
+      { v: '២', s: 5 },
+      { v: 'ចំណាយរួមប្រចាំឆ្នាំ', s: 6 },
+      { v: ministryModel.grandAnnualTable?.expenseKHRText, s: 9 },
+      { v: ministryModel.grandAnnualTable?.expenseUSDText, s: 9 },
+      { v: '', s: 5 },
+      { v: '', s: 5 },
+      { v: '', s: 5 }
+    ]
+  });
+  const grTotR = rows.length + 1;
+  rows.push({
+    height: 26,
+    cells: [
+      { v: 'សមតុល្យ', s: 9 },
+      { v: '', s: 9 },
+      { v: ministryModel.grandAnnualTable?.balanceKHRText, s: 9 },
+      { v: ministryModel.grandAnnualTable?.balanceUSDText, s: 9 },
+      { v: ministryModel.grandAnnualTable?.balanceNote, s: 5 },
+      { v: '', s: 9 },
+      { v: '', s: 9 }
+    ]
+  });
+  merges.push(`${cellRef(grTotR, 0)}:${cellRef(grTotR, 1)}`);
+
+  // ឆ, ជ, ឈ, ញ, ដ
+  pushFullRow('ឆ.អំពីសកម្មភាពគ្រូបង្រៀន (ជាមួយសមណសិស្ស សិស្ស ក្នុង និងក្រៅសាលា)', 12, 26);
+  (ministryModel.teacherRelations || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+  pushFullRow('ជ.បញ្ហាប្រឈម', 12, 26);
+  (ministryModel.challenges || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+  pushFullRow('ឈ. ដំណោះស្រាយ', 12, 26);
+  (ministryModel.solutions || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+  pushFullRow('ញ.សេចក្ដីសន្និដ្ឋាន', 12, 26);
+  (ministryModel.conclusionParas || []).forEach(p => pushFullRow(p, 0, 44));
+  pushFullRow('ដ.សំណូមពរ', 12, 26);
+  (ministryModel.requests || []).forEach(l => pushFullRow(`-${l}`, 0, 24));
+
+  rows.push({ height: 12, cells: [] });
+  pushFullRow(ministryModel.lunarDateLine || '', 13, 22);
+  pushFullRow(ministryModel.solarDateLine || '', 13, 22);
+  pushFullRow(`លេខ ${ministryModel.docNumber || '.....................................'} ${ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}`, 13, 24);
+  pushFullRow('បានឃើញ និងឯកភាព', 1, 24);
+  pushFullRow(ministryModel.signerTitle || 'ព្រះនាយក', 1, 26);
+
+  pushFullRow('ចម្លងប្រគេនជូន', 12, 24);
+  (ministryModel.ccList || []).forEach(cc => pushFullRow(`-${cc}`, 0, 22));
+
+  downloadStyledXlsx({
+    sheetName: 'របាយការណ៍មន្ទីរ',
+    colWidths: [8, 28, 18, 18, 16, 16, 14],
+    rows,
+    merges,
+    fileName: `របាយការណ៍_${ministryModel.shortFullFileNameTag}.xlsx`,
+    logoBytes
+  });
+}
+

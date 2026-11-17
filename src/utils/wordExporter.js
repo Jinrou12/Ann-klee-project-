@@ -152,16 +152,23 @@ function wLogoParagraph(sizeEmu = 520000) {
 function wCell(paragraphsXml, {
   widthDxa = 1500,
   gridSpan = 1,
+  vMerge = '',
   shdFill = '',
   vAlign = 'center',
   marginsDxa = { top: 24, bottom: 24, left: 40, right: 40 }
 } = {}) {
   const spanXml = gridSpan > 1 ? `<w:gridSpan w:val="${gridSpan}"/>` : '';
+  const vmXml = vMerge === 'restart'
+    ? '<w:vMerge w:val="restart"/>'
+    : vMerge === 'continue'
+      ? '<w:vMerge/>'
+      : '';
   const shdXml = shdFill ? `<w:shd w:val="clear" w:color="auto" w:fill="${shdFill}"/>` : '';
   return `<w:tc>
     <w:tcPr>
       <w:tcW w:w="${widthDxa}" w:type="dxa"/>
       ${spanXml}
+      ${vmXml}
       ${shdXml}
       <w:tcMar>
         <w:top w:w="${marginsDxa.top}" w:type="dxa"/>
@@ -1251,4 +1258,521 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
       footerXml: ADMIN_PAGE_NUMBER_FOOTER_XML
     }
   );
+}
+
+/**
+ * Export Ministry 1-Page Summary Report (របាយការណ៍សង្ខេបប្រចាំឆ្នាំ — Letter Portrait) to Word (.docx)
+ */
+export async function exportMinistrySummaryToWord(ministryModel) {
+  if (!ministryModel) return;
+  const tacteingOdttf = await loadTacteingOdttfBytes();
+
+  // Letter Portrait (12240 x 15840 dxa) with margins matching 2025 template
+  const pageMargins = { top: 568, right: 1134, bottom: 900, left: 1134 };
+  const contentWidth = 12240 - pageMargins.left - pageMargins.right; // 9972 dxa
+
+  const leftHeaderParas = [
+    wParagraph('', { sizePt: 8 }),
+    wParagraph('មន្ទីរធម្មការ និងសាសនា ខេត្តកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
+    wParagraph('ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
+    wParagraph('ក្រុងកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, align: 'center' })
+  ].join('');
+
+  const rightHeaderParas = [
+    wParagraph('ព្រះរាជាណាចក្រកម្ពុជា', { font: FONT_MOUL, sizePt: 12.5, align: 'center' }),
+    wParagraph('ជាតិ សាសនា ព្រះមហាក្សត្រ', { font: FONT_MOUL, sizePt: 11.5, align: 'center' }),
+    wTacteingDividerParagraph({ color: '000000', sizePt: 26 })
+  ].join('');
+
+  const headerWidths = [5200, contentWidth - 5200];
+  const headerTableXml = wTable(
+    headerWidths,
+    [
+      `<w:tr>${wCell(leftHeaderParas, { widthDxa: headerWidths[0], vAlign: 'top', marginsDxa: ZERO_MARGINS })}${wCell(
+        rightHeaderParas,
+        { widthDxa: headerWidths[1], vAlign: 'top', marginsDxa: ZERO_MARGINS }
+      )}</w:tr>`
+    ],
+    { bordered: false }
+  );
+
+  const colWidths = fitColumns([900, 4300, 2270, 2502], contentWidth);
+  const headers = ['ល.រ', 'បរិយាយ', 'ចំនួន', 'ផ្សេងៗ'];
+  const headerRowXml = `<w:tr>${headers
+    .map((h, i) =>
+      wCell(wParagraph(h, { font: FONT_MOUL, sizePt: 11.5, align: 'center', spaceBefore: 40, spaceAfter: 40 }), {
+        widthDxa: colWidths[i]
+      })
+    )
+    .join('')}</w:tr>`;
+
+  const bodyRowsXml = (ministryModel.summaryRows || []).map(row => {
+    const descParas = [
+      wParagraph(row.desc || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'left', spaceBefore: 24, spaceAfter: 24 }),
+      ...(row.subDescLines || []).map(sub =>
+        wParagraph(sub, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'left', indentLeft: 240, spaceBefore: 10, spaceAfter: 20 })
+      )
+    ].join('');
+
+    const countParas = [
+      wParagraph(row.count || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', spaceBefore: 24, spaceAfter: 24 }),
+      ...(row.subCountLines || []).map(subC =>
+        wParagraph(subC, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', spaceBefore: 10, spaceAfter: 20 })
+      )
+    ].join('');
+
+    return `<w:tr>
+      ${wCell(wParagraph(row.no || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center' }), { widthDxa: colWidths[0] })}
+      ${wCell(descParas, { widthDxa: colWidths[1] })}
+      ${wCell(countParas, { widthDxa: colWidths[2] })}
+      ${wCell(wParagraph(row.note || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center' }), { widthDxa: colWidths[3] })}
+    </w:tr>`;
+  });
+
+  const leftSigParas = [
+    wParagraph('', { sizePt: 10 }),
+    wParagraph('បានឃើញ និងឯកភាព', { font: FONT_MOUL, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.lunarDateLine || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.solarDateLine || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.signerTitle || 'ព្រះនាយក', { font: FONT_MOUL, sizePt: 11.5, align: 'center', spaceBefore: 40 })
+  ].join('');
+
+  const rightSigParas = [
+    wParagraph(ministryModel.lunarDateLine || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(`លេខ ${ministryModel.docNumber || '.....................................'}`, {
+      font: FONT_SIEMREAP,
+      sizePt: 11.5,
+      align: 'center'
+    })
+  ].join('');
+
+  const sigWidths = [5300, contentWidth - 5300];
+  const sigTableXml = wTable(
+    sigWidths,
+    [
+      `<w:tr><w:trPr><w:cantSplit/></w:trPr>${wCell(leftSigParas, {
+        widthDxa: sigWidths[0],
+        vAlign: 'top',
+        marginsDxa: ZERO_MARGINS
+      })}${wCell(rightSigParas, { widthDxa: sigWidths[1], vAlign: 'top', marginsDxa: ZERO_MARGINS })}</w:tr>`
+    ],
+    { bordered: false }
+  );
+
+  const bodyXml = [
+    headerTableXml,
+    wParagraph(ministryModel.summaryReportTitle, {
+      font: FONT_MOUL,
+      sizePt: 13,
+      align: 'center',
+      spaceBefore: 100,
+      spaceAfter: 140
+    }),
+    wTable(colWidths, [headerRowXml, ...bodyRowsXml], { bordered: true }),
+    wParagraph('', { sizePt: 8, spaceAfter: 80 }),
+    sigTableXml
+  ].join('');
+
+  downloadDocxDocument(bodyXml, `របាយការណ៍_${ministryModel.shortSummaryFileNameTag}.docx`, null, {
+    tacteingOdttf,
+    pageSize: { w: 12240, h: 15840 },
+    pageMargins
+  });
+}
+
+/**
+ * Export Ministry Full Multi-Page Report (របាយការណ៍ប្រចាំឆ្នាំ — A4 Portrait) to Word (.docx)
+ */
+export async function exportMinistryReportToWord(ministryModel) {
+  if (!ministryModel) return;
+  const tacteingOdttf = await loadTacteingOdttfBytes();
+
+  const pageMargins = { top: 567, right: 850, bottom: 720, left: 850, header: 567, footer: 284 };
+  const contentWidth = 11906 - pageMargins.left - pageMargins.right; // 10206 dxa
+  const SZ = 11.5;
+
+  const hCell = (text, widthDxa, extra = {}) =>
+    wCell(wParagraph(text, { font: FONT_MOUL, sizePt: 10.5, align: 'center', spaceBefore: 24, spaceAfter: 24 }), {
+      widthDxa,
+      ...extra
+    });
+
+  const dCell = (text, widthDxa, align = 'center', extra = {}) =>
+    wCell(
+      wParagraph(text || '', {
+        font: extra.moul ? FONT_MOUL : FONT_SIEMREAP,
+        sizePt: extra.sizePt || 10.5,
+        bold: Boolean(extra.bold),
+        align,
+        spaceBefore: 20,
+        spaceAfter: 20
+      }),
+      { widthDxa, gridSpan: extra.gridSpan || 1, vMerge: extra.vMerge || '' }
+    );
+
+  // Build Hourly Semester Table XML (ច & ច.១)
+  const buildHourlySemTableXml = (tblData) => {
+    const cols = fitColumns([700, 1800, 1950, 1950, 1400, 1550, 856], contentWidth);
+    const hdrRow = `<w:tr>${['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួនម៉ោង', 'សមតុល្យ', 'ផ្សេងៗ']
+      .map((h, i) => hCell(h, cols[i]))
+      .join('')}</w:tr>`;
+    const dataRows = (tblData?.rows || []).map(
+      r =>
+        `<w:tr>${dCell(r.no, cols[0])}${dCell(r.label, cols[1])}${dCell(r.incomeText, cols[2])}${dCell(
+          r.expenseText,
+          cols[3]
+        )}${dCell(r.hoursText, cols[4])}${dCell(r.balanceText, cols[5])}${dCell(r.note || '', cols[6])}</w:tr>`
+    );
+    const totalRow = `<w:tr>
+      ${dCell('សមតុល្យសាច់ប្រាក់ចំណូល និងចំណាយនៅសល់', cols[0] + cols[1], 'center', { gridSpan: 2, moul: true, sizePt: 10 })}
+      ${dCell(tblData?.sumIncomeText, cols[2], 'center', { bold: true })}
+      ${dCell(tblData?.sumExpenseText, cols[3], 'center', { bold: true })}
+      ${dCell(tblData?.sumHoursText, cols[4], 'center', { bold: true })}
+      ${dCell(tblData?.totalBalanceText, cols[5], 'center', { bold: true })}
+      ${dCell('', cols[6])}
+    </w:tr>`;
+    return wTable(cols, [hdrRow, ...dataRows, totalRow], { bordered: true });
+  };
+
+  // Build Hourly Annual Table XML (ច.២)
+  const buildHourlyAnnualTableXml = (tblData) => {
+    const cols = fitColumns([800, 2200, 2000, 2000, 1500, 1706], contentWidth);
+    const hdrRow = `<w:tr>${['ល.រ', 'បរិយាយ', 'ចំណូល', 'ចំណាយ', 'ចំនួនម៉ោង', 'សមតុល្យ']
+      .map((h, i) => hCell(h, cols[i]))
+      .join('')}</w:tr>`;
+    const dataRows = (tblData?.rows || []).map(
+      r =>
+        `<w:tr>${dCell(r.no, cols[0])}${dCell(r.label, cols[1])}${dCell(r.incomeText, cols[2])}${dCell(
+          r.expenseText,
+          cols[3]
+        )}${dCell(r.hoursText, cols[4])}${dCell(r.balanceText, cols[5])}</w:tr>`
+    );
+    const totalRow = `<w:tr>
+      ${dCell('សមតុល្យសាច់ប្រាក់ចំណូល និងចំណាយនៅសល់', cols[0] + cols[1], 'center', { gridSpan: 2, moul: true, sizePt: 10 })}
+      ${dCell(tblData?.sumIncomeText, cols[2], 'center', { bold: true })}
+      ${dCell(tblData?.sumExpenseText, cols[3], 'center', { bold: true })}
+      ${dCell(tblData?.sumHoursText, cols[4], 'center', { bold: true })}
+      ${dCell(tblData?.totalBalanceText, cols[5], 'center', { bold: true })}
+    </w:tr>`;
+    return wTable(cols, [hdrRow, ...dataRows, totalRow], { bordered: true });
+  };
+
+  // Build Office Supplies Semester Tables XML (ច.៣ & ច.៤)
+  const buildOfficeSemTablesXml = (semData) => {
+    const expCols = fitColumns([700, 3500, 1300, 1700, 1100, 950, 956], contentWidth);
+    const expBanner = `<w:tr>${hCell('តារាងចំណាយ', contentWidth, { gridSpan: 7 })}</w:tr>`;
+    const expHdr = `<w:tr>${['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'សមតុល្យ', 'ផ្សេងៗ']
+      .map((h, i) => hCell(h, expCols[i]))
+      .join('')}</w:tr>`;
+    const expRows =
+      (semData?.expenseRows || []).length === 0
+        ? [`<w:tr>${dCell('គ្មាន', contentWidth, 'center', { gridSpan: 7 })}</w:tr>`]
+        : semData.expenseRows.map(
+            r =>
+              `<w:tr>${dCell(r.no, expCols[0])}${dCell(r.desc, expCols[1], 'left')}${dCell(
+                r.source,
+                expCols[2]
+              )}${dCell(r.amountText, expCols[3])}${dCell(r.qty, expCols[4])}${dCell(
+                r.balance,
+                expCols[5]
+              )}${dCell(r.note, expCols[6])}</w:tr>`
+          );
+    const expTotal = `<w:tr>
+      ${dCell('ចំណាយសរុប', expCols[0] + expCols[1] + expCols[2], 'center', { gridSpan: 3, moul: true })}
+      ${dCell(semData?.totalExpenseText, expCols[3], 'center', { bold: true })}
+      ${dCell('', expCols[4] + expCols[5] + expCols[6], 'center', { gridSpan: 3 })}
+    </w:tr>`;
+
+    const incCols = fitColumns([800, 4100, 1850, 1450, 2006], contentWidth);
+    const incBanner = `<w:tr>${hCell('តារាងចំណូល', contentWidth, { gridSpan: 5 })}</w:tr>`;
+    const incHdr1 = `<w:tr>
+      ${hCell('ល.រ', incCols[0], { vMerge: 'restart' })}
+      ${hCell('បរិយាយ', incCols[1], { vMerge: 'restart' })}
+      ${hCell('ថវិកា', incCols[2] + incCols[3], { gridSpan: 2 })}
+      ${hCell('សេចក្ដីផ្សេងៗ', incCols[4], { vMerge: 'restart' })}
+    </w:tr>`;
+    const incHdr2 = `<w:tr>
+      ${hCell('', incCols[0], { vMerge: 'continue' })}
+      ${hCell('', incCols[1], { vMerge: 'continue' })}
+      ${hCell('រៀល', incCols[2])}
+      ${hCell('ដុល្លារ', incCols[3])}
+      ${hCell('', incCols[4], { vMerge: 'continue' })}
+    </w:tr>`;
+    const incRows =
+      (semData?.incomeRows || []).length === 0
+        ? [`<w:tr>${dCell('គ្មាន', contentWidth, 'center', { gridSpan: 5 })}</w:tr>`]
+        : semData.incomeRows.map(
+            r =>
+              `<w:tr>${dCell(r.no, incCols[0])}${dCell(r.desc, incCols[1], 'left')}${dCell(
+                r.khrText,
+                incCols[2]
+              )}${dCell(r.usdText, incCols[3])}${dCell(r.note, incCols[4])}</w:tr>`
+          );
+    const incTotal = `<w:tr>
+      ${dCell('សរុបចំណូល', incCols[0] + incCols[1], 'center', { gridSpan: 2, moul: true })}
+      ${dCell(semData?.totalIncomeKHRText, incCols[2], 'center', { bold: true })}
+      ${dCell(semData?.totalIncomeUSDText, incCols[3], 'center', { bold: true })}
+      ${dCell(semData?.inKindSummary || '', incCols[4], 'center')}
+    </w:tr>`;
+
+    return [
+      wTable(expCols, [expBanner, expHdr, ...expRows, expTotal], { bordered: true }),
+      wTable(incCols, [incBanner, incHdr1, incHdr2, ...incRows, incTotal], { bordered: true })
+    ].join('');
+  };
+
+  // ច.៥ Office Annual Table
+  const officeAnnCols = fitColumns([800, 2400, 2300, 2300, 2406], contentWidth);
+  const officeAnnXml = wTable(
+    officeAnnCols,
+    [
+      `<w:tr>${['ល.រ', 'បរិយាយ', 'ចំណូល', 'ចំណាយ', 'ផ្សេងៗ'].map((h, i) => hCell(h, officeAnnCols[i])).join('')}</w:tr>`,
+      ...(ministryModel.officeAnnual?.rows || []).map(
+        r =>
+          `<w:tr>${dCell(r.no, officeAnnCols[0])}${dCell(r.label, officeAnnCols[1])}${dCell(
+            r.incomeText,
+            officeAnnCols[2]
+          )}${dCell(r.expenseText, officeAnnCols[3])}${dCell(r.note || '', officeAnnCols[4])}</w:tr>`
+      ),
+      `<w:tr>
+        ${dCell('សរុបទាំងពីរឆមាស', officeAnnCols[0] + officeAnnCols[1], 'center', { gridSpan: 2, moul: true })}
+        ${dCell(ministryModel.officeAnnual?.totalIncomeText, officeAnnCols[2], 'center', { bold: true })}
+        ${dCell(ministryModel.officeAnnual?.totalExpenseText, officeAnnCols[3], 'center', { bold: true })}
+        ${dCell(ministryModel.officeAnnual?.inKindSummary || '', officeAnnCols[4], 'center')}
+      </w:tr>`
+    ],
+    { bordered: true }
+  );
+
+  // Award Ceremony Table
+  const awardCols = fitColumns([800, 4800, 2500, 2106], contentWidth);
+  const awardXml = wTable(
+    awardCols,
+    [
+      `<w:tr>${dCell('១', awardCols[0])}${dCell('ចំណូលពីការចែកបណ្ណសរសើរ', awardCols[1], 'left')}${dCell(
+        ministryModel.awardCeremonyTable?.income1Text,
+        awardCols[2]
+      )}${dCell('', awardCols[3])}</w:tr>`,
+      `<w:tr>${dCell('២', awardCols[0])}${dCell('ចំណូលពីវត្ត', awardCols[1], 'left')}${dCell(
+        ministryModel.awardCeremonyTable?.income2Text,
+        awardCols[2]
+      )}${dCell('', awardCols[3])}</w:tr>`,
+      `<w:tr>${dCell('ចំណូលសរុបក្នុងកម្មវិធីចែកបណ្ណសរសើរ', awardCols[0] + awardCols[1], 'center', {
+        gridSpan: 2,
+        moul: true
+      })}${dCell(ministryModel.awardCeremonyTable?.totalIncomeText, awardCols[2], 'center', { bold: true })}${dCell(
+        '',
+        awardCols[3]
+      )}</w:tr>`,
+      `<w:tr>${dCell('ចំណាយសរុបក្នុងកម្មវិធីចែកបណ្ណសរសើរ', awardCols[0] + awardCols[1], 'center', {
+        gridSpan: 2,
+        moul: true
+      })}${dCell(ministryModel.awardCeremonyTable?.totalExpenseText, awardCols[2], 'center', { bold: true })}${dCell(
+        '',
+        awardCols[3]
+      )}</w:tr>`
+    ],
+    { bordered: true }
+  );
+
+  // Grand Annual Table
+  const grandCols = fitColumns([800, 3600, 2200, 1500, 2106], contentWidth);
+  const grandXml = wTable(
+    grandCols,
+    [
+      `<w:tr>
+        ${hCell('ល.រ', grandCols[0], { vMerge: 'restart' })}
+        ${hCell('បរិយាយ', grandCols[1], { vMerge: 'restart' })}
+        ${hCell('ថវិកា', grandCols[2] + grandCols[3], { gridSpan: 2 })}
+        ${hCell('ផ្សេងៗ', grandCols[4], { vMerge: 'restart' })}
+      </w:tr>`,
+      `<w:tr>
+        ${hCell('', grandCols[0], { vMerge: 'continue' })}
+        ${hCell('', grandCols[1], { vMerge: 'continue' })}
+        ${hCell('រៀល', grandCols[2])}
+        ${hCell('ដុល្លារ', grandCols[3])}
+        ${hCell('', grandCols[4], { vMerge: 'continue' })}
+      </w:tr>`,
+      `<w:tr>${dCell('១', grandCols[0])}${dCell('ចំណូលរួមប្រចាំឆ្នាំ', grandCols[1], 'left')}${dCell(
+        ministryModel.grandAnnualTable?.incomeKHRText,
+        grandCols[2],
+        'center',
+        { bold: true }
+      )}${dCell(ministryModel.grandAnnualTable?.incomeUSDText, grandCols[3], 'center', { bold: true })}${dCell(
+        '',
+        grandCols[4]
+      )}</w:tr>`,
+      `<w:tr>${dCell('២', grandCols[0])}${dCell('ចំណាយរួមប្រចាំឆ្នាំ', grandCols[1], 'left')}${dCell(
+        ministryModel.grandAnnualTable?.expenseKHRText,
+        grandCols[2],
+        'center',
+        { bold: true }
+      )}${dCell(ministryModel.grandAnnualTable?.expenseUSDText, grandCols[3], 'center', { bold: true })}${dCell(
+        '',
+        grandCols[4]
+      )}</w:tr>`,
+      `<w:tr>${dCell('សមតុល្យ', grandCols[0] + grandCols[1], 'center', { gridSpan: 2, moul: true })}${dCell(
+        ministryModel.grandAnnualTable?.balanceKHRText,
+        grandCols[2],
+        'center',
+        { moul: true }
+      )}${dCell(ministryModel.grandAnnualTable?.balanceUSDText, grandCols[3], 'center', { moul: true })}${dCell(
+        ministryModel.grandAnnualTable?.balanceNote,
+        grandCols[4],
+        'center'
+      )}</w:tr>`
+    ],
+    { bordered: true }
+  );
+
+  const secHead = (txt) => wParagraph(txt, { font: FONT_MOUL, sizePt: SZ, align: 'left', spaceBefore: 80, spaceAfter: 30 });
+  const subHead = (txt) =>
+    wParagraph(txt, { font: FONT_MOUL, sizePt: 11, align: 'left', indentLeft: 280, spaceBefore: 40, spaceAfter: 20 });
+  const bulletPara = (txt) =>
+    wParagraph(`-${txt}`, { font: FONT_SIEMREAP, sizePt: SZ, align: 'left', indentLeft: 360, spaceAfter: 16 });
+
+  const leftSchoolTableXml = wTable(
+    [5500, contentWidth - 5500],
+    [
+      `<w:tr>${wCell(
+        [
+          wParagraph('មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
+          wParagraph('ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
+          wParagraph('ក្រុងកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, align: 'center' })
+        ].join(''),
+        { widthDxa: 5500, vAlign: 'top', marginsDxa: ZERO_MARGINS }
+      )}${wCell(wParagraph('', { sizePt: 10 }), {
+        widthDxa: contentWidth - 5500,
+        vAlign: 'top',
+        marginsDxa: ZERO_MARGINS
+      })}</w:tr>`
+    ],
+    { bordered: false }
+  );
+
+  const sigRightParas = [
+    wParagraph(ministryModel.lunarDateLine || '', { font: FONT_SIEMREAP, sizePt: SZ, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.solarDateLine || '', { font: FONT_SIEMREAP, sizePt: SZ, align: 'center', keepNext: true }),
+    wMultiRunParagraph(
+      [
+        { text: `លេខ ${ministryModel.docNumber || '.....................................'} `, font: FONT_SIEMREAP, sizePt: SZ },
+        { text: ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍', font: FONT_MOUL, sizePt: SZ }
+      ],
+      { align: 'center' }
+    )
+  ].join('');
+
+  const sigLeftParas = [
+    wParagraph('', { sizePt: 10 }),
+    wParagraph('', { sizePt: 10 }),
+    wParagraph('បានឃើញ និងឯកភាព', { font: FONT_MOUL, sizePt: SZ, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.signerTitle || 'ព្រះនាយក', { font: FONT_MOUL, sizePt: SZ, align: 'center', spaceBefore: 40 })
+  ].join('');
+
+  const sigTableXml = wTable(
+    [4800, contentWidth - 4800],
+    [
+      `<w:tr><w:trPr><w:cantSplit/></w:trPr>${wCell(sigLeftParas, {
+        widthDxa: 4800,
+        vAlign: 'top',
+        marginsDxa: ZERO_MARGINS
+      })}${wCell(sigRightParas, { widthDxa: contentWidth - 4800, vAlign: 'top', marginsDxa: ZERO_MARGINS })}</w:tr>`
+    ],
+    { bordered: false }
+  );
+
+  const bodyParts = [
+    wParagraph('ព្រះរាជាណាចក្រកម្ពុជា', { font: FONT_MOUL, sizePt: 13, align: 'center' }),
+    wParagraph('ជាតិ សាសនា ព្រះមហាក្សត្រ', { font: FONT_MOUL, sizePt: 12, align: 'center' }),
+    wTacteingDividerParagraph({ color: '000000', sizePt: 26 }),
+    leftSchoolTableXml,
+    wParagraph('របាយការណ៍', { font: FONT_MOUL, sizePt: 12.5, align: 'center', spaceBefore: 60 }),
+    wParagraph('ស្តីពី', { font: FONT_MOUL, sizePt: 12, align: 'center' }),
+    wParagraph(ministryModel.fullReportTitle, { font: FONT_MOUL, sizePt: 12.5, align: 'center', spaceAfter: 80 }),
+
+    // ក.ព័ត៌មានទូទៅ
+    secHead('ក.ព័ត៌មានទូទៅ'),
+    ...(ministryModel.generalInfoLines || []).map(row =>
+      row.value
+        ? wMultiRunParagraph(
+            [
+              { text: `-${row.label}`, font: FONT_SIEMREAP, sizePt: SZ },
+              { tab: true },
+              { text: row.value, font: FONT_SIEMREAP, sizePt: SZ }
+            ],
+            { align: 'left', indentLeft: 280, tabStops: [6200] }
+          )
+        : bulletPara(row.label)
+    ),
+
+    // ខ
+    secHead('ខ.អំពីសកម្មភាពនៅក្នុងសាលា៖ (គ្រូ និង សមណសិស្ស សិស្ស)'),
+    subHead('ខ.១. សកម្មភាពរបស់គ្រូ'),
+    ...(ministryModel.teacherActivities || []).map(bulletPara),
+    subHead('ខ.២. សកម្មភាពសមណសិស្ស សិស្ស'),
+    ...(ministryModel.studentActivities || []).map(bulletPara),
+
+    // គ
+    secHead('គ.អំពីសកម្មភាពនៅក្រៅសាលា (គ្រូ និង សមណសិស្ស សិស្ស)'),
+    ...(ministryModel.outsideActivities || []).map(bulletPara),
+
+    // ឃ
+    secHead('ឃ.អំពីការទទួលខុសត្រូវរបស់ព្រះគ្រូចៅអធិការ ឬអាណាព្យាបាល៖'),
+    subHead('ឃ.១. ការទទួលខុសត្រូវរបស់ព្រះគ្រូចៅអធិការ'),
+    ...(ministryModel.abbotResponsibilities || []).map(bulletPara),
+
+    // ង
+    secHead('ង.អំពីសកម្មភាពគណៈគ្រប់គ្រង (ទាំងក្នុង និងក្រៅសាលា)'),
+    ...(ministryModel.managementActivities || []).map(bulletPara),
+    subHead('ង.១. ពុទ្ធិកបណ្ណាល័យ'),
+    ...(ministryModel.libraryLines || []).map(bulletPara),
+    subHead('ង.២. ការទទួលជំនួយពីសប្បុរសជន'),
+    ...(ministryModel.donationLines || []).map(bulletPara),
+
+    // ច, ច.១, ច.២, ច.៣, ច.៤, ច.៥, បណ្ណសរសើរ, សរុបរួម
+    secHead('ច. ចំណូល-ចំណាយ ប្រាក់ម៉ោង ប្រចាំឆមាសទី១'),
+    buildHourlySemTableXml(ministryModel.hourlySem1),
+    secHead('ច.១ ចំណូល-ចំណាយ ប្រាក់ម៉ោង ប្រចាំឆមាសទី២'),
+    buildHourlySemTableXml(ministryModel.hourlySem2),
+    secHead(`ច.២ ចំណូលចំណាយប្រាក់ម៉ោងប្រចាំឆ្នាំ ${ministryModel.yearKhmer}`),
+    buildHourlyAnnualTableXml(ministryModel.hourlyAnnual),
+    secHead(`ច.៣ ចំណាយ ចំណូល លើសម្ភារៈការិយាល័យ ប្រចាំឆមាសទី១ ឆ្នាំ${ministryModel.yearKhmer}`),
+    buildOfficeSemTablesXml(ministryModel.officeSem1),
+    secHead(`ច.៤ ចំណាយ ចំណូល លើសម្ភារៈការិយាល័យ ប្រចាំឆមាសទី២ ឆ្នាំ${ministryModel.yearKhmer}`),
+    buildOfficeSemTablesXml(ministryModel.officeSem2),
+    secHead(`ច.៥ ចំណូល ចំណាយ លើសម្ភារៈការិយាល័យ ប្រចាំឆ្នាំ ${ministryModel.yearKhmer}`),
+    officeAnnXml,
+    secHead('ចំណូល ចំណាយ កម្មវិធីចែកបណ្ណសរសើរ'),
+    awardXml,
+    secHead(`ចំណូល ចំណាយ សរុបរួមប្រចាំឆ្នាំ${ministryModel.yearKhmer}`),
+    grandXml,
+
+    // ឆ, ជ, ឈ, ញ, ដ
+    secHead('ឆ.អំពីសកម្មភាពគ្រូបង្រៀន (ជាមួយសមណសិស្ស សិស្ស ក្នុង និងក្រៅសាលា)'),
+    ...(ministryModel.teacherRelations || []).map(bulletPara),
+    secHead('ជ.បញ្ហាប្រឈម'),
+    ...(ministryModel.challenges || []).map(bulletPara),
+    secHead('ឈ. ដំណោះស្រាយ'),
+    ...(ministryModel.solutions || []).map(bulletPara),
+    secHead('ញ.សេចក្ដីសន្និដ្ឋាន'),
+    ...(ministryModel.conclusionParas || []).map(p =>
+      wParagraph(p, { font: FONT_SIEMREAP, sizePt: SZ, align: 'left', firstLine: 720, spaceAfter: 40 })
+    ),
+    secHead('ដ.សំណូមពរ'),
+    ...(ministryModel.requests || []).map(bulletPara),
+    wParagraph('', { sizePt: 8, spaceAfter: 60 }),
+    sigTableXml,
+    wParagraph('', { sizePt: 8, spaceAfter: 80 }),
+    wParagraph('ចម្លងប្រគេនជូន', { font: FONT_MOUL, sizePt: 11, align: 'left' }),
+    ...(ministryModel.ccList || []).map(cc =>
+      wParagraph(`-${cc}`, { font: FONT_SIEMREAP, sizePt: 11, align: 'left' })
+    )
+  ];
+
+  downloadDocxDocument(bodyParts.join(''), `របាយការណ៍_${ministryModel.shortFullFileNameTag}.docx`, null, {
+    tacteingOdttf,
+    pageSize: { w: 11906, h: 16838 },
+    pageMargins,
+    footerXml: ADMIN_PAGE_NUMBER_FOOTER_XML
+  });
 }

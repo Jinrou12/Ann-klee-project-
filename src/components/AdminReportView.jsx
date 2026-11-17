@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   FileText,
   FileSpreadsheet,
@@ -14,6 +14,8 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import OfficialAdminReportDocument from './OfficialAdminReportDocument';
+import OfficialMinistryReportDocument from './OfficialMinistryReportDocument';
+import OfficialMinistrySummaryDocument from './OfficialMinistrySummaryDocument';
 import A4SheetScaler from './A4SheetScaler';
 import {
   buildAdminReportDisplayModel,
@@ -21,9 +23,22 @@ import {
   importAdminReportFile,
   syncMonthlyDropoutChallengeLine
 } from '../utils/adminReportBuilder';
+import {
+  buildMinistryReportModel,
+  MINISTRY_SEM1_MONTHS,
+  MINISTRY_SEM2_MONTHS
+} from '../utils/ministryReportBuilder';
 import { exportElementToPdf } from '../utils/pdfExporter';
-import { exportAdminReportToWord } from '../utils/wordExporter';
-import { exportAdminReportToExcel } from '../utils/excelExporter';
+import {
+  exportAdminReportToWord,
+  exportMinistryReportToWord,
+  exportMinistrySummaryToWord
+} from '../utils/wordExporter';
+import {
+  exportAdminReportToExcel,
+  exportMinistryReportToExcel,
+  exportMinistrySummaryToExcel
+} from '../utils/excelExporter';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 
 export default function AdminReportView({
@@ -31,6 +46,7 @@ export default function AdminReportView({
   activeYear = '2026',
   adminReports = {},
   studentMaster = [],
+  allFinance = {},
   metadata = {},
   useKhmerNumerals = true,
   isMobile = false,
@@ -43,12 +59,21 @@ export default function AdminReportView({
   onResetSynthesizedReport
 }) {
   const [periodType, setPeriodType] = useState('month'); // 'month' | 'sem1' | 'sem2' | 'year'
+  const [annualTemplate, setAnnualTemplate] = useState('anukon'); // 'anukon' | 'ministry'
+  const [ministryDocType, setMinistryDocType] = useState('full'); // 'full' | 'summary'
+  const isMinistryActive = periodType === 'year' && annualTemplate === 'ministry';
   const canEdit = periodType === 'month' ? canEditMonth : (canEditSummary ?? canEditMonth);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(null);
+  const [ministryEditDraft, setMinistryEditDraft] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Close inline editor automatically whenever user switches month or year in top bar
+  useEffect(() => {
+    setIsEditing(false);
+  }, [currentMonthKey, activeYear]);
 
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
 
@@ -65,8 +90,21 @@ export default function AdminReportView({
     [periodType, currentMonthKey, activeYear, adminReports, studentMaster, useKhmerNumerals]
   );
 
-  const hasCustomMultiMonthOverride =
-    periodType !== 'month' && Boolean(adminReports && adminReports[displayModel.storageKey]);
+  const ministryModel = useMemo(
+    () =>
+      buildMinistryReportModel({
+        year: activeYear,
+        adminReports,
+        studentMaster,
+        allFinance,
+        useKhmerNumerals
+      }),
+    [activeYear, adminReports, studentMaster, allFinance, useKhmerNumerals]
+  );
+
+  const hasCustomMultiMonthOverride = isMinistryActive
+    ? Boolean(adminReports && adminReports[ministryModel.storageKey])
+    : periodType !== 'month' && Boolean(adminReports && adminReports[displayModel.storageKey]);
 
   const formatLinesWithBullet = (items = [], bullet = '❖') =>
     (items || [])
@@ -76,13 +114,70 @@ export default function AdminReportView({
       .join('\n');
 
   const handleOpenEditor = () => {
+    if (isMinistryActive) {
+      const st = ministryModel.stats || {};
+      const hourlyMap = {};
+      [...MINISTRY_SEM1_MONTHS, ...MINISTRY_SEM2_MONTHS].forEach(m => {
+        const raw = st.hourlyIncomeByMonth?.[m.num];
+        hourlyMap[m.num] = raw !== undefined && raw !== null ? String(raw) : '';
+      });
+      setMinistryEditDraft({
+        docNumber: ministryModel.docNumber || '.....................................',
+        lunarDateLine: ministryModel.lunarDateLine || '',
+        solarDateLine: ministryModel.solarDateLine || '',
+        signerTitle: ministryModel.signerTitle || 'ព្រះនាយក',
+        reporterTitle: ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍',
+        appliedStudents: st.appliedStudents ?? 101,
+        permanentStudents: st.permanentStudents ?? 101,
+        oldStudents: st.oldStudents ?? 66,
+        newStudents: st.newStudents ?? 35,
+        dropoutStudents: st.dropoutStudents ?? 20,
+        remainingStudents: st.remainingStudents ?? 81,
+        remainingGrade3: st.remainingGrade3 ?? 21,
+        offCampusStudents: st.offCampusStudents ?? 8,
+        teacherTotal: st.teacherTotal ?? 10,
+        teacherFramework: st.teacherFramework ?? 2,
+        teacherContract: st.teacherContract ?? 2,
+        teacherHourly: st.teacherHourly ?? 6,
+        paliExamTotal: st.paliExamTotal ?? 21,
+        paliExamPassed: st.paliExamPassed ?? 21,
+        paliExamFailed: st.paliExamFailed ?? 0,
+        dhammaExamTotal: st.dhammaExamTotal ?? 66,
+        dhammaExamTri: st.dhammaExamTri ?? 15,
+        dhammaExamTo: st.dhammaExamTo ?? 30,
+        dhammaExamEk: st.dhammaExamEk ?? 21,
+        dhammaExamNote: st.dhammaExamNote ?? 'មិនទាន់ប្រឡង',
+        computerCountText: st.computerCountText ?? '១០គ្រឿង',
+        computerNoteText: st.computerNoteText ?? 'ប្រើប្រាស់បាន៨គ្រឿងខូច២គ្រឿង',
+        awardCeremonyIncome1: st.awardCeremonyIncome1 ?? 0,
+        awardCeremonyIncome2: st.awardCeremonyIncome2 ?? 0,
+        awardCeremonyExpense: st.awardCeremonyExpense ?? 0,
+        hourlyIncomeByMonth: hourlyMap,
+        teacherActivitiesText: formatLinesWithBullet(ministryModel.teacherActivities, '-'),
+        studentActivitiesText: formatLinesWithBullet(ministryModel.studentActivities, '-'),
+        outsideActivitiesText: formatLinesWithBullet(ministryModel.outsideActivities, '-'),
+        abbotResponsibilitiesText: formatLinesWithBullet(ministryModel.abbotResponsibilities, '-'),
+        managementActivitiesText: formatLinesWithBullet(ministryModel.managementActivities, '-'),
+        libraryLinesText: formatLinesWithBullet(ministryModel.libraryLines, '-'),
+        donationLinesText: formatLinesWithBullet(ministryModel.donationLines, '-'),
+        teacherRelationsText: formatLinesWithBullet(ministryModel.teacherRelations, '-'),
+        challengesText: formatLinesWithBullet(ministryModel.challenges, '-'),
+        solutionsText: formatLinesWithBullet(ministryModel.solutions, '-'),
+        conclusionParasText: (ministryModel.conclusionParas || []).join('\n\n'),
+        requestsText: formatLinesWithBullet(ministryModel.requests, '-'),
+        ccListText: formatLinesWithBullet(ministryModel.ccList, '-')
+      });
+      setIsEditing(true);
+      return;
+    }
+
     const raw = displayModel.rawReport || {};
     const st = displayModel.studentStats || {};
     const ad = displayModel.adminDocs || {};
     setEditDraft({
       docNumber: displayModel.docNumber || '......................',
       recipientTitle: displayModel.recipientTitle || '',
-      customSubjectText: raw.customSubjectText || displayModel.subjectText || '',
+      customSubjectText: raw.customSubjectText || '',
       totalStudents: st.totalStudents ?? 81,
       gradeKindergarten: st.gradeKindergarten ?? 15,
       grade1: st.grade1 ?? 15,
@@ -158,6 +253,63 @@ export default function AdminReportView({
     const nextVal = val.slice(0, start) + insertStr + val.slice(end);
     const nextCursor = start + insertStr.length;
     setEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
+
+  const handleMinistryBulletFocus = (fieldKey, bullet = '-') => {
+    setMinistryEditDraft(prev => {
+      if (!prev) return prev;
+      const currentVal = String(prev[fieldKey] ?? '');
+      if (!currentVal.trim()) {
+        return { ...prev, [fieldKey]: `${bullet} ` };
+      }
+      return prev;
+    });
+  };
+
+  const handleMinistryBulletChange = (e, fieldKey, bullet = '-') => {
+    let nextVal = e.target.value;
+    const prevVal = String(ministryEditDraft?.[fieldKey] ?? '');
+    if (prevVal === '' && nextVal.length > 0 && !/^[-•❖▪◦]/.test(nextVal.trim())) {
+      nextVal = `${bullet} ${nextVal}`;
+    }
+    setMinistryEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
+  };
+
+  const handleMinistryBulletKeyDown = (e, fieldKey, bullet = '-') => {
+    if (e.key !== 'Enter' || e.nativeEvent?.isComposing) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? start;
+    const val = String(ministryEditDraft?.[fieldKey] ?? '');
+
+    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+    const lineEndIdx = val.indexOf('\n', end);
+    const lineEnd = lineEndIdx === -1 ? val.length : lineEndIdx;
+    const currentLine = val.slice(lineStart, lineEnd);
+
+    const strippedCurrentLine = currentLine.replace(/^[-•❖▪◦\s]+/, '').trim();
+    if (!strippedCurrentLine && currentLine.trim().length > 0) {
+      const beforeLine = val.slice(0, lineStart);
+      const afterLine = val.slice(lineEnd);
+      const nextVal = beforeLine + afterLine.replace(/^\n/, '');
+      const nextCursor = beforeLine.length;
+      setMinistryEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(nextCursor, nextCursor);
+      });
+      return;
+    }
+
+    const insertStr = `\n${bullet} `;
+    const nextVal = val.slice(0, start) + insertStr + val.slice(end);
+    const nextCursor = start + insertStr.length;
+    setMinistryEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(nextCursor, nextCursor);
@@ -265,14 +417,103 @@ export default function AdminReportView({
     setIsEditing(false);
   };
 
+  const handleSaveMinistryEditor = (e) => {
+    e.preventDefault();
+    if (!ministryEditDraft || !onUpdateAdminReport) return;
+
+    const splitClean = (txt) =>
+      String(txt || '')
+        .split('\n')
+        .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
+        .filter(Boolean);
+
+    const cleanedHourlyMap = {};
+    Object.entries(ministryEditDraft.hourlyIncomeByMonth || {}).forEach(([mNum, val]) => {
+      const trimmed = String(val ?? '').trim();
+      if (trimmed !== '') {
+        cleanedHourlyMap[mNum] = Number(trimmed) || 0;
+      }
+    });
+
+    const updatedMinistry = {
+      ...(ministryModel.rawOverride || {}),
+      id: `admin-${ministryModel.storageKey}`,
+      year: activeYear,
+      docNumber: String(ministryEditDraft.docNumber || '').trim() || '.....................................',
+      lunarDateLine: String(ministryEditDraft.lunarDateLine || '').trim(),
+      solarDateLine: String(ministryEditDraft.solarDateLine || '').trim(),
+      signerTitle: String(ministryEditDraft.signerTitle || 'ព្រះនាយក').trim(),
+      reporterTitle: String(ministryEditDraft.reporterTitle || 'អ្នកធ្វើរបាយការណ៍').trim(),
+      appliedStudents: Number(ministryEditDraft.appliedStudents) || 0,
+      permanentStudents: Number(ministryEditDraft.permanentStudents) || 0,
+      oldStudents: Number(ministryEditDraft.oldStudents) || 0,
+      newStudents: Number(ministryEditDraft.newStudents) || 0,
+      dropoutStudents: Number(ministryEditDraft.dropoutStudents) || 0,
+      remainingStudents: Number(ministryEditDraft.remainingStudents) || 0,
+      remainingGrade3: Number(ministryEditDraft.remainingGrade3) || 0,
+      offCampusStudents: Number(ministryEditDraft.offCampusStudents) || 0,
+      teacherTotal: Number(ministryEditDraft.teacherTotal) || 0,
+      teacherFramework: Number(ministryEditDraft.teacherFramework) || 0,
+      teacherContract: Number(ministryEditDraft.teacherContract) || 0,
+      teacherHourly: Number(ministryEditDraft.teacherHourly) || 0,
+      paliExamTotal: Number(ministryEditDraft.paliExamTotal) || 0,
+      paliExamPassed: Number(ministryEditDraft.paliExamPassed) || 0,
+      paliExamFailed: Number(ministryEditDraft.paliExamFailed) || 0,
+      dhammaExamTotal: Number(ministryEditDraft.dhammaExamTotal) || 0,
+      dhammaExamTri: Number(ministryEditDraft.dhammaExamTri) || 0,
+      dhammaExamTo: Number(ministryEditDraft.dhammaExamTo) || 0,
+      dhammaExamEk: Number(ministryEditDraft.dhammaExamEk) || 0,
+      dhammaExamNote: String(ministryEditDraft.dhammaExamNote || '').trim(),
+      computerCountText: String(ministryEditDraft.computerCountText || '').trim(),
+      computerNoteText: String(ministryEditDraft.computerNoteText || '').trim(),
+      awardCeremonyIncome1: Number(ministryEditDraft.awardCeremonyIncome1) || 0,
+      awardCeremonyIncome2: Number(ministryEditDraft.awardCeremonyIncome2) || 0,
+      awardCeremonyExpense: Number(ministryEditDraft.awardCeremonyExpense) || 0,
+      hourlyIncomeByMonth: cleanedHourlyMap,
+      teacherActivities: splitClean(ministryEditDraft.teacherActivitiesText),
+      studentActivities: splitClean(ministryEditDraft.studentActivitiesText),
+      outsideActivities: splitClean(ministryEditDraft.outsideActivitiesText),
+      abbotResponsibilities: splitClean(ministryEditDraft.abbotResponsibilitiesText),
+      managementActivities: splitClean(ministryEditDraft.managementActivitiesText),
+      libraryLines: splitClean(ministryEditDraft.libraryLinesText),
+      donationLines: splitClean(ministryEditDraft.donationLinesText),
+      teacherRelations: splitClean(ministryEditDraft.teacherRelationsText),
+      challenges: splitClean(ministryEditDraft.challengesText),
+      solutions: splitClean(ministryEditDraft.solutionsText),
+      conclusionParas: String(ministryEditDraft.conclusionParasText || '')
+        .split(/\n+/)
+        .map(s => s.trim())
+        .filter(Boolean),
+      requests: splitClean(ministryEditDraft.requestsText),
+      ccList: splitClean(ministryEditDraft.ccListText)
+    };
+
+    onUpdateAdminReport(ministryModel.storageKey, updatedMinistry);
+    setIsEditing(false);
+  };
+
   const handleDownloadPdf = async () => {
     if (isExportingPdf) return;
     setIsExportingPdf(true);
     try {
-      const targetId = isMobile
-        ? '#printable-admin-report-mobile-hidden'
-        : '#printable-admin-report-document';
-      await exportElementToPdf(targetId, `របាយការណ៍_${displayModel.shortFileNameTag}.pdf`);
+      if (isMinistryActive) {
+        if (ministryDocType === 'summary') {
+          const targetId = isMobile
+            ? '#printable-ministry-summary-mobile-hidden'
+            : '#printable-ministry-summary-document';
+          await exportElementToPdf(targetId, `របាយការណ៍_${ministryModel.shortSummaryFileNameTag}.pdf`);
+        } else {
+          const targetId = isMobile
+            ? '#printable-ministry-report-mobile-hidden'
+            : '#printable-ministry-report-document';
+          await exportElementToPdf(targetId, `របាយការណ៍_${ministryModel.shortFullFileNameTag}.pdf`);
+        }
+      } else {
+        const targetId = isMobile
+          ? '#printable-admin-report-mobile-hidden'
+          : '#printable-admin-report-document';
+        await exportElementToPdf(targetId, `របាយការណ៍_${displayModel.shortFileNameTag}.pdf`);
+      }
     } catch (err) {
       alert('មានបញ្ហាក្នុងការទាញយក PDF: ' + (err?.message || err));
     } finally {
@@ -282,7 +523,15 @@ export default function AdminReportView({
 
   const handleDownloadWord = async () => {
     try {
-      await exportAdminReportToWord(displayModel, metadata);
+      if (isMinistryActive) {
+        if (ministryDocType === 'summary') {
+          await exportMinistrySummaryToWord(ministryModel);
+        } else {
+          await exportMinistryReportToWord(ministryModel);
+        }
+      } else {
+        await exportAdminReportToWord(displayModel, metadata);
+      }
     } catch (err) {
       alert('មានបញ្ហាក្នុងការទាញយក Word: ' + (err?.message || err));
     }
@@ -290,7 +539,15 @@ export default function AdminReportView({
 
   const handleDownloadExcel = async () => {
     try {
-      await exportAdminReportToExcel(displayModel, metadata);
+      if (isMinistryActive) {
+        if (ministryDocType === 'summary') {
+          await exportMinistrySummaryToExcel(ministryModel, metadata);
+        } else {
+          await exportMinistryReportToExcel(ministryModel, metadata);
+        }
+      } else {
+        await exportAdminReportToExcel(displayModel, metadata);
+      }
     } catch (err) {
       alert('មានបញ្ហាក្នុងការទាញយក Excel: ' + (err?.message || err));
     }
@@ -326,9 +583,10 @@ export default function AdminReportView({
 
   const handleResetToAutoSynthesis = () => {
     if (periodType === 'month') return;
+    const keyToReset = isMinistryActive ? ministryModel.storageKey : displayModel.storageKey;
     if (onResetSynthesizedReport) {
-      onResetSynthesizedReport(displayModel.storageKey);
-    } else if (onUpdateAdminReport) {
+      onResetSynthesizedReport(keyToReset);
+    } else if (onUpdateAdminReport && !isMinistryActive) {
       const fresh = synthesizeMultiMonthAdminReport({
         periodType,
         year: activeYear,
@@ -454,10 +712,17 @@ export default function AdminReportView({
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <CheckCircle2 size={16} color="#0284c7" style={{ flexShrink: 0 }} />
-              <span>
-                <strong>ប្រព័ន្ធសំយោគស្វ័យប្រវត្តិ ({displayModel.periodTitlePhrase})៖</strong>{' '}
-                បានរៀបចំ និងច្រោះបន្ទាត់ស្ទួនត្រង់ <strong>III.វឌ្ឍនភាព, IV.បញ្ហាប្រឈម, V.ទិសដៅ និង VI.សេចក្ដីសន្និដ្ឋាន</strong> ឱ្យត្រូវតាមបទដ្ឋានរដ្ឋបាល។
-              </span>
+              {isMinistryActive ? (
+                <span>
+                  <strong>ប្រព័ន្ធសំយោគស្វ័យប្រវត្តិ (ទម្រង់មន្ទីរ — ប្រចាំឆ្នាំសិក្សា {ministryModel.yearKhmer})៖</strong>{' '}
+                  បានរៀបចំផ្នែក <strong>ក ដល់ ដ, តារាងហិរញ្ញវត្ថុទាំង {fmtNum(7)} ផ្នែក និងតារាងសង្ខេប {fmtNum(10)} ជួរ</strong> ដោយភ្ជាប់ទិន្នន័យស្វ័យប្រវត្តិពីរបាយការណ៍ប្រចាំខែ និងផ្ទាំងចំណូល-ចំណាយ។
+                </span>
+              ) : (
+                <span>
+                  <strong>ប្រព័ន្ធសំយោគស្វ័យប្រវត្តិ ({displayModel.periodTitlePhrase})៖</strong>{' '}
+                  បានរៀបចំ និងច្រោះបន្ទាត់ស្ទួនត្រង់ <strong>III.វឌ្ឍនភាព, IV.បញ្ហាប្រឈម, V.ទិសដៅ និង VI.សេចក្ដីសន្និដ្ឋាន</strong> ឱ្យត្រូវតាមបទដ្ឋានរដ្ឋបាល។
+                </span>
+              )}
             </div>
             {hasCustomMultiMonthOverride && canEdit && (
               <button
@@ -693,7 +958,7 @@ export default function AdminReportView({
       {/* ================================================================== */}
       {/* INLINE EDITOR PANEL (When user clicks "កែប្រែអត្ថបទ")               */}
       {/* ================================================================== */}
-      {canEdit && isEditing && editDraft && (
+      {canEdit && isEditing && !isMinistryActive && editDraft && (
         <form
           onSubmit={handleSaveEditor}
           className="no-print"
@@ -976,8 +1241,308 @@ export default function AdminReportView({
       )}
 
       {/* ================================================================== */}
+      {/* MINISTRY TEMPLATE INLINE EDITOR PANEL                              */}
+      {/* ================================================================== */}
+      {canEdit && isEditing && isMinistryActive && ministryEditDraft && (
+        <form
+          onSubmit={handleSaveMinistryEditor}
+          className="no-print"
+          style={{
+            background: '#ffffff',
+            border: '2px solid #f59e0b',
+            borderRadius: 14,
+            padding: isMobile ? 14 : 20,
+            marginBottom: 18,
+            boxShadow: '0 6px 20px rgba(180, 83, 9, 0.12)'
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
+              marginBottom: 14,
+              paddingBottom: 10,
+              borderBottom: '1px solid #fde68a'
+            }}
+          >
+            <h3 className="font-moul" style={{ margin: 0, fontSize: 15, color: '#92400e' }}>
+              កែសម្រួលរបាយការណ៍ប្រចាំឆ្នាំ — ទម្រង់មន្ទីរ ({ministryModel.yearKhmer})
+            </h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="submit"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  background: '#15803d',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <Check size={15} />
+                <span>រក្សាទុក</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={15} />
+                <span>បោះបង់</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 1. Student, Teacher & Exam Statistics Grid */}
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: 13,
+              color: '#92400e',
+              marginBottom: 6
+            }}
+          >
+            ១. ស្ថិតិសិស្ស គ្រូបង្រៀន ការប្រឡង និងកុំព្យូទ័រ (សម្រាប់ទាំងទម្រង់ពេញ និងតារាងសង្ខេប ១០ ជួរ)
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
+              gap: 10,
+              marginBottom: 14,
+              background: '#f8fafc',
+              padding: 12,
+              borderRadius: 10,
+              border: '1px solid #e2e8f0'
+            }}
+          >
+            {[
+              { key: 'appliedStudents', label: 'សិស្សដាក់ពាក្យចូលរៀន', type: 'number' },
+              { key: 'permanentStudents', label: 'សិស្សសិក្សាអចិន្ត្រៃយ៍', type: 'number' },
+              { key: 'oldStudents', label: 'សិស្សចាស់ (សង្ខេប)', type: 'number' },
+              { key: 'newStudents', label: 'សិស្សថ្មី (សង្ខេប)', type: 'number' },
+              { key: 'dropoutStudents', label: 'សិស្សបោះបង់ការសិក្សា', type: 'number' },
+              { key: 'remainingStudents', label: 'សិស្សនៅសល់ចុងឆ្នាំ', type: 'number' },
+              { key: 'remainingGrade3', label: 'សិស្សនៅសល់ថ្នាក់ទី៣', type: 'number' },
+              { key: 'offCampusStudents', label: 'សិស្សស្នាក់នៅក្រៅសាលា', type: 'number' },
+              { key: 'teacherTotal', label: 'គ្រូបង្រៀនសរុប', type: 'number' },
+              { key: 'teacherFramework', label: 'គ្រូក្របខណ្ឌ', type: 'number' },
+              { key: 'teacherContract', label: 'គ្រូកិច្ចសន្យា', type: 'number' },
+              { key: 'teacherHourly', label: 'គ្រូប្រាក់ម៉ោង', type: 'number' },
+              { key: 'paliExamTotal', label: 'ប្រឡងបាលីរង (សរុប)', type: 'number' },
+              { key: 'paliExamPassed', label: 'ប្រឡងបាលីរង (ជាប់)', type: 'number' },
+              { key: 'paliExamFailed', label: 'ប្រឡងបាលីរង (ធ្លាក់)', type: 'number' },
+              { key: 'dhammaExamTotal', label: 'ប្រឡងធម្មវិន័យ (សរុប)', type: 'number' },
+              { key: 'dhammaExamTri', label: 'ធម្មវិន័យ ថ្នាក់ត្រី', type: 'number' },
+              { key: 'dhammaExamTo', label: 'ធម្មវិន័យ ថ្នាក់ទោ', type: 'number' },
+              { key: 'dhammaExamEk', label: 'ធម្មវិន័យ ថ្នាក់ឯក', type: 'number' },
+              { key: 'dhammaExamNote', label: 'សម្គាល់ប្រឡងធម្មវិន័យ', type: 'text' },
+              { key: 'computerCountText', label: 'ចំនួនកុំព្យូទ័រ (ឧ. ១០គ្រឿង)', type: 'text' },
+              { key: 'computerNoteText', label: 'សម្គាល់កុំព្យូទ័រ', type: 'text' },
+              { key: 'awardCeremonyIncome1', label: 'ចំណូលចែកបណ្ណសរសើរ (៛)', type: 'number' },
+              { key: 'awardCeremonyIncome2', label: 'ចំណូលពីវត្ត-បណ្ណសរសើរ (៛)', type: 'number' },
+              { key: 'awardCeremonyExpense', label: 'ចំណាយចែកបណ្ណសរសើរ (៛)', type: 'number' }
+            ].map(f => (
+              <div key={f.key}>
+                <label style={{ fontSize: 11.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                  {f.label}
+                </label>
+                <input
+                  type={f.type}
+                  value={ministryEditDraft[f.key] ?? ''}
+                  onChange={e => setMinistryEditDraft({ ...ministryEditDraft, [f.key]: e.target.value })}
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* 2. Monthly Hourly-Pay Income Inputs (ច, ច.១, ច.២) */}
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: 13,
+              color: '#92400e',
+              marginBottom: 6
+            }}
+          >
+            ២. ចំណូលប្រាក់ម៉ោងតាមខែ (៛) — ទុកទទេ ឬដាក់ 0 បើគ្មាន (ចំណាយ និងចំនួនម៉ោងទាញស្វ័យប្រវត្តិពីផ្ទាំងចំណូលចំណាយ)
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
+              gap: 8,
+              marginBottom: 14,
+              background: '#fffbeb',
+              padding: 12,
+              borderRadius: 10,
+              border: '1px solid #fde68a'
+            }}
+          >
+            {[...MINISTRY_SEM1_MONTHS, ...MINISTRY_SEM2_MONTHS].map(m => (
+              <div key={m.num}>
+                <label style={{ fontSize: 11.5, fontWeight: 700, color: '#78350f', display: 'block', marginBottom: 3 }}>
+                  {m.fullLabel || m.name} (៛)
+                </label>
+                <input
+                  type="number"
+                  placeholder="គ្មាន (0)"
+                  value={ministryEditDraft.hourlyIncomeByMonth?.[m.num] ?? ''}
+                  onChange={e =>
+                    setMinistryEditDraft({
+                      ...ministryEditDraft,
+                      hourlyIncomeByMonth: {
+                        ...(ministryEditDraft.hourlyIncomeByMonth || {}),
+                        [m.num]: e.target.value
+                      }
+                    })
+                  }
+                  style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #fcd34d', fontSize: 12.5 }}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* 3. Dates & Signers */}
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: 13,
+              color: '#92400e',
+              marginBottom: 6
+            }}
+          >
+            ៣. កាលបរិច្ឆេទ លេខលិខិត និងតួនាទីហត្ថលេខា
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, 1fr)',
+              gap: 10,
+              marginBottom: 14
+            }}
+          >
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                កាលបរិច្ឆេទច័ន្ទគតិ
+              </label>
+              <input
+                type="text"
+                value={ministryEditDraft.lunarDateLine}
+                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, lunarDateLine: e.target.value })}
+                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                កាលបរិច្ឆេទសុរិយគតិ
+              </label>
+              <input
+                type="text"
+                value={ministryEditDraft.solarDateLine}
+                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, solarDateLine: e.target.value })}
+                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                លេខលិខិត
+              </label>
+              <input
+                type="text"
+                value={ministryEditDraft.docNumber}
+                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, docNumber: e.target.value })}
+                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                តួនាទីអ្នកធ្វើរបាយការណ៍
+              </label>
+              <input
+                type="text"
+                value={ministryEditDraft.reporterTitle}
+                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, reporterTitle: e.target.value })}
+                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+                តួនាទីអ្នកចុះហត្ថលេខា (ព្រះនាយក)
+              </label>
+              <input
+                type="text"
+                value={ministryEditDraft.signerTitle}
+                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, signerTitle: e.target.value })}
+                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+              />
+            </div>
+          </div>
+
+          {/* 4. Narrative Textareas */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+            {[
+              { key: 'teacherActivitiesText', label: 'ខ.១. សកម្មភាពរបស់គ្រូ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
+              { key: 'studentActivitiesText', label: 'ខ.២. សកម្មភាពសមណសិស្ស សិស្ស (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
+              { key: 'outsideActivitiesText', label: 'គ. សកម្មភាពនៅក្រៅសាលា (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
+              { key: 'abbotResponsibilitiesText', label: 'ឃ.១. ការទទួលខុសត្រូវរបស់ព្រះគ្រូចៅអធិការ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
+              { key: 'managementActivitiesText', label: 'ង. សកម្មភាពគណៈគ្រប់គ្រង (រួមទាំងព្រឹត្តិការណ៍ពិសេស)', rows: 7, bullet: true },
+              { key: 'libraryLinesText', label: 'ង.១. ពុទ្ធិកបណ្ណាល័យ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
+              { key: 'donationLinesText', label: 'ង.២. ការទទួលជំនួយពីសប្បុរសជន (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 3, bullet: true },
+              { key: 'teacherRelationsText', label: 'ឆ. សកម្មភាពគ្រូបង្រៀនជាមួយសមណសិស្ស (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true },
+              { key: 'challengesText', label: 'ជ. បញ្ហាប្រឈម (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true },
+              { key: 'solutionsText', label: 'ឈ. ដំណោះស្រាយ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true },
+              { key: 'conclusionParasText', label: 'ញ. សេចក្ដីសន្និដ្ឋាន', rows: 5, bullet: false },
+              { key: 'requestsText', label: 'ដ. សំណូមពរ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true },
+              { key: 'ccListText', label: 'ចម្លងប្រគេនជូន (CC) (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true }
+            ].map(sec => (
+              <div key={sec.key}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
+                  {sec.label}
+                </label>
+                <textarea
+                  rows={sec.rows}
+                  value={ministryEditDraft[sec.key] || ''}
+                  onFocus={sec.bullet ? () => handleMinistryBulletFocus(sec.key, '-') : undefined}
+                  onChange={
+                    sec.bullet
+                      ? e => handleMinistryBulletChange(e, sec.key, '-')
+                      : e => setMinistryEditDraft({ ...ministryEditDraft, [sec.key]: e.target.value })
+                  }
+                  onKeyDown={sec.bullet ? e => handleMinistryBulletKeyDown(e, sec.key, '-') : undefined}
+                  style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5, lineHeight: 1.7 }}
+                />
+              </div>
+            ))}
+          </div>
+        </form>
+      )}
+
+      {/* ================================================================== */}
       {/* VIEW RENDERER:                                                     */}
-      {/* - PC -> Official A4 Document inside .paper-sheet-wrapper           */}
+      {/* - PC -> Official A4/Letter Document inside .paper-sheet-wrapper    */}
       {/* - Mobile with A4 Preview toggled ON -> Auto-Scaled A4SheetScaler   */}
       {/* - Mobile Card Mode -> Clean Mobile Cards                           */}
       {/* ================================================================== */}
@@ -985,31 +1550,352 @@ export default function AdminReportView({
         <div
           className="paper-sheet-wrapper"
           style={{
+            position: 'relative',
             display: 'flex',
             justifyContent: 'center',
             overflowX: 'visible'
           }}
         >
+          {/* Floating Top-Left Summary/Full Switcher (សង្ខេប / ពេញ) when Ministry Template is active on Annual Tab */}
+          {periodType === 'year' && annualTemplate === 'ministry' && (
+            <button
+              type="button"
+              className="no-print"
+              onClick={() => setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'))}
+              style={{
+                position: 'absolute',
+                top: 12,
+                left: 14,
+                zIndex: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '6px 14px',
+                borderRadius: 8,
+                fontSize: 12.5,
+                fontWeight: 700,
+                border: '1.5px solid #d97706',
+                background: ministryDocType === 'summary' ? '#b45309' : '#fffbeb',
+                color: ministryDocType === 'summary' ? '#ffffff' : '#b45309',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(180,83,9,0.18)',
+                transition: 'all 0.15s'
+              }}
+              title={ministryDocType === 'full' ? 'ប្ដូរមើលរបាយការណ៍សង្ខេប (Letter)' : 'ប្ដូរមើលរបាយការណ៍ពេញ (A4)'}
+            >
+              <FileText size={14} />
+              <span>{ministryDocType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
+            </button>
+          )}
+
+          {/* Floating Top-Right Template Switcher (មន្ទីរ / អនុគណ) on Annual Tab */}
+          {periodType === 'year' && (
+            <button
+              type="button"
+              className="no-print"
+              onClick={() => {
+                setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
+                setIsEditing(false);
+              }}
+              style={{
+                position: 'absolute',
+                top: 12,
+                right: 14,
+                zIndex: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '6px 14px',
+                borderRadius: 8,
+                fontSize: 12.5,
+                fontWeight: 700,
+                border: '1.5px solid #d97706',
+                background: annualTemplate === 'ministry' ? '#b45309' : '#fffbeb',
+                color: annualTemplate === 'ministry' ? '#ffffff' : '#b45309',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(180,83,9,0.18)',
+                transition: 'all 0.15s'
+              }}
+              title={annualTemplate === 'anukon' ? 'ប្ដូរមើលទម្រង់មន្ទីរ' : 'ប្ដូរមើលទម្រង់អនុគណ'}
+            >
+              <FileText size={14} />
+              <span>{annualTemplate === 'anukon' ? 'មន្ទីរ' : 'អនុគណ'}</span>
+            </button>
+          )}
+
           <div style={{ margin: '0 auto' }}>
-            <OfficialAdminReportDocument
-              id="printable-admin-report-document"
-              displayModel={displayModel}
-              useKhmerNumerals={useKhmerNumerals}
-            />
+            {isMinistryActive ? (
+              ministryDocType === 'summary' ? (
+                <OfficialMinistrySummaryDocument
+                  id="printable-ministry-summary-document"
+                  ministryModel={ministryModel}
+                />
+              ) : (
+                <OfficialMinistryReportDocument
+                  id="printable-ministry-report-document"
+                  ministryModel={ministryModel}
+                  useKhmerNumerals={useKhmerNumerals}
+                />
+              )
+            ) : (
+              <OfficialAdminReportDocument
+                id="printable-admin-report-document"
+                displayModel={displayModel}
+                useKhmerNumerals={useKhmerNumerals}
+              />
+            )}
           </div>
         </div>
       ) : mobilePreviewA4 ? (
-        <A4SheetScaler>
-          <OfficialAdminReportDocument
-            id="printable-admin-report-document"
-            displayModel={displayModel}
-            useKhmerNumerals={useKhmerNumerals}
-          />
-        </A4SheetScaler>
+        <div style={{ position: 'relative' }}>
+          {periodType === 'year' && (
+            <div
+              className="no-print"
+              style={{
+                display: 'flex',
+                justifyContent: annualTemplate === 'ministry' ? 'space-between' : 'flex-end',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: 8,
+                padding: '0 4px'
+              }}
+            >
+              {annualTemplate === 'ministry' && (
+                <button
+                  type="button"
+                  onClick={() => setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'))}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '5px 12px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: '1.5px solid #d97706',
+                    background: ministryDocType === 'summary' ? '#b45309' : '#fffbeb',
+                    color: ministryDocType === 'summary' ? '#ffffff' : '#b45309',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(180,83,9,0.18)'
+                  }}
+                >
+                  <FileText size={13} />
+                  <span>{ministryDocType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
+                  setIsEditing(false);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '5px 12px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  border: '1.5px solid #d97706',
+                  background: annualTemplate === 'ministry' ? '#b45309' : '#fffbeb',
+                  color: annualTemplate === 'ministry' ? '#ffffff' : '#b45309',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(180,83,9,0.18)'
+                }}
+              >
+                <FileText size={13} />
+                <span>{annualTemplate === 'anukon' ? 'មន្ទីរ' : 'អនុគណ'}</span>
+              </button>
+            </div>
+          )}
+
+          <A4SheetScaler>
+            {isMinistryActive ? (
+              ministryDocType === 'summary' ? (
+                <OfficialMinistrySummaryDocument
+                  id="printable-ministry-summary-document"
+                  ministryModel={ministryModel}
+                />
+              ) : (
+                <OfficialMinistryReportDocument
+                  id="printable-ministry-report-document"
+                  ministryModel={ministryModel}
+                  useKhmerNumerals={useKhmerNumerals}
+                />
+              )
+            ) : (
+              <OfficialAdminReportDocument
+                id="printable-admin-report-document"
+                displayModel={displayModel}
+                useKhmerNumerals={useKhmerNumerals}
+              />
+            )}
+          </A4SheetScaler>
+        </div>
       ) : (
         <>
           {/* Mobile Structured Card View */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
+            {periodType === 'year' && (
+              <div
+                className="no-print"
+                style={{
+                  display: 'flex',
+                  justifyContent: annualTemplate === 'ministry' ? 'space-between' : 'flex-end',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: -4
+                }}
+              >
+                {annualTemplate === 'ministry' && (
+                  <button
+                    type="button"
+                    onClick={() => setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'))}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      padding: '6px 14px',
+                      borderRadius: 8,
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      border: '1.5px solid #d97706',
+                      background: ministryDocType === 'summary' ? '#b45309' : '#fffbeb',
+                      color: ministryDocType === 'summary' ? '#ffffff' : '#b45309',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(180,83,9,0.18)'
+                    }}
+                  >
+                    <FileText size={14} />
+                    <span>{ministryDocType === 'full' ? 'សង្ខេប' : 'ពេញ'}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
+                    setIsEditing(false);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '6px 14px',
+                    borderRadius: 8,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    border: '1.5px solid #d97706',
+                    background: annualTemplate === 'ministry' ? '#b45309' : '#fffbeb',
+                    color: annualTemplate === 'ministry' ? '#ffffff' : '#b45309',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(180,83,9,0.18)'
+                  }}
+                >
+                  <FileText size={14} />
+                  <span>{annualTemplate === 'anukon' ? 'មន្ទីរ' : 'អនុគណ'}</span>
+                </button>
+              </div>
+            )}
+
+            {isMinistryActive ? (
+              ministryDocType === 'summary' ? (
+                <div
+                  style={{
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 14,
+                    padding: 14,
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.06)'
+                  }}
+                >
+                  <div className="font-moul" style={{ fontSize: 13.5, color: '#92400e', textAlign: 'center', marginBottom: 10 }}>
+                    {ministryModel.summaryReportTitle} (មន្ទីរធម្មការ និងសាសនា)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {(ministryModel.summaryRows || []).map((row, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          background: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 8,
+                          padding: '8px 10px',
+                          fontSize: 12.5
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                            {row.no}. {row.desc}
+                          </div>
+                          {(row.subDescLines || []).map((s, si) => (
+                            <div key={si} style={{ paddingLeft: 14, color: '#475569', fontSize: 12 }}>
+                              {s}: {(row.subCountLines || [])[si]}
+                            </div>
+                          ))}
+                          {row.note && (
+                            <div style={{ fontSize: 11.5, color: '#b45309', marginTop: 2 }}>
+                              សម្គាល់៖ {row.note}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ fontWeight: 700, color: '#15803d', whiteSpace: 'nowrap', marginLeft: 8 }}>
+                          {row.count}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      background: 'linear-gradient(135deg, #1e3a8a 0%, #0284c7 100%)',
+                      color: '#ffffff',
+                      borderRadius: 14,
+                      padding: 14
+                    }}
+                  >
+                    <div className="font-moul" style={{ fontSize: 12.5, marginBottom: 4 }}>
+                      មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម
+                    </div>
+                    <div className="font-moul" style={{ fontSize: 13.5, marginBottom: 4 }}>
+                      របាយការណ៍ ស្តីពី {ministryModel.fullReportTitle}
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                    <div className="font-moul" style={{ fontSize: 13, color: '#92400e', marginBottom: 8 }}>
+                      ក. ព័ត៌មានទូទៅ
+                    </div>
+                    {(ministryModel.generalInfoLines || []).map((r, i) => (
+                      <div key={i} style={{ fontSize: 12.5, color: '#334155', marginBottom: 4 }}>
+                        - {r.label} {r.value ? <strong>({r.value})</strong> : ''}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                    <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 8 }}>
+                      ច. សង្ខេបហិរញ្ញវត្ថុប្រចាំឆ្នាំ ({ministryModel.yearKhmer})
+                    </div>
+                    <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
+                      <div>• ចំណាយប្រាក់ម៉ោងសរុប៖ <strong>{ministryModel.hourlyAnnual?.sumExpenseText}</strong> ({ministryModel.hourlyAnnual?.sumHoursText})</div>
+                      <div>• ចំណាយសម្ភារៈការិយាល័យសរុប៖ <strong>{ministryModel.officeAnnual?.totalExpenseText}</strong></div>
+                      <div>• ចំណូលរួមប្រចាំឆ្នាំ៖ <strong style={{ color: '#15803d' }}>{ministryModel.grandAnnualTable?.incomeKHRText}</strong></div>
+                      <div>• ចំណាយរួមប្រចាំឆ្នាំ៖ <strong style={{ color: '#b91c1c' }}>{ministryModel.grandAnnualTable?.expenseKHRText}</strong></div>
+                      <div>• សមតុល្យប្រចាំឆ្នាំ៖ <strong>{ministryModel.grandAnnualTable?.balanceKHRText}</strong></div>
+                    </div>
+                  </div>
+                </>
+              )
+            ) : (
+              <>
             {/* Card 0: Subject & Header Summary */}
             <div
               style={{
@@ -1235,20 +2121,22 @@ export default function AdminReportView({
                 </div>
               </div>
             </div>
+              </>
+            )}
           </div>
         </>
       )}
 
-      {/* Off-screen Unscaled A4 Document for Mobile High-Res PDF Generation */}
+      {/* Off-screen Unscaled A4/Letter Document for Mobile High-Res PDF Generation */}
       {isMobile && (
         <div
           style={{
             position: 'fixed',
             left: '-9999px',
             top: 0,
-            width: '794px',
-            minWidth: '794px',
-            maxWidth: '794px',
+            width: isMinistryActive && ministryDocType === 'summary' ? '816px' : '794px',
+            minWidth: isMinistryActive && ministryDocType === 'summary' ? '816px' : '794px',
+            maxWidth: isMinistryActive && ministryDocType === 'summary' ? '816px' : '794px',
             zIndex: -1,
             pointerEvents: 'none',
             WebkitTextSizeAdjust: '100%',
@@ -1256,11 +2144,26 @@ export default function AdminReportView({
           }}
           aria-hidden="true"
         >
-          <OfficialAdminReportDocument
-            id="printable-admin-report-mobile-hidden"
-            displayModel={displayModel}
-            useKhmerNumerals={useKhmerNumerals}
-          />
+          {isMinistryActive ? (
+            ministryDocType === 'summary' ? (
+              <OfficialMinistrySummaryDocument
+                id="printable-ministry-summary-mobile-hidden"
+                ministryModel={ministryModel}
+              />
+            ) : (
+              <OfficialMinistryReportDocument
+                id="printable-ministry-report-mobile-hidden"
+                ministryModel={ministryModel}
+                useKhmerNumerals={useKhmerNumerals}
+              />
+            )
+          ) : (
+            <OfficialAdminReportDocument
+              id="printable-admin-report-mobile-hidden"
+              displayModel={displayModel}
+              useKhmerNumerals={useKhmerNumerals}
+            />
+          )}
         </div>
       )}
     </div>

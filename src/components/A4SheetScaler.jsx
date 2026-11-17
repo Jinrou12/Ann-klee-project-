@@ -15,6 +15,8 @@ const A4_PORTRAIT_WIDTH = 794;
 const A4_PORTRAIT_HEIGHT = 1123;
 const A4_LANDSCAPE_WIDTH = 1123;
 const A4_LANDSCAPE_HEIGHT = 794;
+const LETTER_PORTRAIT_WIDTH = 816;
+const LETTER_PORTRAIT_HEIGHT = 1056;
 const MAX_ZOOM = 4;
 const VIEWPORT_PAD_TOP = 10;
 
@@ -132,8 +134,20 @@ export default function A4SheetScaler({ children, orientation = 'portrait' }) {
         contentRef.current &&
         contentRef.current.querySelector('.printable-document-landscape, [data-orientation="landscape"]')
       );
-    const activeSheetW = hasLandscapeChild ? A4_LANDSCAPE_WIDTH : A4_PORTRAIT_WIDTH;
-    const fallbackH = hasLandscapeChild ? A4_LANDSCAPE_HEIGHT : A4_PORTRAIT_HEIGHT;
+    const hasLetterChild = Boolean(
+      contentRef.current &&
+      contentRef.current.querySelector('[data-page-format="letter"], .ministry-letter-page-sheet')
+    );
+    const activeSheetW = hasLandscapeChild
+      ? A4_LANDSCAPE_WIDTH
+      : hasLetterChild
+        ? LETTER_PORTRAIT_WIDTH
+        : A4_PORTRAIT_WIDTH;
+    const fallbackH = hasLandscapeChild
+      ? A4_LANDSCAPE_HEIGHT
+      : hasLetterChild
+        ? LETTER_PORTRAIT_HEIGHT
+        : A4_PORTRAIT_HEIGHT;
 
     setSheetWidth(prev => (prev !== activeSheetW ? activeSheetW : prev));
 

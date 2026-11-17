@@ -31,8 +31,17 @@ export function sanitizeAdminReportsState(rawReports) {
   Object.keys(merged).forEach(month => {
     const report = merged[month];
     if (!report || typeof report !== 'object') return;
+    // Heal September (2026-09) if it was accidentally overwritten with November's customSubjectText
+    if (month === '2026-09' && String(report.customSubjectText || '').includes('ខែវិច្ឆិកា')) {
+      merged[month] = JSON.parse(JSON.stringify(INITIAL_ADMIN_REPORTS['2026-09']));
+      return;
+    }
     let changed = false;
     const fixed = { ...report };
+    if (String(fixed.customSubjectText || '').trim().startsWith('របាយការណ៍បូកសរុបលទ្ធផលការងារ')) {
+      delete fixed.customSubjectText;
+      changed = true;
+    }
     listKeys.forEach(key => {
       if (!Array.isArray(report[key])) return;
       const cleaned = report[key].filter(item => !STRAY_ADMIN_REPORT_LINES.has(String(item || '').trim()));
@@ -801,6 +810,13 @@ export function loadAppState() {
     // Automatically migrate director title to match official PDF 2 standard ('នាយកសាលា')
     if (!mergedMeta.directorTitle || mergedMeta.directorTitle === 'ព្រះនាយក' || mergedMeta.directorTitle === 'ព្រះចៅអធិការ') {
       mergedMeta.directorTitle = 'នាយកសាលា';
+    }
+    // Clean stale September (2026-09) unlock flag from earlier testing so September defaults to locked old month
+    if (!mergedMeta.cleanedSeptUnlockV1) {
+      if (Array.isArray(mergedMeta.unlockedMonths)) {
+        mergedMeta.unlockedMonths = mergedMeta.unlockedMonths.filter(k => k !== '2026-09');
+      }
+      mergedMeta.cleanedSeptUnlockV1 = true;
     }
 
     // Normalize and sanitize finance data (purges test entries & ensures 5 official DOCX months)
