@@ -84,6 +84,9 @@ export default function FinanceTableView({
   };
 
   const handleAddRow = (section) => {
+    if (financeViewType === 'summary') {
+      setFinanceViewType('full');
+    }
     const newRow = {
       id: `${section}-${Date.now()}`,
       desc: '',

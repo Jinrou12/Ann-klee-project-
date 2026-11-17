@@ -416,7 +416,6 @@ export function sanitizeFinanceState(rawFinance = {}) {
       if (!item) return false;
       if (TEST_FINANCE_IDS_TO_PURGE.has(item.id)) return false;
       if (item.desc === 'ទំនិញ/សេវា' && Number(item.total) === 0) return false;
-      if (!String(item.desc || '').trim() && Number(item.total) === 0) return false;
       return true;
     }).map(e => ({
       ...e,

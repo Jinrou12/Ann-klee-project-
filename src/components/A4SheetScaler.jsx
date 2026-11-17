@@ -70,6 +70,7 @@ export default function A4SheetScaler({ children, orientation = 'portrait' }) {
 
     // Real PC / wide screens: no transform at all (identical to the original layout)
     if (baseScale >= 0.99) {
+      layer.style.zoom = '';
       layer.style.transition = '';
       layer.style.transform = '';
       layer.style.willChange = '';
@@ -81,11 +82,20 @@ export default function A4SheetScaler({ children, orientation = 'portrait' }) {
     const total = baseScale * zoom;
     const gesturing = gestureRef.current.active;
 
-    layer.style.transition = animate ? 'transform 0.18s ease-out' : 'none';
-    layer.style.transform = gesturing
-      ? `translate3d(${panX}px, ${panY}px, 0) scale(${total})`
-      : `translate(${panX}px, ${panY}px) scale(${total})`;
-    layer.style.willChange = gesturing ? 'transform' : 'auto';
+    if (!gesturing && zoom <= 1.01 && panX === 0 && panY === 0) {
+      // At rest (1x fit): use native CSS zoom so browser rasterizes vector fonts & hairline borders with ClearType sharpness
+      layer.style.transition = '';
+      layer.style.transform = 'none';
+      layer.style.willChange = 'auto';
+      layer.style.zoom = String(baseScale);
+    } else {
+      layer.style.zoom = '';
+      layer.style.transition = animate ? 'transform 0.18s ease-out' : 'none';
+      layer.style.transform = gesturing
+        ? `translate3d(${panX}px, ${panY}px, 0) scale(${total})`
+        : `translate(${panX}px, ${panY}px) scale(${total})`;
+      layer.style.willChange = gesturing ? 'transform' : 'auto';
+    }
 
     if (vp) {
       vp.style.touchAction = zoom > 1.02 ? 'none' : 'pan-y';

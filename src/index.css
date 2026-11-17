@@ -335,6 +335,7 @@ input:focus, select:focus, textarea:focus {
   }
   .a4-scaler-root > div > div {
     transform: none !important;
+    zoom: 1 !important;
     width: 100% !important;
   }
   body {
