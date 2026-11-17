@@ -1459,9 +1459,9 @@ export async function exportMinistryReportToWord(ministryModel) {
 
   // Build Office Supplies Semester Tables XML (ច.៣ & ច.៤)
   const buildOfficeSemTablesXml = (semData) => {
-    const expCols = fitColumns([700, 3500, 1300, 1700, 1100, 950, 956], contentWidth);
-    const expBanner = `<w:tr>${hCell('តារាងចំណាយ', contentWidth, { gridSpan: 7 })}</w:tr>`;
-    const expHdr = `<w:tr>${['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'សមតុល្យ', 'ផ្សេងៗ']
+    const expCols = fitColumns([560, 3725, 1276, 1531, 1123, 1071, 920], contentWidth);
+    const expBanner = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${hCell('តារាងចំណាយ', contentWidth, { gridSpan: 7 })}</w:tr>`;
+    const expHdr = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'សមតុល្យ', 'ផ្សេងៗ']
       .map((h, i) => hCell(h, expCols[i]))
       .join('')}</w:tr>`;
     const expRows =

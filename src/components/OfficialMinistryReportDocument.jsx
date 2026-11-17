@@ -13,27 +13,143 @@ function normalizeSingleSpaces(str = '') {
     .trim();
 }
 
+/**
+ * Estimate horizontal visual width units of Khmer + Latin text
+ * (ignoring zero-width vertically-stacked Khmer vowels/subscripts)
+ */
+function getDescVisualUnits(str = '') {
+  const s = String(str || '').trim();
+  let units = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    // Khmer Coeng (subscript consonant)
+    if (code === 0x17d2) {
+      const next = s.charCodeAt(i + 1) || 0;
+      // Subscript Ro (្រ) or Vo (្វ) adds slight horizontal width; other subscripts stack underneath
+      if (next === 0x179a || next === 0x179c) {
+        units += 0.35;
+      }
+      i++; // skip subscript consonant
+      continue;
+    }
+    // Zero-width above/below Khmer vowels & signs
+    if (
+      (code >= 0x17b7 && code <= 0x17bd) ||
+      code === 0x17c6 ||
+      (code >= 0x17c9 && code <= 0x17d3) ||
+      code === 0x17dd ||
+      (code >= 0x200b && code <= 0x200d)
+    ) {
+      continue;
+    }
+    // Two-part spacing Khmer vowels (ើ ឿ ៀ ោ ៅ)
+    if (
+      code === 0x17be ||
+      code === 0x17bf ||
+      code === 0x17c0 ||
+      code === 0x17c4 ||
+      code === 0x17c5
+    ) {
+      units += 0.95;
+      continue;
+    }
+    // Single-side spacing Khmer vowels (ា េ ែ ៃ ះ ៈ)
+    if (
+      code === 0x17b6 ||
+      (code >= 0x17c1 && code <= 0x17c3) ||
+      code === 0x17c7 ||
+      code === 0x17c8
+    ) {
+      units += 0.65;
+      continue;
+    }
+    // Base Khmer consonants & digits
+    if ((code >= 0x1780 && code <= 0x17b3) || (code >= 0x17e0 && code <= 0x17e9)) {
+      units += 1.12;
+      continue;
+    }
+    // Uppercase ASCII
+    if (code >= 65 && code <= 90) {
+      units += 0.85;
+      continue;
+    }
+    // Spaces & narrow punctuation
+    if (code === 32 || code === 40 || code === 41 || code === 47 || code === 45 || code === 46) {
+      units += 0.42;
+      continue;
+    }
+    // Default ASCII lowercase / digits / symbols
+    units += 0.68;
+  }
+  return units;
+}
+
+/**
+ * Render description cell content:
+ * - Short/medium items (<= maxSingleLineUnits) stay strictly on 1 line (scaling font slightly if needed)
+ * - Longer items wrap cleanly into at most 2 lines (never 3+ lines) with adaptive font size
+ */
+function renderAdaptiveDescContent(text, maxSingleLineUnits = 19.0) {
+  const clean = normalizeSingleSpaces(text);
+  const units = getDescVisualUnits(clean);
+
+  if (units <= maxSingleLineUnits) {
+    const fontSize = units <= 14.5 ? 14.2 : units <= 16.8 ? 13.4 : 12.4;
+    return (
+      <div
+        style={{
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'clip',
+          fontSize,
+          lineHeight: 1.45
+        }}
+      >
+        {clean}
+      </div>
+    );
+  }
+
+  const twoLineFontSize = units <= 30 ? 13.2 : units <= 38 ? 12.2 : 11.4;
+  return (
+    <div
+      style={{
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+        wordBreak: 'break-word',
+        fontSize: twoLineFontSize,
+        lineHeight: 1.42
+      }}
+    >
+      {clean}
+    </div>
+  );
+}
+
 const thCellStyle = {
   border: '1px solid #000000',
-  padding: '4px 6px',
+  padding: '4px 5px',
   fontFamily: MOUL_FONT,
   fontWeight: 400,
-  fontSize: 13,
+  fontSize: 13.5,
   textAlign: 'center',
   verticalAlign: 'middle',
   background: '#ffffff',
   color: '#000000',
-  lineHeight: 1.5
+  lineHeight: 1.5,
+  whiteSpace: 'nowrap'
 };
 
 const tdCellStyle = {
   border: '1px solid #000000',
   padding: '4px 6px',
   fontFamily: SIEMREAP_FONT,
-  fontSize: 13.5,
+  fontSize: 14.2,
   verticalAlign: 'middle',
   color: '#000000',
-  lineHeight: 1.55
+  lineHeight: 1.6
 };
 
 /**
@@ -58,7 +174,7 @@ export default function OfficialMinistryReportDocument({
       blocks.push({
         id: key,
         isHeading: true,
-        estPx: 34,
+        estPx: 36,
         node: (
           <div
             key={key}
@@ -67,7 +183,7 @@ export default function OfficialMinistryReportDocument({
               paddingTop: topPad,
               marginBottom: 3,
               fontFamily: MOUL_FONT,
-              fontSize: 14.5,
+              fontSize: 15.2,
               color: '#000000'
             }}
           >
@@ -81,7 +197,7 @@ export default function OfficialMinistryReportDocument({
       blocks.push({
         id: key,
         isHeading: true,
-        estPx: 30,
+        estPx: 32,
         node: (
           <div
             key={key}
@@ -90,7 +206,7 @@ export default function OfficialMinistryReportDocument({
               paddingTop: 3,
               marginBottom: 2,
               fontFamily: MOUL_FONT,
-              fontSize: 13.8,
+              fontSize: 14.5,
               color: '#000000'
             }}
           >
@@ -106,7 +222,7 @@ export default function OfficialMinistryReportDocument({
         if (!line) return;
         blocks.push({
           id: `${prefixKey}-${idx}`,
-          estPx: Math.max(27, Math.ceil(line.length / 62) * 26),
+          estPx: Math.max(29, Math.ceil(line.length / 58) * 28),
           node: (
             <div
               key={`${prefixKey}-${idx}`}
@@ -116,7 +232,7 @@ export default function OfficialMinistryReportDocument({
                 alignItems: 'baseline',
                 textAlign: 'left',
                 marginBottom: 2,
-                lineHeight: 1.72
+                lineHeight: 1.78
               }}
             >
               <span style={{ width: 14, flexShrink: 0 }}>-</span>
@@ -130,40 +246,44 @@ export default function OfficialMinistryReportDocument({
     // 1. Header + Report Title + Section ក.ព័ត៌មានទូទៅ
     blocks.push({
       id: 'header-and-sec-a',
-      estPx: 460,
+      estPx: 495,
       node: (
         <div key="header-and-sec-a" style={{ marginBottom: 6 }}>
           {/* Kingdom Header Centered */}
           <div style={{ textAlign: 'center', lineHeight: 1.55 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 16 }}>ព្រះរាជាណាចក្រកម្ពុជា</div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5 }}>ជាតិ សាសនា ព្រះមហាក្សត្រ</div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 17.5 }}>ព្រះរាជាណាចក្រកម្ពុជា</div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
+              ជាតិ{'\u00A0\u00A0'}សាសនា{'\u00A0\u00A0'}ព្រះមហាក្សត្រ
+            </div>
             <div style={{ marginTop: 2 }}>
-              <KhmerRoyalDivider color="#000000" />
+              <KhmerRoyalDivider width={120} height={8} color="#000000" />
             </div>
           </div>
 
-          {/* Left Provincial Dept & School */}
-          <div style={{ width: '54%', textAlign: 'center', lineHeight: 1.65, marginTop: 4, marginBottom: 10 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 13.8, whiteSpace: 'nowrap' }}>
-              មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម
-            </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 13.8, whiteSpace: 'nowrap' }}>
-              ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង
-            </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 13.8, whiteSpace: 'nowrap' }}>
-              ក្រុងកំពង់ចាម
+          {/* Left Provincial Dept & School (aligned cleanly to left block like OfficialAdminReportDocument) */}
+          <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 4, marginBottom: 10 }}>
+            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', lineHeight: 1.58, minWidth: 265 }}>
+              <div style={{ fontFamily: MOUL_FONT, fontSize: 15, whiteSpace: 'nowrap' }}>
+                មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម
+              </div>
+              <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, whiteSpace: 'nowrap' }}>
+                ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង
+              </div>
+              <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, whiteSpace: 'nowrap' }}>
+                ក្រុងកំពង់ចាម
+              </div>
             </div>
           </div>
 
           {/* 3-Line Report Title */}
           <div style={{ textAlign: 'center', lineHeight: 1.65, marginBottom: 10 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 15 }}>របាយការណ៍</div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5 }}>ស្តីពី</div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 15 }}>{ministryModel.fullReportTitle}</div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 16 }}>របាយការណ៍</div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>ស្តីពី</div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.8 }}>{ministryModel.fullReportTitle}</div>
           </div>
 
           {/* ក. ព័ត៌មានទូទៅ */}
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, marginBottom: 4 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 4 }}>
             ក.ព័ត៌មានទូទៅ
           </div>
           <div style={{ paddingLeft: 18 }}>
@@ -174,16 +294,16 @@ export default function OfficialMinistryReportDocument({
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
-                    maxWidth: 540,
-                    lineHeight: 1.72,
+                    maxWidth: 640,
+                    lineHeight: 1.78,
                     marginBottom: 2
                   }}
                 >
-                  <span>-{row.label}</span>
-                  <span style={{ minWidth: 150, textAlign: 'left' }}>{row.value}</span>
+                  <span style={{ whiteSpace: 'nowrap' }}>-{row.label}</span>
+                  <span style={{ minWidth: 155, textAlign: 'left', whiteSpace: 'nowrap' }}>{row.value}</span>
                 </div>
               ) : (
-                <div key={`gen-${idx}`} style={{ lineHeight: 1.72, marginBottom: 2 }}>
+                <div key={`gen-${idx}`} style={{ lineHeight: 1.78, marginBottom: 2 }}>
                   -{row.label}
                 </div>
               )
@@ -223,20 +343,29 @@ export default function OfficialMinistryReportDocument({
     const renderHourlySemesterTableBlock = (key, title, tableData) => {
       blocks.push({
         id: key,
-        estPx: 270,
+        estPx: 280,
         node: (
           <div key={key} style={{ marginTop: 8, marginBottom: 10 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 14, marginBottom: 6 }}>{title}</div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>{title}</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '19%' }} />
+                <col style={{ width: '19%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '9%' }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th style={{ ...thCellStyle, width: '7%' }}>ល.រ</th>
+                  <th style={{ ...thCellStyle, width: '6%' }}>ល.រ</th>
                   <th style={{ ...thCellStyle, width: '18%' }}>បរិយាយ</th>
                   <th style={{ ...thCellStyle, width: '19%' }}>ចំណូលរួម</th>
                   <th style={{ ...thCellStyle, width: '19%' }}>ចំណាយ</th>
                   <th style={{ ...thCellStyle, width: '14%' }}>ចំនួនម៉ោង</th>
                   <th style={{ ...thCellStyle, width: '15%' }}>សមតុល្យ</th>
-                  <th style={{ ...thCellStyle, width: '8%' }}>ផ្សេងៗ</th>
+                  <th style={{ ...thCellStyle, width: '9%' }}>ផ្សេងៗ</th>
                 </tr>
               </thead>
               <tbody>
@@ -257,7 +386,7 @@ export default function OfficialMinistryReportDocument({
                     style={{
                       ...tdCellStyle,
                       fontFamily: MOUL_FONT,
-                      fontSize: 12.5,
+                      fontSize: 13.2,
                       textAlign: 'center'
                     }}
                   >
@@ -298,13 +427,21 @@ export default function OfficialMinistryReportDocument({
 
     blocks.push({
       id: 'tbl-hourly-annual',
-      estPx: 170,
+      estPx: 180,
       node: (
         <div key="tbl-hourly-annual" style={{ marginTop: 8, marginBottom: 10 }}>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 14, marginBottom: 6 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>
             ច.{fmtNum(2)} ចំណូលចំណាយប្រាក់ម៉ោងប្រចាំឆ្នាំ {ministryModel.yearKhmer}
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '16%' }} />
+            </colgroup>
             <thead>
               <tr>
                 <th style={{ ...thCellStyle, width: '8%' }}>ល.រ</th>
@@ -329,7 +466,7 @@ export default function OfficialMinistryReportDocument({
               <tr>
                 <td
                   colSpan={2}
-                  style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 12.5, textAlign: 'center' }}
+                  style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 13.2, textAlign: 'center' }}
                 >
                   សមតុល្យសាច់ប្រាក់ចំណូល និងចំណាយនៅសល់
                 </td>
@@ -352,174 +489,222 @@ export default function OfficialMinistryReportDocument({
       )
     });
 
-    // Helper for Office Supplies Tables (ច.៣ & ច.៤) — Chunked into page-safe table segments
+    // Helper for Office Supplies Tables (ច.៣ & ច.៤) — Dynamically row-paginated to fill each A4 page cleanly
     const renderOfficeSemesterBlock = (keyPrefix, title, semData) => {
-      const MAX_EXP_ROWS_PER_CHUNK = 16;
-      const MAX_INC_ROWS_PER_CHUNK = 16;
       const rawExpRows = semData?.expenseRows || [];
       const rawIncRows = semData?.incomeRows || [];
 
-      const expChunks = [];
-      if (rawExpRows.length === 0) {
-        expChunks.push([]);
-      } else {
-        for (let i = 0; i < rawExpRows.length; i += MAX_EXP_ROWS_PER_CHUNK) {
-          expChunks.push(rawExpRows.slice(i, i + MAX_EXP_ROWS_PER_CHUNK));
-        }
-      }
-
-      expChunks.forEach((chunkRows, chunkIdx) => {
-        const isFirstChunk = chunkIdx === 0;
-        const isLastChunk = chunkIdx === expChunks.length - 1;
-        const blockKey = `${keyPrefix}-exp-${chunkIdx}`;
-
-        blocks.push({
-          id: blockKey,
-          estPx: (isFirstChunk ? 120 : 90) + Math.max(1, chunkRows.length) * 32 + (isLastChunk ? 36 : 0),
-          node: (
-            <div key={blockKey} style={{ marginTop: isFirstChunk ? 8 : 4, marginBottom: 6 }}>
-              {isFirstChunk && (
-                <div style={{ fontFamily: MOUL_FONT, fontSize: 14, marginBottom: 6 }}>{title}</div>
-              )}
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                <thead>
-                  <tr>
-                    <th colSpan={7} style={{ ...thCellStyle, fontSize: 13.5 }}>
-                      {isFirstChunk ? 'តារាងចំណាយ' : 'តារាងចំណាយ (បន្ត)'}
-                    </th>
+      const renderExpSegment = ({ chunkRows, chunkIdx, isFirstChunk, isLastChunk }) => {
+        const segKey = `${keyPrefix}-exp-seg-${chunkIdx}`;
+        return (
+          <div key={segKey} style={{ marginTop: isFirstChunk ? 8 : 4, marginBottom: 6 }}>
+            {isFirstChunk && (
+              <div
+                data-part="title"
+                style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}
+              >
+                {title}
+              </div>
+            )}
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '5.5%' }} />
+                <col style={{ width: '36.5%' }} />
+                <col style={{ width: '12.5%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '10.5%' }} />
+                <col style={{ width: '9%' }} />
+              </colgroup>
+              <thead data-part="thead">
+                <tr>
+                  <th colSpan={7} style={{ ...thCellStyle, fontSize: 14 }}>
+                    {isFirstChunk ? 'តារាងចំណាយ' : 'តារាងចំណាយ (បន្ត)'}
+                  </th>
+                </tr>
+                <tr>
+                  <th style={{ ...thCellStyle, width: '5.5%' }}>ល.រ</th>
+                  <th style={{ ...thCellStyle, width: '36.5%' }}>បរិយាយ</th>
+                  <th style={{ ...thCellStyle, width: '12.5%' }}>ចំណូលរួម</th>
+                  <th style={{ ...thCellStyle, width: '15%' }}>ចំណាយ</th>
+                  <th style={{ ...thCellStyle, width: '11%' }}>ចំនួន</th>
+                  <th style={{ ...thCellStyle, width: '10.5%' }}>សមតុល្យ</th>
+                  <th style={{ ...thCellStyle, width: '9%' }}>ផ្សេងៗ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {chunkRows.length === 0 ? (
+                  <tr data-row-idx={0}>
+                    <td colSpan={7} style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      គ្មាន
+                    </td>
                   </tr>
-                  <tr>
-                    <th style={{ ...thCellStyle, width: '7%' }}>ល.រ</th>
-                    <th style={{ ...thCellStyle, width: '35%' }}>បរិយាយ</th>
-                    <th style={{ ...thCellStyle, width: '13%' }}>ចំណូលរួម</th>
-                    <th style={{ ...thCellStyle, width: '16%' }}>ចំណាយ</th>
-                    <th style={{ ...thCellStyle, width: '11%' }}>ចំនួន</th>
-                    <th style={{ ...thCellStyle, width: '9%' }}>សមតុល្យ</th>
-                    <th style={{ ...thCellStyle, width: '9%' }}>ផ្សេងៗ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chunkRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} style={{ ...tdCellStyle, textAlign: 'center' }}>
-                        គ្មាន
+                ) : (
+                  chunkRows.map((r, i) => (
+                    <tr key={i} data-row-idx={i}>
+                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.no}</td>
+                      <td style={{ ...tdCellStyle, textAlign: 'left', padding: '3px 6px' }}>
+                        {renderAdaptiveDescContent(r.desc, 19.0)}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.source}</td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.amountText}</td>
+                      <td
+                        style={{
+                          ...tdCellStyle,
+                          textAlign: 'center',
+                          whiteSpace: 'nowrap',
+                          fontSize: String(r.qty || '').length > 9 ? 12.6 : 14.2
+                        }}
+                      >
+                        {r.qty}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.balance}</td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                        {r.note ? renderAdaptiveDescContent(r.note, 8) : ''}
                       </td>
                     </tr>
-                  ) : (
-                    chunkRows.map((r, i) => (
-                      <tr key={i}>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.no}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'left' }}>{r.desc}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.source}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.amountText}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.qty}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.balance}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.note}</td>
-                      </tr>
-                    ))
-                  )}
-                  {isLastChunk && (
-                    <tr>
-                      <td colSpan={3} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
-                        ចំណាយសរុប
-                      </td>
-                      <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                        {semData?.totalExpenseText}
-                      </td>
-                      <td colSpan={3} style={tdCellStyle}></td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )
-        });
+                  ))
+                )}
+                {isLastChunk && (
+                  <tr data-part="total">
+                    <td colSpan={3} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
+                      ចំណាយសរុប
+                    </td>
+                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {semData?.totalExpenseText}
+                    </td>
+                    <td colSpan={3} style={tdCellStyle}></td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      };
+
+      const estExpRowHeights = rawExpRows.map(r =>
+        getDescVisualUnits(r.desc) > 19.0 ? 48 : 30
+      );
+
+      blocks.push({
+        id: `${keyPrefix}-exp`,
+        isSplittableTable: true,
+        rows: rawExpRows,
+        estTitlePx: 34,
+        estTheadPx: 62,
+        estRowHeights: estExpRowHeights,
+        estTotalRowPx: 32,
+        estPx: 110 + Math.max(1, rawExpRows.length) * 30 + 32,
+        renderSegment: renderExpSegment,
+        node: renderExpSegment({
+          chunkRows: rawExpRows,
+          chunkIdx: 0,
+          isFirstChunk: true,
+          isLastChunk: true
+        })
       });
 
-      const incChunks = [];
-      if (rawIncRows.length === 0) {
-        incChunks.push([]);
-      } else {
-        for (let i = 0; i < rawIncRows.length; i += MAX_INC_ROWS_PER_CHUNK) {
-          incChunks.push(rawIncRows.slice(i, i + MAX_INC_ROWS_PER_CHUNK));
-        }
-      }
-
-      incChunks.forEach((chunkRows, chunkIdx) => {
-        const isFirstChunk = chunkIdx === 0;
-        const isLastChunk = chunkIdx === incChunks.length - 1;
-        const blockKey = `${keyPrefix}-inc-${chunkIdx}`;
-
-        blocks.push({
-          id: blockKey,
-          estPx: 110 + Math.max(1, chunkRows.length) * 32 + (isLastChunk ? 36 : 0),
-          node: (
-            <div key={blockKey} style={{ marginBottom: isLastChunk ? 10 : 6 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                <thead>
-                  <tr>
-                    <th colSpan={5} style={{ ...thCellStyle, fontSize: 13.5 }}>
-                      {isFirstChunk ? 'តារាងចំណូល' : 'តារាងចំណូល (បន្ត)'}
-                    </th>
+      const renderIncSegment = ({ chunkRows, chunkIdx, isFirstChunk, isLastChunk }) => {
+        const segKey = `${keyPrefix}-inc-seg-${chunkIdx}`;
+        return (
+          <div key={segKey} style={{ marginTop: 4, marginBottom: isLastChunk ? 10 : 6 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '43%' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '20%' }} />
+              </colgroup>
+              <thead data-part="thead">
+                <tr>
+                  <th colSpan={5} style={{ ...thCellStyle, fontSize: 13.5 }}>
+                    {isFirstChunk ? 'តារាងចំណូល' : 'តារាងចំណូល (បន្ត)'}
+                  </th>
+                </tr>
+                <tr>
+                  <th rowSpan={2} style={{ ...thCellStyle, width: '7%' }}>
+                    ល.រ
+                  </th>
+                  <th rowSpan={2} style={{ ...thCellStyle, width: '43%' }}>
+                    បរិយាយ
+                  </th>
+                  <th colSpan={2} style={{ ...thCellStyle, width: '30%' }}>
+                    ថវិកា
+                  </th>
+                  <th rowSpan={2} style={{ ...thCellStyle, width: '20%' }}>
+                    សេចក្ដីផ្សេងៗ
+                  </th>
+                </tr>
+                <tr>
+                  <th style={{ ...thCellStyle, width: '18%' }}>រៀល</th>
+                  <th style={{ ...thCellStyle, width: '12%' }}>ដុល្លារ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {chunkRows.length === 0 ? (
+                  <tr data-row-idx={0}>
+                    <td colSpan={5} style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      គ្មាន
+                    </td>
                   </tr>
-                  <tr>
-                    <th rowSpan={2} style={{ ...thCellStyle, width: '8%' }}>
-                      ល.រ
-                    </th>
-                    <th rowSpan={2} style={{ ...thCellStyle, width: '40%' }}>
-                      បរិយាយ
-                    </th>
-                    <th colSpan={2} style={{ ...thCellStyle, width: '32%' }}>
-                      ថវិកា
-                    </th>
-                    <th rowSpan={2} style={{ ...thCellStyle, width: '20%' }}>
-                      សេចក្ដីផ្សេងៗ
-                    </th>
-                  </tr>
-                  <tr>
-                    <th style={{ ...thCellStyle, width: '18%' }}>រៀល</th>
-                    <th style={{ ...thCellStyle, width: '14%' }}>ដុល្លារ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chunkRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ ...tdCellStyle, textAlign: 'center' }}>
-                        គ្មាន
+                ) : (
+                  chunkRows.map((r, i) => (
+                    <tr key={i} data-row-idx={i}>
+                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.no}</td>
+                      <td style={{ ...tdCellStyle, textAlign: 'left', padding: '3px 6px' }}>
+                        {renderAdaptiveDescContent(r.desc, 19.5)}
                       </td>
-                    </tr>
-                  ) : (
-                    chunkRows.map((r, i) => (
-                      <tr key={i}>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.no}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'left' }}>{r.desc}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.khrText}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.usdText}</td>
-                        <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.note}</td>
-                      </tr>
-                    ))
-                  )}
-                  {isLastChunk && (
-                    <tr>
-                      <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
-                        សរុបចំណូល
-                      </td>
-                      <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                        {semData?.totalIncomeKHRText}
-                      </td>
-                      <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                        {semData?.totalIncomeUSDText}
-                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.khrText}</td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.usdText}</td>
                       <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                        {semData?.inKindSummary || ''}
+                        {r.note ? renderAdaptiveDescContent(r.note, 11) : ''}
                       </td>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )
-        });
+                  ))
+                )}
+                {isLastChunk && (
+                  <tr data-part="total">
+                    <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
+                      សរុបចំណូល
+                    </td>
+                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {semData?.totalIncomeKHRText}
+                    </td>
+                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {semData?.totalIncomeUSDText}
+                    </td>
+                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      {semData?.inKindSummary ? renderAdaptiveDescContent(semData.inKindSummary, 11) : ''}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      };
+
+      const estIncRowHeights = rawIncRows.map(r =>
+        getDescVisualUnits(r.desc) > 19.5 ? 48 : 30
+      );
+
+      blocks.push({
+        id: `${keyPrefix}-inc`,
+        isSplittableTable: true,
+        rows: rawIncRows,
+        estTitlePx: 0,
+        estTheadPx: 90,
+        estRowHeights: estIncRowHeights,
+        estTotalRowPx: 32,
+        estPx: 105 + Math.max(1, rawIncRows.length) * 30 + 32,
+        renderSegment: renderIncSegment,
+        node: renderIncSegment({
+          chunkRows: rawIncRows,
+          chunkIdx: 0,
+          isFirstChunk: true,
+          isLastChunk: true
+        })
       });
     };
 
@@ -534,18 +719,17 @@ export default function OfficialMinistryReportDocument({
       ministryModel.officeSem2
     );
 
-    // ច.៥ Office Supplies Annual Summary + Award Ceremony + Grand Total Annual Table
+    // ច.៥ Office Supplies Annual Summary
     blocks.push({
-      id: 'tbl-office-annual-and-totals',
-      estPx: 440,
+      id: 'tbl-office-annual',
+      estPx: 170,
       node: (
-        <div key="tbl-office-annual-and-totals" style={{ marginTop: 8, marginBottom: 10 }}>
-          {/* ច.៥ */}
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 14, marginBottom: 6 }}>
+        <div key="tbl-office-annual" style={{ marginTop: 8, marginBottom: 10 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>
             ច.{fmtNum(5)} ចំណូល ចំណាយ លើសម្ភារៈការិយាល័យ ប្រចាំឆ្នាំ {ministryModel.yearKhmer}
           </div>
           <table
-            style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', marginBottom: 12 }}
+            style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}
           >
             <thead>
               <tr>
@@ -582,13 +766,21 @@ export default function OfficialMinistryReportDocument({
               </tr>
             </tbody>
           </table>
+        </div>
+      )
+    });
 
-          {/* កម្មវិធីចែកបណ្ណសរសើរ */}
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 14, marginBottom: 6 }}>
+    // កម្មវិធីចែកបណ្ណសរសើរ
+    blocks.push({
+      id: 'tbl-award-ceremony',
+      estPx: 165,
+      node: (
+        <div key="tbl-award-ceremony" style={{ marginTop: 8, marginBottom: 10 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>
             ចំណូល ចំណាយ កម្មវិធីចែកបណ្ណសរសើរ
           </div>
           <table
-            style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', marginBottom: 12 }}
+            style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}
           >
             <tbody>
               <tr>
@@ -627,12 +819,27 @@ export default function OfficialMinistryReportDocument({
               </tr>
             </tbody>
           </table>
+        </div>
+      )
+    });
 
-          {/* ចំណូល ចំណាយ សរុបរួមប្រចាំឆ្នាំ */}
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 14, marginBottom: 6 }}>
+    // ចំណូល ចំណាយ សរុបរួមប្រចាំឆ្នាំ
+    blocks.push({
+      id: 'tbl-grand-annual',
+      estPx: 195,
+      node: (
+        <div key="tbl-grand-annual" style={{ marginTop: 8, marginBottom: 10 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>
             ចំណូល ចំណាយ សរុបរួមប្រចាំឆ្នាំ{ministryModel.yearKhmer}
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '36%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '20%' }} />
+            </colgroup>
             <thead>
               <tr>
                 <th rowSpan={2} style={{ ...thCellStyle, width: '8%' }}>
@@ -759,12 +966,12 @@ export default function OfficialMinistryReportDocument({
           </div>
 
           {/* Bottom-left ចម្លងប្រគេនជូន */}
-          <div style={{ marginTop: 28, lineHeight: 1.68 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 13.5, marginBottom: 2 }}>
+          <div style={{ marginTop: 28, lineHeight: 1.72 }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, marginBottom: 2 }}>
               ចម្លងប្រគេនជូន
             </div>
             {(ministryModel.ccList || []).map((cc, idx) => (
-              <div key={idx} style={{ fontSize: 13.5 }}>
+              <div key={idx} style={{ fontSize: 14.5 }}>
                 -{normalizeSingleSpaces(cc)}
               </div>
             ))}
@@ -786,15 +993,43 @@ export default function OfficialMinistryReportDocument({
       const elRect = el.getBoundingClientRect();
       const scaleFactor =
         el.offsetWidth > 0 && elRect.width > 0 ? elRect.width / el.offsetWidth : 1;
-      const heights = children.map(child => {
+
+      const norm = (px) => (scaleFactor > 0 ? px / scaleFactor : px);
+
+      const heights = children.map((child, idx) => {
+        const blk = flowBlocks[idx];
         const rect = child.getBoundingClientRect();
-        return scaleFactor > 0 ? rect.height / scaleFactor : rect.height;
+        const totalH = norm(rect.height);
+
+        if (blk && blk.isSplittableTable) {
+          const titleEl = child.querySelector('[data-part="title"]');
+          const titlePx = titleEl ? norm(titleEl.getBoundingClientRect().height) + 6 : 0;
+          const theadEl = child.querySelector('[data-part="thead"]');
+          const theadPx = theadEl ? norm(theadEl.getBoundingClientRect().height) : blk.estTheadPx;
+          const rowEls = Array.from(child.querySelectorAll('tr[data-row-idx]'));
+          const rowHeights = rowEls.map(tr => norm(tr.getBoundingClientRect().height));
+          const totalEl = child.querySelector('tr[data-part="total"]');
+          const totalRowPx = totalEl
+            ? norm(totalEl.getBoundingClientRect().height)
+            : blk.estTotalRowPx;
+
+          return {
+            totalH,
+            titlePx,
+            theadPx,
+            rowHeights,
+            totalRowPx
+          };
+        }
+
+        return { totalH };
       });
+
       setMeasuredHeights(prev => {
         if (
           prev &&
           prev.length === heights.length &&
-          prev.every((v, i) => Math.abs(v - heights[i]) <= 0.5)
+          prev.every((v, i) => Math.abs((v?.totalH || 0) - (heights[i]?.totalH || 0)) <= 0.5)
         ) {
           return prev;
         }
@@ -811,7 +1046,9 @@ export default function OfficialMinistryReportDocument({
   const pages = useMemo(() => {
     if (!flowBlocks.length) return [];
     const blockHeights = flowBlocks.map((blk, i) =>
-      measuredHeights && measuredHeights[i] ? measuredHeights[i] : blk.estPx
+      measuredHeights && measuredHeights[i] && measuredHeights[i].totalH
+        ? measuredHeights[i].totalH
+        : blk.estPx
     );
 
     const pagedBuckets = [];
@@ -820,6 +1057,103 @@ export default function OfficialMinistryReportDocument({
 
     for (let i = 0; i < flowBlocks.length; i++) {
       const blk = flowBlocks[i];
+
+      if (blk.isSplittableTable) {
+        const m =
+          measuredHeights && measuredHeights[i] && Array.isArray(measuredHeights[i].rowHeights)
+            ? measuredHeights[i]
+            : {
+                titlePx: blk.estTitlePx || 0,
+                theadPx: blk.estTheadPx || 62,
+                rowHeights: blk.estRowHeights || [],
+                totalRowPx: blk.estTotalRowPx || 32
+              };
+
+        const totalRows = blk.rows.length;
+        if (totalRows === 0) {
+          const singleH = m.titlePx + m.theadPx + 30 + m.totalRowPx + 14;
+          if (currentItems.length > 0 && currentPx + singleH > MAX_PAGE_CONTENT_PX) {
+            pagedBuckets.push(currentItems);
+            currentItems = [];
+            currentPx = 0;
+          }
+          currentItems.push({
+            id: `${blk.id}-seg-0`,
+            node: blk.renderSegment({
+              chunkRows: [],
+              chunkIdx: 0,
+              isFirstChunk: true,
+              isLastChunk: true
+            })
+          });
+          currentPx += singleH;
+          continue;
+        }
+
+        let cursor = 0;
+        let chunkIdx = 0;
+        while (cursor < totalRows) {
+          const isFirstChunk = cursor === 0;
+          const marginPx = isFirstChunk ? 14 : 10;
+          const headerOverheadPx = (isFirstChunk ? m.titlePx : 0) + m.theadPx + marginPx;
+
+          // Require at least 2 rows (or all remaining rows) to start a table segment on the current page
+          const minRowsToStart = Math.min(2, totalRows - cursor);
+          let minNeededPx = headerOverheadPx;
+          for (let k = 0; k < minRowsToStart; k++) {
+            minNeededPx += m.rowHeights[cursor + k] || 30;
+          }
+          if (cursor + minRowsToStart === totalRows) {
+            minNeededPx += m.totalRowPx;
+          }
+
+          if (currentItems.length > 0 && currentPx + minNeededPx > MAX_PAGE_CONTENT_PX) {
+            pagedBuckets.push(currentItems);
+            currentItems = [];
+            currentPx = 0;
+          }
+
+          const availPx = MAX_PAGE_CONTENT_PX - currentPx;
+          let usedPx = headerOverheadPx;
+          let endCursor = cursor;
+
+          while (endCursor < totalRows) {
+            const rH = m.rowHeights[endCursor] || 30;
+            const isFinalRow = endCursor === totalRows - 1;
+            const extraTotal = isFinalRow ? m.totalRowPx : 0;
+
+            if (usedPx + rH + extraTotal <= availPx || endCursor === cursor) {
+              usedPx += rH + extraTotal;
+              endCursor++;
+            } else {
+              break;
+            }
+          }
+
+          const isLastChunk = endCursor >= totalRows;
+          const chunkRows = blk.rows.slice(cursor, endCursor);
+          currentItems.push({
+            id: `${blk.id}-seg-${chunkIdx}`,
+            node: blk.renderSegment({
+              chunkRows,
+              chunkIdx,
+              isFirstChunk,
+              isLastChunk
+            })
+          });
+          currentPx += usedPx;
+          cursor = endCursor;
+          chunkIdx++;
+
+          if (!isLastChunk) {
+            pagedBuckets.push(currentItems);
+            currentItems = [];
+            currentPx = 0;
+          }
+        }
+        continue;
+      }
+
       const blkPx = blockHeights[i];
       let neededPx = blkPx;
       if (blk.isHeading) {
@@ -877,8 +1211,8 @@ export default function OfficialMinistryReportDocument({
           visibility: 'hidden',
           pointerEvents: 'none',
           fontFamily: SIEMREAP_FONT,
-          fontSize: 14.2,
-          lineHeight: 1.72,
+          fontSize: 15.2,
+          lineHeight: 1.78,
           wordSpacing: 'normal',
           letterSpacing: 0,
           WebkitTextSizeAdjust: '100%',
@@ -911,8 +1245,8 @@ export default function OfficialMinistryReportDocument({
             borderRadius: 2,
             boxSizing: 'border-box',
             fontFamily: SIEMREAP_FONT,
-            fontSize: 14.2,
-            lineHeight: 1.72,
+            fontSize: 15.2,
+            lineHeight: 1.78,
             color: '#000000',
             margin: '0 auto',
             flexShrink: 0

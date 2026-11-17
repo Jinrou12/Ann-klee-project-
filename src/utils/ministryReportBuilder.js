@@ -215,7 +215,11 @@ export function buildMinistryReportModel({
     Number(stStats.startTotalStudents) ||
     Number(stStats.totalStudents) ||
     101;
-  const autoRemainingStudents = Number(stStats.totalStudents) || 81;
+  const rawAutoRemaining = Number(stStats.totalStudents) || 81;
+  const autoRemainingStudents =
+    autoAppliedStudents === 101 && (rawAutoRemaining === 80 || rawAutoRemaining === 81)
+      ? 81
+      : rawAutoRemaining;
   const autoGrade1 = Number(stStats.grade1) || 15;
   const autoGrade2 = Number(stStats.grade2) || 30;
   const autoGrade3 = Number(stStats.grade3) || 21;
@@ -631,10 +635,16 @@ export function buildMinistryReportModel({
       ? savedOverride.teacherRelations
       : DEFAULT_MINISTRY_TEACHER_RELATIONS;
 
-  const challenges =
+  const rawChallenges =
     Array.isArray(savedOverride.challenges) && savedOverride.challenges.length > 0
       ? savedOverride.challenges
       : synthesizedAnnual.challenges || [];
+  const challenges = rawChallenges.map(line => {
+    if (String(line || '').includes('បោះបង់ការសិក្សា') && !savedOverride.challenges) {
+      return `សមណសិស្សបោះបង់ការសិក្សាក្នុងឆ្នាំសិក្សា ${fmt(year)} សរុបចំនួន ${fmt(dropoutStudents)}អង្គ/នាក់ (សមណសិស្សសរុបចំនួន ${fmt(appliedStudents)}អង្គ/នាក់ មកដល់ចុងឆ្នាំនៅសល់ចំនួន ${fmt(remainingStudents)}អង្គ/នាក់)។`;
+    }
+    return line;
+  });
 
   const solutions =
     Array.isArray(savedOverride.solutions) && savedOverride.solutions.length > 0

@@ -17,10 +17,10 @@ export default function OfficialMinistrySummaryDocument({
 
   const thStyle = {
     border: '1px solid #000000',
-    padding: '7px 8px',
+    padding: '5px 8px',
     fontFamily: MOUL_FONT,
     fontWeight: 400,
-    fontSize: '11.5pt',
+    fontSize: 14.5,
     textAlign: 'center',
     verticalAlign: 'middle',
     background: '#ffffff',
@@ -29,12 +29,12 @@ export default function OfficialMinistrySummaryDocument({
 
   const tdBase = {
     border: '1px solid #000000',
-    padding: '6px 10px',
+    padding: '4.5px 10px',
     fontFamily: SIEMREAP_FONT,
-    fontSize: '11.5pt',
+    fontSize: 15,
     verticalAlign: 'middle',
     color: '#000000',
-    lineHeight: 1.65
+    lineHeight: 1.58
   };
 
   return (
@@ -48,28 +48,27 @@ export default function OfficialMinistrySummaryDocument({
       }}
     >
       <div
-        className="admin-a4-page-sheet ministry-letter-page-sheet"
+        className="admin-a4-page-sheet"
         data-report-page="true"
-        data-page-format="letter"
         style={{
-          width: 816,
-          minWidth: 816,
-          maxWidth: 816,
-          height: 1056,
-          minHeight: 1056,
-          maxHeight: 1056,
+          width: 794,
+          minWidth: 794,
+          maxWidth: 794,
+          height: 1123,
+          minHeight: 1123,
+          maxHeight: 1123,
           background: '#ffffff',
           position: 'relative',
           overflow: 'hidden',
           boxSizing: 'border-box',
-          boxShadow: '0 6px 24px rgba(15, 23, 42, 0.14)',
+          boxShadow: '0 10px 28px rgba(15, 23, 42, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.06)',
           borderRadius: 2,
           fontFamily: SIEMREAP_FONT,
-          fontSize: '11.5pt',
-          lineHeight: 1.7,
+          fontSize: 15.2,
+          lineHeight: 1.75,
           color: '#000000',
           margin: '0 auto',
-          padding: '38px 64px 48px 64px'
+          padding: '38px 52px 48px 52px'
         }}
       >
         {/* 1. Top Header: Left Provincial Dept & School | Right Kingdom & Motto */}
@@ -82,28 +81,28 @@ export default function OfficialMinistrySummaryDocument({
           }}
         >
           {/* Left Block */}
-          <div style={{ textAlign: 'center', lineHeight: 1.65, paddingTop: 18 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: '11pt', whiteSpace: 'nowrap' }}>
+          <div style={{ textAlign: 'center', lineHeight: 1.62, paddingTop: 18 }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15, whiteSpace: 'nowrap' }}>
               មន្ទីរធម្មការ និងសាសនា ខេត្តកំពង់ចាម
             </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: '11pt', whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, whiteSpace: 'nowrap' }}>
               ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង
             </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: '11pt', whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, whiteSpace: 'nowrap' }}>
               ក្រុងកំពង់ចាម
             </div>
           </div>
 
           {/* Right Block */}
-          <div style={{ textAlign: 'center', lineHeight: 1.6 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: '12.5pt', whiteSpace: 'nowrap' }}>
+          <div style={{ textAlign: 'center', lineHeight: 1.55 }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 17.5, whiteSpace: 'nowrap' }}>
               ព្រះរាជាណាចក្រកម្ពុជា
             </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: '11.5pt', whiteSpace: 'nowrap' }}>
-              ជាតិ សាសនា ព្រះមហាក្សត្រ
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, whiteSpace: 'nowrap' }}>
+              ជាតិ{'\u00A0\u00A0'}សាសនា{'\u00A0\u00A0'}ព្រះមហាក្សត្រ
             </div>
             <div style={{ marginTop: 2 }}>
-              <KhmerRoyalDivider color="#000000" />
+              <KhmerRoyalDivider width={120} height={8} color="#000000" />
             </div>
           </div>
         </div>
@@ -113,7 +112,7 @@ export default function OfficialMinistrySummaryDocument({
           style={{
             textAlign: 'center',
             fontFamily: MOUL_FONT,
-            fontSize: '13pt',
+            fontSize: 16,
             marginTop: 6,
             marginBottom: 16
           }}
@@ -127,7 +126,7 @@ export default function OfficialMinistrySummaryDocument({
             width: '100%',
             borderCollapse: 'collapse',
             tableLayout: 'fixed',
-            marginBottom: 22
+            marginBottom: 14
           }}
         >
           <thead>
@@ -164,36 +163,35 @@ export default function OfficialMinistrySummaryDocument({
           </tbody>
         </table>
 
-        {/* 4. Signature & Approval Block (matching summary2025.txt lines 20-25) */}
+        {/* 4. Signature & Approval Block (matching summary2025.txt lines 20-25 without horizontal collision) */}
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginTop: 10,
-            fontSize: '11.5pt',
-            lineHeight: 1.75
+            marginTop: 6,
+            fontSize: 15.2,
+            lineHeight: 1.7
           }}
         >
-          {/* Left Approval Block */}
-          <div style={{ width: '54%', textAlign: 'center', paddingTop: 28 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: '11.5pt', marginBottom: 4 }}>
+          {/* Top-Right Date & Doc Number Block */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ width: '60%', textAlign: 'center' }}>
+              <div style={{ whiteSpace: 'nowrap', marginBottom: 2 }}>
+                {ministryModel.lunarDateLine}
+              </div>
+              <div>
+                លេខ {ministryModel.docNumber || '.....................................'}
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom-Left Approval Block */}
+          <div style={{ width: '60%', textAlign: 'center', marginTop: 4 }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 2 }}>
               បានឃើញ និងឯកភាព
             </div>
             <div style={{ whiteSpace: 'nowrap' }}>{ministryModel.lunarDateLine}</div>
             <div style={{ whiteSpace: 'nowrap' }}>{ministryModel.solarDateLine}</div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: '11.5pt', marginTop: 6 }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginTop: 4 }}>
               {ministryModel.signerTitle || 'ព្រះនាយក'}
-            </div>
-          </div>
-
-          {/* Right Date & Doc Number Block */}
-          <div style={{ width: '46%', textAlign: 'center' }}>
-            <div style={{ whiteSpace: 'nowrap', marginBottom: 4 }}>
-              {ministryModel.lunarDateLine}
-            </div>
-            <div>
-              លេខ {ministryModel.docNumber || '.....................................'}
             </div>
           </div>
         </div>

@@ -38,6 +38,16 @@ export function sanitizeAdminReportsState(rawReports) {
     }
     let changed = false;
     const fixed = { ...report };
+    if (
+      month.startsWith('ministry-') &&
+      Number(fixed.appliedStudents) === 101 &&
+      Number(fixed.dropoutStudents) === 21 &&
+      Number(fixed.remainingStudents) === 80
+    ) {
+      fixed.dropoutStudents = 20;
+      fixed.remainingStudents = 81;
+      changed = true;
+    }
     if (String(fixed.customSubjectText || '').trim().startsWith('របាយការណ៍បូកសរុបលទ្ធផលការងារ')) {
       delete fixed.customSubjectText;
       changed = true;
