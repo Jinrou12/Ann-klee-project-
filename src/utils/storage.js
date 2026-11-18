@@ -48,6 +48,42 @@ export function sanitizeAdminReportsState(rawReports) {
       fixed.remainingStudents = 81;
       changed = true;
     }
+    // Heal post-September monthly reports (e.g. 2026-10, 2026-11) where the 4 grades sum to 81
+    // (15 + 15 + 30 + 21 = 81) and clean any stale 1-student dropout line when totalStudents is 81
+    if (/^\d{4}-\d{2}$/.test(month) && month >= '2026-10' && fixed.studentStats) {
+      const st = fixed.studentStats;
+      const gradeSum =
+        (Number(st.gradeKindergarten) || 0) +
+        (Number(st.grade1) || 0) +
+        (Number(st.grade2) || 0) +
+        (Number(st.grade3) || 0);
+      if (gradeSum === 81) {
+        if (Number(st.totalStudents) !== 81) {
+          fixed.studentStats = {
+            ...st,
+            totalStudents: 81
+          };
+          changed = true;
+        }
+        if (fixed.manualStudentStatsOverride || fixed.manualChallengesOverride) {
+          fixed.manualStudentStatsOverride = false;
+          fixed.manualChallengesOverride = false;
+          changed = true;
+        }
+        if (Array.isArray(fixed.challenges)) {
+          const filteredChallenges = fixed.challenges.filter(
+            line =>
+              !/បោះបង់ការសិក្សា|បោះបងការសិក្សា|សមណសិស្សបោះបង់|សិស្សបោះបង់|បោះបង់មានចំនួន|ដើមខែ.*ចុងខែ.*នៅសល់/.test(
+                String(line || '')
+              )
+          );
+          if (filteredChallenges.length !== fixed.challenges.length) {
+            fixed.challenges = filteredChallenges;
+            changed = true;
+          }
+        }
+      }
+    }
     if (String(fixed.customSubjectText || '').trim().startsWith('របាយការណ៍បូកសរុបលទ្ធផលការងារ')) {
       delete fixed.customSubjectText;
       changed = true;

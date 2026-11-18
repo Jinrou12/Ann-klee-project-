@@ -7,6 +7,7 @@ import { exportElementToPdf } from '../utils/pdfExporter';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 import A4SheetScaler from './A4SheetScaler';
 import OfficialLeaveDocument from './OfficialLeaveDocument';
+import TelegramSendMenu from './TelegramSendMenu';
 
 export default function LeaveTableView({
   records,
@@ -56,14 +57,14 @@ export default function LeaveTableView({
   };
 
   const handleExportExcel = () => {
-    exportLeaveToExcel(records, `${monthName} ឆ្នាំ${yearDisplay}`, metadata, {
+    return exportLeaveToExcel(records, `${monthName} ឆ្នាំ${yearDisplay}`, metadata, {
       monthKey,
       useKhmerNumerals
     });
   };
 
   const handleExportWord = () => {
-    exportLeaveToWord(records, `${monthName} ឆ្នាំ${yearDisplay}`, metadata, {
+    return exportLeaveToWord(records, `${monthName} ឆ្នាំ${yearDisplay}`, metadata, {
       monthKey,
       useKhmerNumerals
     });
@@ -192,6 +193,13 @@ export default function LeaveTableView({
                   {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                   <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
                 </button>
+
+                <TelegramSendMenu
+                  onExportPdf={handleDownloadPdf}
+                  onExportWord={handleExportWord}
+                  onExportExcel={handleExportExcel}
+                  reportTitle={`របាយការណ៍សុំច្បាប់ ខែ${monthName} ឆ្នាំ${yearDisplay}`}
+                />
 
                 {canExportOffice && (
                   <button

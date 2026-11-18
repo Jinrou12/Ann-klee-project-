@@ -43,6 +43,7 @@ import OfficialLeaveDocument from '../OfficialLeaveDocument';
 import OfficialIdCardDocument from '../OfficialIdCardDocument';
 import OfficialFinanceDocument from '../OfficialFinanceDocument';
 import OfficialFinanceSummaryDocument from '../OfficialFinanceSummaryDocument';
+import TelegramSendMenu from '../TelegramSendMenu';
 
 export default function SummaryMobileView({
   currentMonthKey = '2026-07',
@@ -374,7 +375,7 @@ export default function SummaryMobileView({
 
   const handleExportExcel = () => {
     if (sectionMode === 'finance') {
-      exportFinanceDualExcel(financeDataForOfficialDoc, periodTitleLabel, metadata, {
+      return exportFinanceDualExcel(financeDataForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
         monthName: activeMonthName,
         yearDisplay,
@@ -386,7 +387,7 @@ export default function SummaryMobileView({
         summaryFinanceData: fullPeriodFinanceDataForSummary
       });
     } else if (sectionMode === 'idcards') {
-      exportIdCardToExcel(displayedIdCardRecords, periodTitleLabel, metadata, {
+      return exportIdCardToExcel(displayedIdCardRecords, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: idCardCustomPeriodTitle,
@@ -394,7 +395,7 @@ export default function SummaryMobileView({
       });
     } else {
       const isStudentAggregateView = isMultiMonthPeriod || filterMode !== 'has_leave';
-      exportLeaveToExcel(leaveRecordsForOfficialDoc, periodTitleLabel, metadata, {
+      return exportLeaveToExcel(leaveRecordsForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: leaveCustomPeriodTitle,
@@ -407,7 +408,7 @@ export default function SummaryMobileView({
 
   const handleExportWord = () => {
     if (sectionMode === 'finance') {
-      exportFinanceDualWord(financeDataForOfficialDoc, periodTitleLabel, metadata, {
+      return exportFinanceDualWord(financeDataForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
         monthName: activeMonthName,
         yearDisplay,
@@ -419,7 +420,7 @@ export default function SummaryMobileView({
         summaryFinanceData: fullPeriodFinanceDataForSummary
       });
     } else if (sectionMode === 'idcards') {
-      exportIdCardToWord(displayedIdCardRecords, periodTitleLabel, metadata, {
+      return exportIdCardToWord(displayedIdCardRecords, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: idCardCustomPeriodTitle,
@@ -427,7 +428,7 @@ export default function SummaryMobileView({
       });
     } else {
       const isStudentAggregateView = isMultiMonthPeriod || filterMode !== 'has_leave';
-      exportLeaveToWord(leaveRecordsForOfficialDoc, periodTitleLabel, metadata, {
+      return exportLeaveToWord(leaveRecordsForOfficialDoc, periodTitleLabel, metadata, {
         monthKey: effectiveReportMonthKey,
         useKhmerNumerals,
         customPeriodTitle: leaveCustomPeriodTitle,
@@ -608,30 +609,47 @@ export default function SummaryMobileView({
           />
 
           {canDownloadPdf && (
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={isExportingPdf}
-              style={{
-                flex: 1,
-                background: '#b91c1c',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '9px 12px',
-                fontSize: 12.5,
-                fontWeight: 700,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                whiteSpace: 'nowrap',
-                opacity: isExportingPdf ? 0.7 : 1
-              }}
-            >
-              {isExportingPdf ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-              <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isExportingPdf}
+                style={{
+                  flex: 1,
+                  background: '#b91c1c',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '9px 10px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  whiteSpace: 'nowrap',
+                  opacity: isExportingPdf ? 0.7 : 1
+                }}
+              >
+                {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+              </button>
+
+              <TelegramSendMenu
+                compact
+                onExportPdf={handleDownloadPdf}
+                onExportWord={handleExportWord}
+                onExportExcel={handleExportExcel}
+                reportTitle={
+                  sectionMode === 'finance'
+                    ? financeCustomPeriodTitle
+                    : sectionMode === 'idcards'
+                      ? idCardCustomPeriodTitle
+                      : leaveCustomPeriodTitle
+                }
+                buttonStyle={{ borderRadius: 8, padding: '9px 10px', fontSize: 12 }}
+              />
+            </>
           )}
         </div>
       </div>

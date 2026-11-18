@@ -18,6 +18,7 @@ import {
 } from '../../utils/idCardCatalog';
 import OfficialIdCardDocument from '../OfficialIdCardDocument';
 import A4SheetScaler from '../A4SheetScaler';
+import TelegramSendMenu from '../TelegramSendMenu';
 import MobileCustomSelect from './MobileCustomSelect';
 
 export default function IdCardMobileView({
@@ -49,7 +50,8 @@ export default function IdCardMobileView({
 
   const autoDateInfo = useMemo(() => getAutoSystemDateInfo(monthKey), [monthKey]);
 
-  // Smart Quick-Entry State for Mobile
+  // Smart Quick-Entry State for Mobile (hidden by default; toggled via top button)
+  const [showQuickAddForm, setShowQuickAddForm] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [quickGrade, setQuickGrade] = useState('១');
   const [quickItem, setQuickItem] = useState('ខ្សែ');
@@ -182,11 +184,11 @@ export default function IdCardMobileView({
   };
 
   const handleExportExcel = () => {
-    exportIdCardToExcel(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    return exportIdCardToExcel(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleExportWord = () => {
-    exportIdCardToWord(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    return exportIdCardToWord(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleDownloadPdf = async () => {
@@ -223,39 +225,91 @@ export default function IdCardMobileView({
 
   return (
     <div className="mobile-idcard-container" style={{ paddingBottom: 85 }}>
-      {/* 1. Mobile Top PDF Export Button */}
-      {canDownloadPdf && (
-        <div style={{ marginBottom: 12 }}>
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={isExportingPdf}
-            style={{
-              width: '100%',
-              background: '#b91c1c',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 10,
-              padding: '10px 14px',
-              fontSize: 13,
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              cursor: isExportingPdf ? 'wait' : 'pointer',
-              opacity: isExportingPdf ? 0.7 : 1,
-              boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
-            }}
-          >
-            {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
-          </button>
+      {/* 1. Mobile Top Quick Actions (+ បន្ថែមទិញកាត ID, Download PDF & Telegram side-by-side) */}
+      {(canEdit || canDownloadPdf) && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns:
+            canEdit && canDownloadPdf
+              ? 'repeat(3, 1fr)'
+              : canDownloadPdf
+                ? 'repeat(2, 1fr)'
+                : '1fr',
+          gap: 6,
+          marginBottom: 12
+        }}>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setShowQuickAddForm(prev => !prev)}
+              style={{
+                width: '100%',
+                background: showQuickAddForm ? '#0369a1' : '#0284c7',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 10,
+                padding: '10px 6px',
+                fontSize: 12,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 4px rgba(2, 132, 199, 0.22)'
+              }}
+            >
+              {showQuickAddForm ? <X size={15} /> : <Plus size={15} />}
+              <span>{showQuickAddForm ? 'បិទប្រអប់' : 'បន្ថែមទិញកាត'}</span>
+            </button>
+          )}
+
+          {canDownloadPdf && (
+            <>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isExportingPdf}
+                style={{
+                  width: '100%',
+                  background: '#b91c1c',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: '10px 6px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  cursor: isExportingPdf ? 'wait' : 'pointer',
+                  opacity: isExportingPdf ? 0.7 : 1,
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+                }}
+              >
+                {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+              </button>
+
+              <TelegramSendMenu
+                compact
+                fullWidth
+                onExportPdf={handleDownloadPdf}
+                onExportWord={handleExportWord}
+                onExportExcel={handleExportExcel}
+                reportTitle={`របាយការណ៍ទិញកាត ID ខែ${monthName} ឆ្នាំ${yearDisplay}`}
+                buttonStyle={{ borderRadius: 10, padding: '10px 6px', fontSize: 12 }}
+              />
+            </>
+          )}
         </div>
       )}
 
-      {/* 2. Mobile Smart Quick-Entry Box (វាយឈ្មោះ -> ណែនាំ ៨០ អង្គ -> ចុចមុខទំនិញ -> Auto Price & Auto Date) */}
-      {canEdit && (
+      {/* 2. Mobile Smart Quick-Entry Box (Hidden by default on Mobile; toggled via top button) */}
+      {canEdit && showQuickAddForm && (
       <form
         onSubmit={handleQuickAddSubmit}
         style={{
@@ -271,22 +325,45 @@ export default function IdCardMobileView({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: 6,
           marginBottom: 10
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#0369a1' }}>
             <CreditCard size={16} />
             <span>បញ្ចូលសមណសិស្សទិញកាត ID ថ្មី</span>
           </div>
-          <span style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: '#0369a1',
-            background: '#e0f2fe',
-            padding: '2px 8px',
-            borderRadius: 12
-          }}>
-            {detectedDateKhmer}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#0369a1',
+              background: '#e0f2fe',
+              padding: '2px 8px',
+              borderRadius: 12
+            }}>
+              {detectedDateKhmer}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowQuickAddForm(false)}
+              title="លាក់ប្រអប់បញ្ចូល"
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                border: '1px solid #cbd5e1',
+                background: '#f8fafc',
+                color: '#64748b',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                cursor: 'pointer'
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Step 1: Student Name + Grade */}
@@ -435,7 +512,7 @@ export default function IdCardMobileView({
           </div>
         </div>
 
-        {/* Step 3: Qty + Auto Price + Auto Date + Submit */}
+        {/* Step 3: Qty + Auto Price + Submit */}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input
             type="number"
@@ -443,7 +520,7 @@ export default function IdCardMobileView({
             value={quickQty}
             onChange={e => handleQuickQtyChange(e.target.value)}
             style={{
-              width: 48,
+              width: 54,
               padding: '8px 4px',
               borderRadius: 8,
               border: '1px solid #cbd5e1',
@@ -453,7 +530,7 @@ export default function IdCardMobileView({
             }}
           />
           <div style={{
-            padding: '8px 10px',
+            padding: '8px 12px',
             borderRadius: 8,
             background: '#dcfce7',
             border: '1.5px solid #22c55e',
@@ -464,55 +541,31 @@ export default function IdCardMobileView({
           }}>
             {formatKhmerCurrency(quickPrice, useKhmerNumerals)}
           </div>
-          <input
-            type="text"
-            value={quickDate}
-            onChange={e => setQuickDate(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: 105,
-              padding: '8px 6px',
-              borderRadius: 8,
-              border: '1px solid #cbd5e1',
-              textAlign: 'center',
-              fontSize: 12.5,
-              fontWeight: 600
-            }}
-          />
           <button
             type="submit"
             title="បញ្ចូល"
             aria-label="បញ្ចូល"
             style={{
-              width: 42,
+              flex: 1,
               height: 38,
-              flexShrink: 0,
               background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
               color: '#ffffff',
               border: '1px solid #0369a1',
               borderRadius: 10,
-              padding: 0,
+              padding: '0 14px',
+              fontSize: 13,
+              fontWeight: 700,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
+              gap: 6,
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
               boxShadow: '0 3px 8px rgba(2, 132, 199, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25)'
             }}
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M9 7.5V4.8C9 3.8 9.8 3 10.8 3H18.2C19.2 3 20 3.8 20 4.8V19.2C20 20.2 19.2 21 18.2 21H10.8C9.8 21 9 20.2 9 19.2V16.5" />
-              <path d="M3.5 12H15.5" />
-              <path d="M11.5 8L15.5 12L11.5 16" />
-            </svg>
+            <Plus size={16} />
+            <span>បញ្ចូល</span>
           </button>
         </div>
 

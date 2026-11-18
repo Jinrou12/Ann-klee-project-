@@ -8,6 +8,7 @@ import KhmerRoyalDivider from './KhmerRoyalDivider';
 import A4SheetScaler from './A4SheetScaler';
 import OfficialFinanceDocument from './OfficialFinanceDocument';
 import OfficialFinanceSummaryDocument from './OfficialFinanceSummaryDocument';
+import TelegramSendMenu from './TelegramSendMenu';
 
 export default function FinanceTableView({
   financeData,
@@ -111,7 +112,7 @@ export default function FinanceTableView({
   };
 
   const handleExportExcel = () => {
-    exportFinanceDualExcel(financeData, `${monthName} ${yearDisplay}`, metadata, {
+    return exportFinanceDualExcel(financeData, `${monthName} ${yearDisplay}`, metadata, {
       monthKey,
       monthName,
       yearDisplay,
@@ -121,7 +122,7 @@ export default function FinanceTableView({
   };
 
   const handleExportWord = () => {
-    exportFinanceDualWord(financeData, `${monthName} ${yearDisplay}`, metadata, {
+    return exportFinanceDualWord(financeData, `${monthName} ${yearDisplay}`, metadata, {
       monthKey,
       monthName,
       yearDisplay,
@@ -293,6 +294,13 @@ export default function FinanceTableView({
                   {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                   <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
                 </button>
+
+                <TelegramSendMenu
+                  onExportPdf={handleDownloadPdf}
+                  onExportWord={handleExportWord}
+                  onExportExcel={handleExportExcel}
+                  reportTitle={`របាយការណ៍ចំណូលចំណាយ ខែ${monthName} ឆ្នាំ${yearDisplay}`}
+                />
 
                 {canExportOffice && (
                   <button

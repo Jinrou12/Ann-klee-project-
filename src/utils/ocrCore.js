@@ -60,16 +60,12 @@ function markKeyRateLimited(model, key, errorBodyText = '') {
 }
 
 export const GEMINI_VISION_MODELS = [
-  'gemini-3-flash-preview',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash'
+  'gemini-3-flash-preview'
 ];
 
-// Router & Orientation models: use `gemini-3-flash-preview` first for accurate 90° vs 270° rotation detection
+// Router & Orientation models: use `gemini-3-flash-preview` exclusively across the 13-key pool (avoids 503 hangs on 3.5/3.6)
 export const GEMINI_ROUTER_MODELS = [
-  'gemini-3-flash-preview',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash'
+  'gemini-3-flash-preview'
 ];
 
 export function isKeyUsable(key, model = '') {

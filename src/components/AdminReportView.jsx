@@ -17,6 +17,7 @@ import OfficialAdminReportDocument from './OfficialAdminReportDocument';
 import OfficialMinistryReportDocument from './OfficialMinistryReportDocument';
 import OfficialMinistrySummaryDocument from './OfficialMinistrySummaryDocument';
 import A4SheetScaler from './A4SheetScaler';
+import TelegramSendMenu from './TelegramSendMenu';
 import {
   buildAdminReportDisplayModel,
   synthesizeMultiMonthAdminReport,
@@ -40,6 +41,201 @@ import {
   exportMinistrySummaryToExcel
 } from '../utils/excelExporter';
 import { toKhmerDigits } from '../utils/khmerNumerals';
+
+/**
+ * HangingBulletEditor: Renders each bullet item (❖ or -) with a true hanging indent
+ * matching the A4 document layout so wrapped 2nd/3rd lines align cleanly under the text,
+ * never flush-left under the bullet symbol.
+ */
+function HangingBulletEditor({ value = '', onChange, bullet = '-', rows = 5 }) {
+  const rowRefs = useRef([]);
+  const [isFocused, setIsFocused] = useState(false);
+
+  const items = useMemo(() => {
+    const raw = String(value ?? '');
+    if (!raw.trim()) return [''];
+    return raw
+      .split('\n')
+      .map(line => line.replace(/^[-•❖▪◦]+\s*/, ''));
+  }, [value]);
+
+  const commitItems = (nextItems) => {
+    const safeItems = nextItems.length > 0 ? nextItems : [''];
+    const serialized = safeItems.map(line => `${bullet} ${line}`).join('\n');
+    if (onChange) onChange(serialized);
+  };
+
+  useEffect(() => {
+    rowRefs.current.forEach(el => {
+      if (el) {
+        el.style.height = 'auto';
+        el.style.height = `${Math.max(23, el.scrollHeight)}px`;
+      }
+    });
+  }, [items]);
+
+  const focusRowAt = (targetIdx, cursorPos = null) => {
+    requestAnimationFrame(() => {
+      const el = rowRefs.current[targetIdx];
+      if (el) {
+        el.focus();
+        const pos = cursorPos !== null ? cursorPos : el.value.length;
+        try {
+          el.setSelectionRange(pos, pos);
+        } catch {
+          // ignore
+        }
+      }
+    });
+  };
+
+  const handleRowChange = (idx, rawText, targetEl) => {
+    if (targetEl) {
+      targetEl.style.height = 'auto';
+      targetEl.style.height = `${Math.max(23, targetEl.scrollHeight)}px`;
+    }
+    if (rawText.includes('\n')) {
+      const pastedLines = rawText
+        .split('\n')
+        .map(l => l.replace(/^[-•❖▪◦]+\s*/, ''));
+      const next = [...items];
+      next.splice(idx, 1, ...pastedLines);
+      commitItems(next);
+      focusRowAt(idx + pastedLines.length - 1);
+      return;
+    }
+    const next = [...items];
+    next[idx] = rawText;
+    commitItems(next);
+  };
+
+  const handleRowKeyDown = (e, idx) => {
+    if (e.nativeEvent?.isComposing) return;
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? start;
+    const curText = items[idx] ?? '';
+
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const before = curText.slice(0, start);
+      const after = curText.slice(end).replace(/^[-•❖▪◦]+\s*/, '');
+      const next = [...items];
+      next.splice(idx, 1, before, after);
+      commitItems(next);
+      focusRowAt(idx + 1, 0);
+      return;
+    }
+
+    if (e.key === 'Backspace' && start === 0 && end === 0) {
+      if (idx > 0) {
+        e.preventDefault();
+        const prevText = items[idx - 1] ?? '';
+        const joinPos = prevText.length;
+        const merged = prevText + curText;
+        const next = [...items];
+        next.splice(idx - 1, 2, merged);
+        commitItems(next);
+        focusRowAt(idx - 1, joinPos);
+      } else if (idx === 0 && items.length > 1 && !curText.trim()) {
+        e.preventDefault();
+        const next = items.slice(1);
+        commitItems(next);
+        focusRowAt(0, 0);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowUp' && idx > 0 && start === 0) {
+      e.preventDefault();
+      focusRowAt(idx - 1);
+      return;
+    }
+
+    if (e.key === 'ArrowDown' && idx < items.length - 1 && start === curText.length) {
+      e.preventDefault();
+      focusRowAt(idx + 1, 0);
+    }
+  };
+
+  const minHeightPx = Math.max(115, rows * 25 + 16);
+
+  return (
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          focusRowAt(items.length - 1);
+        }
+      }}
+      style={{
+        width: '100%',
+        minHeight: minHeightPx,
+        maxHeight: 280,
+        overflowY: 'auto',
+        padding: '8px 10px',
+        borderRadius: 8,
+        border: isFocused ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+        background: '#ffffff',
+        boxSizing: 'border-box',
+        cursor: 'text',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4
+      }}
+    >
+      {items.map((lineText, idx) => (
+        <div
+          key={idx}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 6,
+            width: '100%'
+          }}
+        >
+          <span
+            style={{
+              width: bullet === '❖' ? 16 : 12,
+              flexShrink: 0,
+              fontSize: 13,
+              lineHeight: '23px',
+              color: '#0f172a',
+              userSelect: 'none'
+            }}
+          >
+            {bullet}
+          </span>
+          <textarea
+            ref={el => {
+              rowRefs.current[idx] = el;
+            }}
+            rows={1}
+            value={lineText}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            onChange={e => handleRowChange(idx, e.target.value, e.currentTarget)}
+            onKeyDown={e => handleRowKeyDown(e, idx)}
+            style={{
+              flex: 1,
+              width: '100%',
+              border: 'none',
+              outline: 'none',
+              resize: 'none',
+              padding: 0,
+              margin: 0,
+              background: 'transparent',
+              fontSize: 13,
+              lineHeight: '23px',
+              color: '#0f172a',
+              fontFamily: 'inherit',
+              overflow: 'hidden'
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function AdminReportView({
   currentMonthKey = '2026-07',
@@ -112,6 +308,40 @@ export default function AdminReportView({
       .filter(Boolean)
       .map(s => `${bullet} ${s}`)
       .join('\n');
+
+  // Keep open editDraft challengesText synchronized with dropout calculation (including during live HMR)
+  useEffect(() => {
+    if (!isEditing || periodType !== 'month') return;
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      const sumGrades =
+        (Number(prev.gradeKindergarten) || 0) +
+        (Number(prev.grade1) || 0) +
+        (Number(prev.grade2) || 0) +
+        (Number(prev.grade3) || 0);
+      const effectiveTotal = sumGrades > 0 ? sumGrades : (Number(prev.totalStudents) || 0);
+      const currentChallengeLines = String(prev.challengesText || '')
+        .split('\n')
+        .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
+        .filter(Boolean);
+      const nextChallenges = syncMonthlyDropoutChallengeLine({
+        monthKey: currentMonthKey,
+        prevTotal: displayModel.prevMonthTotalStudents,
+        currTotal: effectiveTotal,
+        challenges: currentChallengeLines,
+        useKhmerNumerals
+      });
+      const nextChallengesText = formatLinesWithBullet(nextChallenges, '-');
+      if (nextChallengesText === prev.challengesText && Number(prev.totalStudents) === effectiveTotal) {
+        return prev;
+      }
+      return {
+        ...prev,
+        totalStudents: effectiveTotal,
+        challengesText: nextChallengesText
+      };
+    });
+  }, [isEditing, periodType, currentMonthKey, displayModel.prevMonthTotalStudents, useKhmerNumerals]);
 
   const handleOpenEditor = () => {
     if (isMinistryActive) {
@@ -338,6 +568,34 @@ export default function AdminReportView({
         totalStudents: rawVal,
         challengesText: formatLinesWithBullet(nextChallenges, '-')
       };
+    });
+  };
+
+  const handleGradeCountChange = (gradeField, rawVal) => {
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      const nextDraft = { ...prev, [gradeField]: rawVal };
+      const sumTotal =
+        (Number(nextDraft.gradeKindergarten) || 0) +
+        (Number(nextDraft.grade1) || 0) +
+        (Number(nextDraft.grade2) || 0) +
+        (Number(nextDraft.grade3) || 0);
+      nextDraft.totalStudents = sumTotal;
+      if (periodType === 'month') {
+        const currentChallengeLines = String(prev.challengesText || '')
+          .split('\n')
+          .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
+          .filter(Boolean);
+        const nextChallenges = syncMonthlyDropoutChallengeLine({
+          monthKey: currentMonthKey,
+          prevTotal: displayModel.prevMonthTotalStudents,
+          currTotal: sumTotal,
+          challenges: currentChallengeLines,
+          useKhmerNumerals
+        });
+        nextDraft.challengesText = formatLinesWithBullet(nextChallenges, '-');
+      }
+      return nextDraft;
     });
   };
 
@@ -755,8 +1013,13 @@ export default function AdminReportView({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: canEdit && canDownloadPdf ? '1fr 1fr' : '1fr',
-                gap: 8
+                gridTemplateColumns:
+                  canEdit && canDownloadPdf
+                    ? 'repeat(3, 1fr)'
+                    : canDownloadPdf
+                      ? 'repeat(2, 1fr)'
+                      : '1fr',
+                gap: 6
               }}
             >
               {canEdit && (
@@ -767,48 +1030,66 @@ export default function AdminReportView({
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: 6,
+                    gap: 5,
                     background: isEditing ? '#0f172a' : '#f1f5f9',
                     border: '1px solid #cbd5e1',
                     color: isEditing ? '#ffffff' : '#1e293b',
-                    padding: '9px 10px',
+                    padding: '9px 6px',
                     borderRadius: 8,
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: 'pointer',
-                    width: '100%'
+                    width: '100%',
+                    whiteSpace: 'nowrap'
                   }}
                 >
-                  <Edit3 size={15} />
-                  <span>{isEditing ? 'បិទផ្ទាំងកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
+                  <Edit3 size={14} />
+                  <span>{isEditing ? 'បិទកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
                 </button>
               )}
 
               {canDownloadPdf && (
-                <button
-                  type="button"
-                  onClick={handleDownloadPdf}
-                  disabled={isExportingPdf}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
-                    border: 'none',
-                    color: '#ffffff',
-                    padding: '9px 10px',
-                    borderRadius: 8,
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    cursor: isExportingPdf ? 'wait' : 'pointer',
-                    boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)',
-                    width: '100%'
-                  }}
-                >
-                  <FileText size={15} />
-                  <span>{isExportingPdf ? 'កំពុងផលិត PDF...' : 'Download PDF'}</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    disabled={isExportingPdf}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 5,
+                      background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                      border: 'none',
+                      color: '#ffffff',
+                      padding: '9px 6px',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: isExportingPdf ? 'wait' : 'pointer',
+                      boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)',
+                      width: '100%',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    <FileText size={14} />
+                    <span>{isExportingPdf ? 'កំពុងផលិត...' : 'Download PDF'}</span>
+                  </button>
+
+                  <TelegramSendMenu
+                    compact
+                    fullWidth
+                    onExportPdf={handleDownloadPdf}
+                    onExportWord={handleDownloadWord}
+                    onExportExcel={handleDownloadExcel}
+                    reportTitle={
+                      isMinistryActive
+                        ? `របាយការណ៍មន្ទីរ (${ministryDocType === 'summary' ? 'សង្ខេប' : 'ពេញ'}) ឆ្នាំ${ministryModel.yearKhmer}`
+                        : `របាយការណ៍រដ្ឋបាល (${displayModel.periodTitlePhrase})`
+                    }
+                    buttonStyle={{ padding: '9px 6px', fontSize: 12 }}
+                  />
+                </>
               )}
             </div>
           )
@@ -926,28 +1207,42 @@ export default function AdminReportView({
                 )}
 
                 {canDownloadPdf && (
-                  <button
-                    type="button"
-                    onClick={handleDownloadPdf}
-                    disabled={isExportingPdf}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
-                      border: 'none',
-                      color: '#ffffff',
-                      padding: '8px 15px',
-                      borderRadius: 8,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: isExportingPdf ? 'wait' : 'pointer',
-                      boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)'
-                    }}
-                  >
-                    <FileText size={15} />
-                    <span>{isExportingPdf ? 'កំពុងផលិត PDF...' : 'Download PDF'}</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDownloadPdf}
+                      disabled={isExportingPdf}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                        border: 'none',
+                        color: '#ffffff',
+                        padding: '8px 15px',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: isExportingPdf ? 'wait' : 'pointer',
+                        boxShadow: '0 2px 6px rgba(185, 28, 28, 0.28)'
+                      }}
+                    >
+                      <FileText size={15} />
+                      <span>{isExportingPdf ? 'កំពុងផលិត PDF...' : 'Download PDF'}</span>
+                    </button>
+
+                    <TelegramSendMenu
+                      onExportPdf={handleDownloadPdf}
+                      onExportWord={handleDownloadWord}
+                      onExportExcel={handleDownloadExcel}
+                      reportTitle={
+                        isMinistryActive
+                          ? `របាយការណ៍មន្ទីរ (${ministryDocType === 'summary' ? 'សង្ខេប' : 'ពេញ'}) ឆ្នាំ${ministryModel.yearKhmer}`
+                          : `របាយការណ៍រដ្ឋបាល (${displayModel.periodTitlePhrase})`
+                      }
+                      buttonStyle={{ padding: '8px 14px', borderRadius: 8 }}
+                    />
+                  </>
                 )}
               </div>
             </div>
@@ -1058,7 +1353,7 @@ export default function AdminReportView({
               <input
                 type="number"
                 value={editDraft.gradeKindergarten}
-                onChange={e => setEditDraft({ ...editDraft, gradeKindergarten: e.target.value })}
+                onChange={e => handleGradeCountChange('gradeKindergarten', e.target.value)}
                 style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
               />
             </div>
@@ -1069,7 +1364,7 @@ export default function AdminReportView({
               <input
                 type="number"
                 value={editDraft.grade1}
-                onChange={e => setEditDraft({ ...editDraft, grade1: e.target.value })}
+                onChange={e => handleGradeCountChange('grade1', e.target.value)}
                 style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
               />
             </div>
@@ -1080,7 +1375,7 @@ export default function AdminReportView({
               <input
                 type="number"
                 value={editDraft.grade2}
-                onChange={e => setEditDraft({ ...editDraft, grade2: e.target.value })}
+                onChange={e => handleGradeCountChange('grade2', e.target.value)}
                 style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
               />
             </div>
@@ -1091,7 +1386,7 @@ export default function AdminReportView({
               <input
                 type="number"
                 value={editDraft.grade3}
-                onChange={e => setEditDraft({ ...editDraft, grade3: e.target.value })}
+                onChange={e => handleGradeCountChange('grade3', e.target.value)}
                 style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
               />
             </div>
@@ -1159,13 +1454,11 @@ export default function AdminReportView({
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
                 III. ក. សកម្មភាពការងារ (❖ ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
-              <textarea
+              <HangingBulletEditor
                 rows={6}
+                bullet="❖"
                 value={editDraft.activitiesText}
-                onFocus={() => handleBulletFocus('activitiesText', '❖')}
-                onChange={e => handleBulletChange(e, 'activitiesText', '❖')}
-                onKeyDown={e => handleBulletKeyDown(e, 'activitiesText', '❖')}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
+                onChange={nextVal => setEditDraft(prev => ({ ...prev, activitiesText: nextVal }))}
               />
             </div>
 
@@ -1173,13 +1466,11 @@ export default function AdminReportView({
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
                 IV. ១-បញ្ហាប្រឈម (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
-              <textarea
+              <HangingBulletEditor
                 rows={6}
+                bullet="-"
                 value={editDraft.challengesText}
-                onFocus={() => handleBulletFocus('challengesText', '-')}
-                onChange={e => handleBulletChange(e, 'challengesText', '-')}
-                onKeyDown={e => handleBulletKeyDown(e, 'challengesText', '-')}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
+                onChange={nextVal => setEditDraft(prev => ({ ...prev, challengesText: nextVal }))}
               />
             </div>
 
@@ -1187,13 +1478,11 @@ export default function AdminReportView({
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
                 IV. ២-ដំណោះស្រាយ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
-              <textarea
+              <HangingBulletEditor
                 rows={5}
+                bullet="-"
                 value={editDraft.solutionsText}
-                onFocus={() => handleBulletFocus('solutionsText', '-')}
-                onChange={e => handleBulletChange(e, 'solutionsText', '-')}
-                onKeyDown={e => handleBulletKeyDown(e, 'solutionsText', '-')}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
+                onChange={nextVal => setEditDraft(prev => ({ ...prev, solutionsText: nextVal }))}
               />
             </div>
 
@@ -1201,13 +1490,11 @@ export default function AdminReportView({
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
                 IV. ៣-សំណូមពរ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
-              <textarea
+              <HangingBulletEditor
                 rows={5}
+                bullet="-"
                 value={editDraft.requestsText}
-                onFocus={() => handleBulletFocus('requestsText', '-')}
-                onChange={e => handleBulletChange(e, 'requestsText', '-')}
-                onKeyDown={e => handleBulletKeyDown(e, 'requestsText', '-')}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
+                onChange={nextVal => setEditDraft(prev => ({ ...prev, requestsText: nextVal }))}
               />
             </div>
 
@@ -1215,13 +1502,11 @@ export default function AdminReportView({
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
                 V. ទិសដៅបន្ត (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
-              <textarea
+              <HangingBulletEditor
                 rows={5}
+                bullet="-"
                 value={editDraft.directionsText}
-                onFocus={() => handleBulletFocus('directionsText', '-')}
-                onChange={e => handleBulletChange(e, 'directionsText', '-')}
-                onKeyDown={e => handleBulletKeyDown(e, 'directionsText', '-')}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13, lineHeight: 1.75 }}
+                onChange={nextVal => setEditDraft(prev => ({ ...prev, directionsText: nextVal }))}
               />
             </div>
 
@@ -1522,18 +1807,21 @@ export default function AdminReportView({
                 <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
                   {sec.label}
                 </label>
-                <textarea
-                  rows={sec.rows}
-                  value={ministryEditDraft[sec.key] || ''}
-                  onFocus={sec.bullet ? () => handleMinistryBulletFocus(sec.key, '-') : undefined}
-                  onChange={
-                    sec.bullet
-                      ? e => handleMinistryBulletChange(e, sec.key, '-')
-                      : e => setMinistryEditDraft({ ...ministryEditDraft, [sec.key]: e.target.value })
-                  }
-                  onKeyDown={sec.bullet ? e => handleMinistryBulletKeyDown(e, sec.key, '-') : undefined}
-                  style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5, lineHeight: 1.7 }}
-                />
+                {sec.bullet ? (
+                  <HangingBulletEditor
+                    rows={sec.rows}
+                    bullet="-"
+                    value={ministryEditDraft[sec.key] || ''}
+                    onChange={nextVal => setMinistryEditDraft(prev => ({ ...prev, [sec.key]: nextVal }))}
+                  />
+                ) : (
+                  <textarea
+                    rows={sec.rows}
+                    value={ministryEditDraft[sec.key] || ''}
+                    onChange={e => setMinistryEditDraft({ ...ministryEditDraft, [sec.key]: e.target.value })}
+                    style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5, lineHeight: 1.7 }}
+                  />
+                )}
               </div>
             ))}
           </div>

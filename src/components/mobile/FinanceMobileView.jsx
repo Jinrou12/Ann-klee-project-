@@ -10,6 +10,7 @@ import { exportElementToPdf } from '../../utils/pdfExporter';
 import A4SheetScaler from '../A4SheetScaler';
 import OfficialFinanceDocument from '../OfficialFinanceDocument';
 import OfficialFinanceSummaryDocument from '../OfficialFinanceSummaryDocument';
+import TelegramSendMenu from '../TelegramSendMenu';
 import CurrencyToggle from '../CurrencyToggle';
 
 export default function FinanceMobileView({
@@ -160,7 +161,7 @@ export default function FinanceMobileView({
   };
 
   const handleExportExcel = () => {
-    exportFinanceDualExcel(financeData, `${monthName} ${yearDisplay}`, metadata, {
+    return exportFinanceDualExcel(financeData, `${monthName} ${yearDisplay}`, metadata, {
       monthKey,
       monthName,
       yearDisplay,
@@ -170,7 +171,7 @@ export default function FinanceMobileView({
   };
 
   const handleExportWord = () => {
-    exportFinanceDualWord(financeData, `${monthName} ${yearDisplay}`, metadata, {
+    return exportFinanceDualWord(financeData, `${monthName} ${yearDisplay}`, metadata, {
       monthKey,
       monthName,
       yearDisplay,
@@ -303,17 +304,12 @@ export default function FinanceMobileView({
         </div>
       </div>
 
-      {/* 2. 3-Button Action Row (+ បន្ថែមចំណូល | + បន្ថែមចំណាយ | Download PDF) */}
+      {/* 2. Action Grid (+ បន្ថែមចំណូល | + បន្ថែមចំណាយ | Download PDF | Telegram) */}
       {(canEdit || canDownloadPdf) && (
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns:
-              canEdit && canDownloadPdf
-                ? 'repeat(3, 1fr)'
-                : canEdit
-                  ? 'repeat(2, 1fr)'
-                  : '1fr',
+            gridTemplateColumns: 'repeat(2, 1fr)',
             gap: 6,
             marginBottom: 12
           }}
@@ -331,13 +327,13 @@ export default function FinanceMobileView({
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: 8,
-                  padding: '10px 6px',
-                  fontSize: 12,
+                  padding: '10px 8px',
+                  fontSize: 12.5,
                   fontWeight: 700,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 4,
+                  gap: 5,
                   cursor: 'pointer',
                   width: '100%',
                   whiteSpace: 'nowrap',
@@ -359,13 +355,13 @@ export default function FinanceMobileView({
                   color: '#ffffff',
                   border: 'none',
                   borderRadius: 8,
-                  padding: '10px 6px',
-                  fontSize: 12,
+                  padding: '10px 8px',
+                  fontSize: 12.5,
                   fontWeight: 700,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 4,
+                  gap: 5,
                   cursor: 'pointer',
                   width: '100%',
                   whiteSpace: 'nowrap',
@@ -379,32 +375,44 @@ export default function FinanceMobileView({
           )}
 
           {canDownloadPdf && (
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={isExportingPdf}
-              style={{
-                width: '100%',
-                background: '#b91c1c',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '10px 6px',
-                fontSize: 12,
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4,
-                cursor: isExportingPdf ? 'wait' : 'pointer',
-                opacity: isExportingPdf ? 0.75 : 1,
-                whiteSpace: 'nowrap',
-                boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
-              }}
-            >
-              {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-              <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isExportingPdf}
+                style={{
+                  width: '100%',
+                  background: '#b91c1c',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '10px 8px',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  cursor: isExportingPdf ? 'wait' : 'pointer',
+                  opacity: isExportingPdf ? 0.75 : 1,
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+                }}
+              >
+                {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+              </button>
+
+              <TelegramSendMenu
+                compact
+                fullWidth
+                onExportPdf={handleDownloadPdf}
+                onExportWord={handleExportWord}
+                onExportExcel={handleExportExcel}
+                reportTitle={`របាយការណ៍ចំណូលចំណាយ ខែ${monthName} ឆ្នាំ${yearDisplay}`}
+                buttonStyle={{ borderRadius: 8, padding: '10px 8px', fontSize: 12.5 }}
+              />
+            </>
           )}
         </div>
       )}

@@ -18,6 +18,7 @@ import {
 } from '../utils/idCardCatalog';
 import A4SheetScaler from './A4SheetScaler';
 import OfficialIdCardDocument from './OfficialIdCardDocument';
+import TelegramSendMenu from './TelegramSendMenu';
 
 export default function IdCardTableView({
   records = [],
@@ -197,11 +198,11 @@ export default function IdCardTableView({
   };
 
   const handleExportExcel = () => {
-    exportIdCardToExcel(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    return exportIdCardToExcel(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleExportWord = () => {
-    exportIdCardToWord(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    return exportIdCardToWord(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleDownloadPdf = async () => {
@@ -484,10 +485,10 @@ export default function IdCardTableView({
             </div>
           </div>
 
-          {/* STEP 3: Auto Price + Auto Date + Submit Button */}
+          {/* STEP 3: Quantity + Auto Price + Submit Button */}
           <div>
             <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>
-              ៣. តម្លៃស្វ័យប្រវត្តិ & កាលបរិច្ឆេទ (ថ្ងៃ/ខែ/ឆ្នាំ)៖
+              ៣. ចំនួន & តម្លៃស្វ័យប្រវត្តិ៖
             </label>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               {/* Quantity */}
@@ -522,24 +523,6 @@ export default function IdCardTableView({
               }}>
                 {formatKhmerCurrency(quickPrice, useKhmerNumerals)}
               </div>
-
-              {/* Auto Date Input */}
-              <input
-                type="text"
-                value={quickDate}
-                onChange={e => setQuickDate(e.target.value)}
-                title="កាលបរិច្ឆេទស្វ័យប្រវត្តិ (DD/MM/YYYY) - បើដូរខែ ប្រព័ន្ធនឹងដាក់ចូលខែនោះស្វ័យប្រវត្តិ"
-                style={{
-                  width: 108,
-                  padding: '8px 8px',
-                  borderRadius: 8,
-                  border: '1.5px solid #cbd5e1',
-                  textAlign: 'center',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: '#ffffff'
-                }}
-              />
 
               {/* Submit Button */}
               <button
@@ -709,6 +692,13 @@ export default function IdCardTableView({
                   {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                   <span>{isExportingPdf ? 'កំពុងទាញយក PDF...' : 'Download PDF'}</span>
                 </button>
+
+                <TelegramSendMenu
+                  onExportPdf={handleDownloadPdf}
+                  onExportWord={handleExportWord}
+                  onExportExcel={handleExportExcel}
+                  reportTitle={`របាយការណ៍ទិញកាត ID ខែ${monthName} ឆ្នាំ${yearDisplay}`}
+                />
 
                 {canExportOffice && (
                   <button

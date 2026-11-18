@@ -335,9 +335,8 @@ export async function extractFinanceReceiptWithGemini({
   return callGeminiJsonWithResilience({
     parts,
     apiKey,
-    thinkingLevel: 'HIGH',
-    thinkingBudget: 4096,
-    timeoutMs: 65000,
+    thinkingBudget: 1024,
+    timeoutMs: 36000,
     maxTimeoutAttempts: 2
   });
 }

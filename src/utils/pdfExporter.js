@@ -1,5 +1,6 @@
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { isFileCaptureActive, recordCapturedFile } from './openXmlZip.js';
 
 /**
  * High-definition PDF Exporter for Khmer Administrative Documents (A4 Standard)
@@ -156,7 +157,11 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
         }
       }
 
-      pdf.save(finalFilename);
+      if (isFileCaptureActive()) {
+        recordCapturedFile(pdf.output('blob'), finalFilename, 'application/pdf');
+      } else {
+        pdf.save(finalFilename);
+      }
       return;
     } finally {
       if (typeof window !== 'undefined') {
@@ -510,7 +515,11 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
       pdf.addImage(imgData, 'JPEG', marginLeftMm, marginTopMm, printableWidthMm, sliceHeightMm);
     }
 
-    pdf.save(finalFilename);
+    if (isFileCaptureActive()) {
+      recordCapturedFile(pdf.output('blob'), finalFilename, 'application/pdf');
+    } else {
+      pdf.save(finalFilename);
+    }
     return;
   } catch (err) {
     console.error('Error generating PDF:', err);

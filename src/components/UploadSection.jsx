@@ -1089,8 +1089,27 @@ export default function UploadSection({
                               </div>
                             </div>
 
-                            {/* Row 4: Date (No Label) */}
-                            <div>
+                            {/* Row 4: Grade (ថ្នាក់ទី) + Date (DD/MM/YYYY) side-by-side on Mobile */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '0.92fr 1.08fr', gap: 6, alignItems: 'center' }}>
+                              <MobileCustomSelect
+                                value={leaveItem.grade || '៣'}
+                                onChange={e => updateLeaveField('grade', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  fontSize: 12.5,
+                                  fontWeight: 700,
+                                  padding: '5px 8px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: 6,
+                                  background: '#ffffff',
+                                  color: '#0f172a'
+                                }}
+                              >
+                                <option value="មត្តេយ្យ">មត្តេយ្យ</option>
+                                <option value="១">ថ្នាក់ទី ១</option>
+                                <option value="២">ថ្នាក់ទី ២</option>
+                                <option value="៣">ថ្នាក់ទី ៣</option>
+                              </MobileCustomSelect>
                               <input
                                 type="text"
                                 value={leaveItem.date || ''}
@@ -1098,6 +1117,8 @@ export default function UploadSection({
                                 placeholder="DD/MM/YYYY"
                                 style={{
                                   width: '100%',
+                                  minWidth: 0,
+                                  boxSizing: 'border-box',
                                   fontSize: 13,
                                   fontWeight: 600,
                                   padding: '5px 8px',
@@ -2751,13 +2772,19 @@ export default function UploadSection({
             onUpdateQueueItem(selectedReviewItem.id, updates);
           }}
           onConfirmApprove={({ type, item }) => {
+            const existingFinances = selectedReviewItem.processedData?.financeItems;
+            const updatedFinances = type === 'finance'
+              ? (Array.isArray(existingFinances) && existingFinances.length > 1
+                  ? existingFinances.map((f, i) => (i === 0 ? { ...f, ...item } : f))
+                  : [item])
+              : [];
             const updatedItem = {
               ...selectedReviewItem,
               processedData: {
                 ...selectedReviewItem.processedData,
                 detectedType: type,
                 leaveItems: type === 'leave' ? [item] : [],
-                financeItems: type === 'finance' ? (selectedReviewItem.processedData?.financeItems?.length > 1 ? selectedReviewItem.processedData.financeItems : [item]) : []
+                financeItems: updatedFinances
               }
             };
             onApproveItem(updatedItem);

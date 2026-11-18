@@ -9,6 +9,7 @@ import { exportLeaveToWord } from '../../utils/wordExporter';
 import { exportElementToPdf } from '../../utils/pdfExporter';
 import A4SheetScaler from '../A4SheetScaler';
 import OfficialLeaveDocument from '../OfficialLeaveDocument';
+import TelegramSendMenu from '../TelegramSendMenu';
 import MobileCustomSelect from './MobileCustomSelect';
 
 export default function LeaveMobileView({
@@ -106,11 +107,11 @@ export default function LeaveMobileView({
   };
 
   const handleExportExcel = () => {
-    exportLeaveToExcel(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    return exportLeaveToExcel(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleExportWord = () => {
-    exportLeaveToWord(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
+    return exportLeaveToWord(records, `${monthName} ${yearDisplay}`, metadata, { monthKey, useKhmerNumerals });
   };
 
   const handleDownloadPdf = async () => {
@@ -149,12 +150,17 @@ export default function LeaveMobileView({
 
   return (
     <div className="mobile-leave-container" style={{ paddingBottom: 80 }}>
-      {/* 1. Mobile Top Quick Actions (+ បន្ថែមច្បាប់ & Download PDF side-by-side) */}
+      {/* 1. Mobile Top Quick Actions (+ បន្ថែមច្បាប់, Download PDF & Telegram side-by-side) */}
       {(canEdit || canDownloadPdf) && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: canEdit && canDownloadPdf ? '1fr 1fr' : '1fr',
-          gap: 8,
+          gridTemplateColumns:
+            canEdit && canDownloadPdf
+              ? 'repeat(3, 1fr)'
+              : canDownloadPdf
+                ? 'repeat(2, 1fr)'
+                : '1fr',
+          gap: 6,
           marginBottom: 12
         }}>
           {canEdit && (
@@ -165,49 +171,63 @@ export default function LeaveMobileView({
                 color: '#ffffff',
                 border: 'none',
                 borderRadius: 10,
-                padding: '10px 12px',
-                fontSize: 13,
-                fontWeight: 600,
+                padding: '10px 6px',
+                fontSize: 12,
+                fontWeight: 700,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 6,
+                gap: 4,
                 cursor: 'pointer',
                 width: '100%',
+                whiteSpace: 'nowrap',
                 boxShadow: '0 2px 4px rgba(180, 83, 9, 0.2)'
               }}
             >
-              <Plus size={16} />
+              <Plus size={15} />
               <span>បន្ថែមច្បាប់</span>
             </button>
           )}
 
           {canDownloadPdf && (
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={isExportingPdf}
-              style={{
-                width: '100%',
-                background: '#b91c1c',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: 10,
-                padding: '10px 12px',
-                fontSize: 13,
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                cursor: isExportingPdf ? 'wait' : 'pointer',
-                opacity: isExportingPdf ? 0.75 : 1,
-                boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
-              }}
-            >
-              {isExportingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-              <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={isExportingPdf}
+                style={{
+                  width: '100%',
+                  background: '#b91c1c',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: '10px 6px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  cursor: isExportingPdf ? 'wait' : 'pointer',
+                  opacity: isExportingPdf ? 0.75 : 1,
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 2px 4px rgba(185, 28, 28, 0.2)'
+                }}
+              >
+                {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                <span>{isExportingPdf ? 'កំពុងទាញយក...' : 'Download PDF'}</span>
+              </button>
+
+              <TelegramSendMenu
+                compact
+                fullWidth
+                onExportPdf={handleDownloadPdf}
+                onExportWord={handleExportWord}
+                onExportExcel={handleExportExcel}
+                reportTitle={`របាយការណ៍សុំច្បាប់ ខែ${monthName} ឆ្នាំ${yearDisplay}`}
+                buttonStyle={{ borderRadius: 10, padding: '10px 6px', fontSize: 12 }}
+              />
+            </>
           )}
         </div>
       )}
@@ -321,20 +341,22 @@ export default function LeaveMobileView({
           <p style={{ fontSize: 12, margin: '4px 0 12px' }}>
             {searchQuery ? 'មិនមានទិន្នន័យត្រូវនឹងការស្វែងរក' : 'ខែនេះមិនទាន់មានសមណសិស្សសុំច្បាប់នៅឡើយ'}
           </p>
-          <button
-            onClick={() => setShowAddModal(true)}
-            style={{
-              background: '#b45309',
-              color: '#ffffff',
-              border: 'none',
-              borderRadius: 6,
-              padding: '6px 14px',
-              fontSize: 13,
-              cursor: 'pointer'
-            }}
-          >
-            + បន្ថែមឥឡូវនេះ
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              style={{
+                background: '#b45309',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 6,
+                padding: '6px 14px',
+                fontSize: 13,
+                cursor: 'pointer'
+              }}
+            >
+              + បន្ថែមឥឡូវនេះ
+            </button>
+          )}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

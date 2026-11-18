@@ -31,7 +31,17 @@ export default function A4SheetScaler({ children, orientation = 'portrait' }) {
   const defaultSheetHeight = sheetWidth === A4_LANDSCAPE_WIDTH ? A4_LANDSCAPE_HEIGHT : A4_PORTRAIT_HEIGHT;
 
   // Rarely-changing layout state (React-managed)
-  const [scale, setScale] = useState(1);
+  // Initialize scale immediately on mobile viewports (< sheetWidth + 26) so frame 0 never renders an unscaled 794px box
+  const [scale, setScale] = useState(() => {
+    if (typeof window === 'undefined') return 1;
+    const vw = window.innerWidth || 1200;
+    const initW = isLandscapeProp ? A4_LANDSCAPE_WIDTH : A4_PORTRAIT_WIDTH;
+    if (vw < initW + 26) {
+      const approxContainer = Math.max(260, vw - 44);
+      return Math.min(1, approxContainer / initW);
+    }
+    return 1;
+  });
   const [contentHeight, setContentHeight] = useState(defaultSheetHeight);
 
   // High-frequency gesture state (ref-managed, never causes re-render)
@@ -82,20 +92,15 @@ export default function A4SheetScaler({ children, orientation = 'portrait' }) {
     const total = baseScale * zoom;
     const gesturing = gestureRef.current.active;
 
-    if (!gesturing && zoom <= 1.01 && panX === 0 && panY === 0) {
-      // At rest (1x fit): use native CSS zoom so browser rasterizes vector fonts & hairline borders with ClearType sharpness
-      layer.style.transition = '';
-      layer.style.transform = 'none';
-      layer.style.willChange = 'auto';
-      layer.style.zoom = String(baseScale);
-    } else {
-      layer.style.zoom = '';
-      layer.style.transition = animate ? 'transform 0.18s ease-out' : 'none';
-      layer.style.transform = gesturing
-        ? `translate3d(${panX}px, ${panY}px, 0) scale(${total})`
-        : `translate(${panX}px, ${panY}px) scale(${total})`;
-      layer.style.willChange = gesturing ? 'transform' : 'auto';
-    }
+    // Always use CSS 2D/3D `transform: scale(...)` (NEVER `style.zoom`), because on iOS Safari / Chrome WebKit
+    // `style.zoom` conflicts with `-webkit-text-size-adjust: 100%` and leaves fonts at 100% PC size while
+    // shrinking the 794px paper box, causing text and right-hand table columns to overflow and clip.
+    layer.style.zoom = '';
+    layer.style.transition = animate ? 'transform 0.18s ease-out' : 'none';
+    layer.style.transform = gesturing
+      ? `translate3d(${panX}px, ${panY}px, 0) scale(${total})`
+      : `translate(${panX}px, ${panY}px) scale(${total})`;
+    layer.style.willChange = gesturing ? 'transform' : 'auto';
 
     if (vp) {
       vp.style.touchAction = zoom > 1.02 ? 'none' : 'pan-y';
@@ -161,9 +166,15 @@ export default function A4SheetScaler({ children, orientation = 'portrait' }) {
 
     setSheetWidth(prev => (prev !== activeSheetW ? activeSheetW : prev));
 
+    // Cap measured containerWidth by physical mobile viewport width so a wide child never inflates scale
+    const viewportW = typeof window !== 'undefined' ? (window.innerWidth || containerWidth) : containerWidth;
+    const effectiveContainerW = viewportW < activeSheetW + 26
+      ? Math.min(containerWidth || viewportW, Math.max(260, viewportW - 24))
+      : containerWidth;
+
     let nextScale = 1;
-    if (containerWidth < activeSheetW + 26) {
-      const availWidth = Math.max(280, containerWidth - 16);
+    if (effectiveContainerW < activeSheetW + 26) {
+      const availWidth = Math.max(260, effectiveContainerW - 16);
       nextScale = Math.min(1, availWidth / activeSheetW);
     }
 
@@ -174,6 +185,11 @@ export default function A4SheetScaler({ children, orientation = 'portrait' }) {
       setContentHeight(prev => (prev !== h ? h : prev));
     }
   }, [isLandscapeProp]);
+
+  // Measure synchronously before first paint so mobile A4 preview starts at the exact fitted scale
+  useLayoutEffect(() => {
+    measure();
+  }, [measure]);
 
   useEffect(() => {
     const g = gestureRef.current;
@@ -407,7 +423,17 @@ export default function A4SheetScaler({ children, orientation = 'portrait' }) {
   }, [isScaled, clampPan, scheduleWrite, writeTransform]);
 
   return (
-    <div ref={containerRef} className="a4-scaler-root" style={{ width: '100%', position: 'relative' }}>
+    <div
+      ref={containerRef}
+      className="a4-scaler-root"
+      style={{
+        width: '100%',
+        maxWidth: '100%',
+        overflow: isScaled ? 'hidden' : 'visible',
+        boxSizing: 'border-box',
+        position: 'relative'
+      }}
+    >
       {isScaled ? (
         <div
           ref={viewportRef}

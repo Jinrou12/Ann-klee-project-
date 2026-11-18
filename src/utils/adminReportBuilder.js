@@ -526,7 +526,7 @@ export function computeStudentStatsFromMaster(studentMaster) {
  * Find the previous month's totalStudents for a given monthKey (YYYY-MM).
  * Returns null for May (-05), the first month of the school year.
  */
-export function getPreviousMonthTotalStudents(monthKey, mergedReportsMap = {}) {
+export function getPreviousMonthTotalStudents(monthKey, mergedReportsMap = {}, liveMasterStats = null) {
   const mk = String(monthKey || '');
   if (!/^\d{4}-\d{2}$/.test(mk) || mk.endsWith('-05')) return null;
   const [yrStr, moStr] = mk.split('-');
@@ -536,7 +536,30 @@ export function getPreviousMonthTotalStudents(monthKey, mergedReportsMap = {}) {
   const prevY = m === 1 ? y - 1 : y;
   const prevM = m === 1 ? 12 : m - 1;
   const prevKey = `${prevY}-${String(prevM).padStart(2, '0')}`;
-  const directPrev = mergedReportsMap[prevKey]?.studentStats?.totalStudents;
+  const resolveMonthTotal = (k) => {
+    const rep = mergedReportsMap[k];
+    if (!rep) {
+      return k >= '2026-10' && liveMasterStats?.totalStudents
+        ? Number(liveMasterStats.totalStudents)
+        : null;
+    }
+    if (k >= '2026-10' && !rep.manualStudentStatsOverride && liveMasterStats?.totalStudents) {
+      return Number(liveMasterStats.totalStudents);
+    }
+    const st = rep.studentStats || {};
+    const gradeSum =
+      (Number(st.gradeKindergarten) || 0) +
+      (Number(st.grade1) || 0) +
+      (Number(st.grade2) || 0) +
+      (Number(st.grade3) || 0);
+    if (k >= '2026-10' && gradeSum > 0 && gradeSum !== Number(st.totalStudents)) {
+      return gradeSum;
+    }
+    return st.totalStudents != null && Number(st.totalStudents) > 0
+      ? Number(st.totalStudents)
+      : null;
+  };
+  const directPrev = resolveMonthTotal(prevKey);
   if (directPrev != null && Number(directPrev) > 0) {
     return Number(directPrev);
   }
@@ -545,7 +568,7 @@ export function getPreviousMonthTotalStudents(monthKey, mergedReportsMap = {}) {
     .sort()
     .reverse();
   for (const pk of priorKeys) {
-    const t = mergedReportsMap[pk]?.studentStats?.totalStudents;
+    const t = resolveMonthTotal(pk);
     if (t != null && Number(t) > 0) return Number(t);
   }
   return null;
@@ -563,7 +586,10 @@ export function syncMonthlyDropoutChallengeLine({
   useKhmerNumerals = true
 }) {
   const list = Array.isArray(challenges) ? [...challenges] : [];
-  const isDropoutLine = (line) => /បោះបង់ការសិក្សា|បោះបងការសិក្សា/.test(String(line || ''));
+  const isDropoutLine = (line) =>
+    /បោះបង់ការសិក្សា|បោះបងការសិក្សា|សមណសិស្សបោះបង់|សិស្សបោះបង់|បោះបង់មានចំនួន|ដើមខែ.*ចុងខែ.*នៅសល់/.test(
+      String(line || '')
+    );
   const fmt = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
   const monthName = getKhmerMonthNameFromKey(monthKey);
 
@@ -963,7 +989,21 @@ export function buildAdminReportDisplayModel({
   let rawReport;
   if (periodType === 'month') {
     const baseMonthReport = mergedMap[monthKey] || createDefaultMonthlyAdminReport(monthKey);
-    if (!isHistoricalFixedStartMonth && !baseMonthReport.manualStudentStatsOverride && liveMasterStats) {
+    const baseSt = baseMonthReport.studentStats || {};
+    const baseGradeSum =
+      (Number(baseSt.gradeKindergarten) || 0) +
+      (Number(baseSt.grade1) || 0) +
+      (Number(baseSt.grade2) || 0) +
+      (Number(baseSt.grade3) || 0);
+    const isGradeSumMatchedToMaster =
+      monthKey >= '2026-10' &&
+      liveMasterStats &&
+      baseGradeSum === Number(liveMasterStats.totalStudents);
+    if (
+      !isHistoricalFixedStartMonth &&
+      (!baseMonthReport.manualStudentStatsOverride || isGradeSumMatchedToMaster) &&
+      liveMasterStats
+    ) {
       rawReport = {
         ...baseMonthReport,
         studentStats: {
@@ -1119,10 +1159,10 @@ export function buildAdminReportDisplayModel({
         : `ប្រចាំឆ្នាំ_${yrKh}`;
 
   const prevMonthTotalStudents = periodType === 'month'
-    ? getPreviousMonthTotalStudents(monthKey, mergedMap)
+    ? getPreviousMonthTotalStudents(monthKey, mergedMap, liveMasterStats)
     : null;
 
-  const resolvedChallenges = periodType === 'month' && !rawReport.manualChallengesOverride
+  const resolvedChallenges = periodType === 'month'
     ? syncMonthlyDropoutChallengeLine({
         monthKey,
         prevTotal: prevMonthTotalStudents,

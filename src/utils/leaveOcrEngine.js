@@ -272,8 +272,8 @@ export async function extractLeaveSlipWithGemini({
   return callGeminiJsonWithResilience({
     parts,
     apiKey,
-    thinkingBudget: 2048,
-    timeoutMs: 36000,
+    thinkingBudget: 512,
+    timeoutMs: 28000,
     maxTimeoutAttempts: 2
   });
 }

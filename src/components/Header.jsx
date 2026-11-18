@@ -208,9 +208,10 @@ export default function Header({
 
           {/* Right: Actions and Status Indicators */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {/* Online/Offline & AI Vision Status */}
+            {/* Online/Offline & AI Vision / Telegram Settings Shortcut */}
             <div
-              title={isOnline && hasApiKey ? "AI Vision សកម្ម (Gemini)" : isOnline ? "Online (គ្មាន AI Key)" : "Offline Mode"}
+              onClick={onOpenSettings}
+              title={isOnline && hasApiKey ? "AI Vision សកម្ម (Gemini) • ចុចដើម្បីកំណត់ Telegram Bot & AI" : isOnline ? "Online • ចុចដើម្បីកំណត់ Telegram Bot & AI" : "Offline Mode"}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -218,7 +219,8 @@ export default function Header({
                 background: (isOnline && hasApiKey) ? 'rgba(22, 101, 52, 0.45)' : isOnline ? 'rgba(180, 83, 9, 0.45)' : 'rgba(185, 28, 28, 0.45)',
                 border: `1px solid ${(isOnline && hasApiKey) ? 'rgba(74, 222, 128, 0.5)' : isOnline ? 'rgba(251, 191, 36, 0.5)' : 'rgba(248, 113, 113, 0.4)'}`,
                 padding: '6px 8px',
-                borderRadius: 20
+                borderRadius: 20,
+                cursor: 'pointer'
               }}
             >
               {isOnline && hasApiKey ? (

@@ -21,7 +21,7 @@ import MobileBottomNav from './components/mobile/MobileBottomNav';
 import { useDeviceMode } from './utils/useDeviceMode';
 import { useStandalonePinchZoom } from './utils/useStandalonePinchZoom';
 import { isAcademicMonthKey } from './utils/summaryAnalytics';
-import { INITIAL_ADMIN_REPORTS } from './utils/adminReportBuilder';
+import { INITIAL_ADMIN_REPORTS, computeStudentStatsFromMaster } from './utils/adminReportBuilder';
 
 import {
   loadAppState,
@@ -480,13 +480,16 @@ export default function App() {
   // 3-Tier Role Permissions (Owner / Admin / User) + Old Month Lock
   // Automatic Lock Rule: Starting from May (2026-05), an old month is
   // locked starting on the 10th day (ថ្ងៃទី ១០) of the following month.
+  // Both Owner and Admin can click Unlock (🔓) to edit an old month,
+  // and it automatically re-locks on month switch or page refresh.
   // ================================================================
-  const isMonthLockedByRule = useCallback((monthKey, metaObj) => {
+  const [sessionUnlockedMonths, setSessionUnlockedMonths] = useState([]);
+  const [sessionLockedMonths, setSessionLockedMonths] = useState([]);
+
+  const isMonthLockedByRule = useCallback((monthKey) => {
     if (!monthKey || !/^\d{4}-\d{2}$/.test(String(monthKey))) return false;
-    const lockedList = Array.isArray(metaObj?.lockedMonths) ? metaObj.lockedMonths : [];
-    const unlockedList = Array.isArray(metaObj?.unlockedMonths) ? metaObj.unlockedMonths : [];
-    if (lockedList.includes(monthKey)) return true;
-    if (unlockedList.includes(monthKey)) return false;
+    if (sessionLockedMonths.includes(monthKey)) return true;
+    if (sessionUnlockedMonths.includes(monthKey)) return false;
     if (monthKey < '2026-05') return false;
     const [yrStr, moStr] = String(monthKey).split('-');
     const y = parseInt(yrStr, 10);
@@ -495,13 +498,13 @@ export default function App() {
     // Day 10 at 00:00:00 of the month immediately following (y, m)
     const lockCutoffDate = new Date(y, m, 10, 0, 0, 0, 0);
     return new Date() >= lockCutoffDate;
-  }, []);
+  }, [sessionLockedMonths, sessionUnlockedMonths]);
 
   const authRole = authSession?.role || 'user';
   const isOwner = authRole === 'owner';
   const isAdmin = authRole === 'admin';
-  const isOldLockedMonth = isMonthLockedByRule(currentMonthKey, appState.meta);
-  const canEditCurrentMonth = isOwner || (isAdmin && !isOldLockedMonth);
+  const isOldLockedMonth = isMonthLockedByRule(currentMonthKey);
+  const canEditCurrentMonth = (isOwner || isAdmin) && !isOldLockedMonth;
   const canDownloadPdf = isOwner || isAdmin;
   const canExportOffice = isOwner || (isAdmin && !isMobile);
   const canUploadOcr = canEditCurrentMonth;
@@ -532,7 +535,7 @@ export default function App() {
       if (perm.role === 'user') {
         alert('គណនីនេះបានត្រឹមតែមើលប៉ុណ្ណោះ (View-Only)។');
       } else if (perm.isOldLockedMonth) {
-        alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ មានតែ Owner ប៉ុណ្ណោះដែលអាចកែប្រែបាន។');
+        alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ សូមចុចប៊ូតុងដោះសោ (🔓 Unlock) នៅរបារខែជាមុនសិន ទើបអាចកែប្រែបាន។');
       } else {
         alert('អ្នកមិនមានសិទ្ធិធ្វើសកម្មភាពនេះទេ។');
       }
@@ -587,34 +590,34 @@ export default function App() {
     const res = authenticateUser(username, pin);
     if (res.ok) {
       setAuthSession(res.session);
+      setSessionUnlockedMonths([]);
+      setSessionLockedMonths([]);
     }
     return res;
   }, []);
 
   const handleLogout = useCallback(() => {
     setAuthSession(logoutAuthSession());
+    setSessionUnlockedMonths([]);
+    setSessionLockedMonths([]);
     undoStackRef.current = [];
   }, []);
 
   const mutateToggleMonthLock = useCallback((monthKey) => {
-    commitUserEdit(prev => {
-      const prevLocked = Array.isArray(prev.meta?.lockedMonths) ? prev.meta.lockedMonths : [];
-      const prevUnlocked = Array.isArray(prev.meta?.unlockedMonths) ? prev.meta.unlockedMonths : [];
-      const currentlyLocked = isMonthLockedByRule(monthKey, prev.meta);
-      return {
-        ...prev,
-        meta: {
-          ...prev.meta,
-          lockedMonths: currentlyLocked
-            ? prevLocked.filter(k => k !== monthKey)
-            : Array.from(new Set([...prevLocked, monthKey])),
-          unlockedMonths: currentlyLocked
-            ? Array.from(new Set([...prevUnlocked, monthKey]))
-            : prevUnlocked.filter(k => k !== monthKey)
-        }
-      };
-    }, { permission: 'owner' });
-  }, [commitUserEdit, isMonthLockedByRule]);
+    if (permRef.current.role === 'user') {
+      alert('គណនីនេះបានត្រឹមតែមើលប៉ុណ្ណោះ (View-Only)។');
+      return;
+    }
+    const targetKey = monthKey || currentMonthKey;
+    const currentlyLocked = isMonthLockedByRule(targetKey);
+    if (currentlyLocked) {
+      setSessionUnlockedMonths(prev => Array.from(new Set([...prev, targetKey])));
+      setSessionLockedMonths(prev => prev.filter(k => k !== targetKey));
+    } else {
+      setSessionUnlockedMonths(prev => prev.filter(k => k !== targetKey));
+      setSessionLockedMonths(prev => Array.from(new Set([...prev, targetKey])));
+    }
+  }, [currentMonthKey, isMonthLockedByRule]);
 
   // 2. Central Mutator Functions (with 3-Channel Real-Time Auto-Sync)
   const mutateLeaves = useCallback((updatedLeaves) => {
@@ -663,8 +666,8 @@ export default function App() {
       alert('គណនីនេះបានត្រឹមតែមើលប៉ុណ្ណោះ (View-Only)។');
       return;
     }
-    if (!perm.isOwner && isMonthLockedByRule(targetMonthKey, appStateRef.current?.meta)) {
-      alert(`ទិន្នន័យខែចាស់ (${targetMonthKey}) ត្រូវបានចាក់សោការពារ (ចាប់ពីថ្ងៃទី ១០ នៃខែថ្មី)។ មានតែ Owner ប៉ុណ្ណោះដែលអាចបន្ថែម ឬកែប្រែបាន។`);
+    if (isMonthLockedByRule(targetMonthKey)) {
+      alert(`ទិន្នន័យខែចាស់ (${targetMonthKey}) ត្រូវបានចាក់សោការពារ។ សូមជ្រើសរើសខែនោះ រួចចុចប៊ូតុងដោះសោ (🔓 Unlock) ជាមុនសិន ទើបអាចបន្ថែម ឬកែប្រែបាន។`);
       return;
     }
     commitUserEdit(prev => {
@@ -713,12 +716,25 @@ export default function App() {
 
   const mutateStudents = useCallback((updatedStudents) => {
     commitUserEdit(prev => {
-      // Clear manual student-count override on the active month so the Admin Report auto-syncs from the roster
+      // Auto-sync live student roster stats to the active month & any post-September month (>= 2026-10)
       const prevReports = prev.adminReports || {};
-      const activeReport = prevReports[currentMonthKey];
-      const nextReports = activeReport && activeReport.manualStudentStatsOverride
-        ? { ...prevReports, [currentMonthKey]: { ...activeReport, manualStudentStatsOverride: false } }
-        : prevReports;
+      const nextReports = { ...prevReports };
+      const liveStats = computeStudentStatsFromMaster(updatedStudents);
+      Object.keys(nextReports).forEach(rKey => {
+        if (rKey === currentMonthKey || (/^\d{4}-\d{2}$/.test(rKey) && rKey >= '2026-10')) {
+          const rep = nextReports[rKey];
+          if (rep && typeof rep === 'object') {
+            nextReports[rKey] = {
+              ...rep,
+              manualStudentStatsOverride: false,
+              manualChallengesOverride: false,
+              studentStats: liveStats
+                ? { ...(rep.studentStats || {}), ...liveStats }
+                : rep.studentStats
+            };
+          }
+        }
+      });
       return {
         ...prev,
         studentMaster: updatedStudents,
@@ -730,8 +746,8 @@ export default function App() {
 
   const mutateAdminReport = useCallback((reportKey, updatedReportData) => {
     const isMonthReport = /^\d{4}-\d{2}$/.test(String(reportKey || ''));
-    if (isMonthReport && !permRef.current.isOwner && isMonthLockedByRule(reportKey, appStateRef.current?.meta)) {
-      alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ មានតែ Owner ប៉ុណ្ណោះដែលអាចកែប្រែបាន។');
+    if (isMonthReport && isMonthLockedByRule(reportKey)) {
+      alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ សូមចុចប៊ូតុងដោះសោ (🔓 Unlock) នៅរបារខែជាមុនសិន ទើបអាចកែប្រែបាន។');
       return;
     }
     commitUserEdit(prev => ({
@@ -746,8 +762,8 @@ export default function App() {
 
   const mutateResetAdminReport = useCallback((reportKey) => {
     const isMonthReport = /^\d{4}-\d{2}$/.test(String(reportKey || ''));
-    if (isMonthReport && !permRef.current.isOwner && isMonthLockedByRule(reportKey, appStateRef.current?.meta)) {
-      alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ មានតែ Owner ប៉ុណ្ណោះដែលអាចកែប្រែបាន។');
+    if (isMonthReport && isMonthLockedByRule(reportKey)) {
+      alert('ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារ។ សូមចុចប៊ូតុងដោះសោ (🔓 Unlock) នៅរបារខែជាមុនសិន ទើបអាចកែប្រែបាន។');
       return;
     }
     commitUserEdit(prev => {
@@ -767,6 +783,9 @@ export default function App() {
     if (isHydratedRef.current) {
       isRemoteUpdateRef.current = true;
     }
+    // Auto-relock any temporarily unlocked old month when switching months
+    setSessionUnlockedMonths([]);
+    setSessionLockedMonths([]);
     setAppState(prev => ({
       ...prev,
       meta: {
@@ -786,9 +805,32 @@ export default function App() {
     }));
   }, []);
 
+  const mutateTelegramConfig = useCallback((tgConfig) => {
+    setAppState(prev => ({
+      ...prev,
+      meta: {
+        ...prev.meta,
+        telegramConfig: tgConfig,
+        updatedAt: new Date().toISOString()
+      }
+    }));
+  }, []);
+
+  useEffect(() => {
+    const handleOpenTgSettings = () => {
+      if (permRef.current?.isOwner) {
+        setIsApiKeyModalOpen(true);
+      }
+    };
+    window.addEventListener('open-telegram-settings', handleOpenTgSettings);
+    return () => window.removeEventListener('open-telegram-settings', handleOpenTgSettings);
+  }, []);
+
   const mutateSelectYear = useCallback((targetYear) => {
     const cleanYr = String(targetYear || '').trim();
     if (!cleanYr) return;
+    setSessionUnlockedMonths([]);
+    setSessionLockedMonths([]);
     setAppState(prev => {
       const existingMonthsInYear = Array.from(new Set([
         ...Object.keys(prev.leaves || {}).filter(k => k.startsWith(`${cleanYr}-`) && isAcademicMonthKey(k)),
@@ -838,11 +880,10 @@ export default function App() {
   }, [queue]);
 
   const updateQueueSafe = useCallback((updater) => {
-    setQueue(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      queueRef.current = next;
-      return next;
-    });
+    const prev = queueRef.current || [];
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    queueRef.current = next;
+    setQueue(next);
   }, []);
 
   const processQueueWorker = useCallback(async () => {
@@ -860,26 +901,28 @@ export default function App() {
         ])
         : Promise.resolve(null);
 
-      while (true) {
-        // Pick next item that needs processing (status is 'pending')
+      // Synchronously claim the next 'pending' item and mark it 'processing' before any await
+      // so parallel worker lanes never pick the same item twice.
+      const claimNextPendingItem = () => {
         const currentList = queueRef.current || [];
         const nextItem = currentList.find(q => q.status === 'pending');
-        if (!nextItem) break;
-
-        const itemId = nextItem.id;
-        const targetFile = nextItem.file;
-        const targetDocType = nextItem.docTypeHint || 'auto';
-        const oldBlobUrl = (nextItem.previewUrl && nextItem.previewUrl.startsWith('blob:')) ? nextItem.previewUrl : '';
-
-        // 1. Mark this item as 'processing' with real start timestamp & stage so live countdown ticks immediately
+        if (!nextItem) return null;
         const startedAt = Date.now();
-        updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+        updateQueueSafe(prev => prev.map(q => q.id === nextItem.id ? {
           ...q,
           status: 'processing',
           scanStartedAt: startedAt,
           scanStage: 'orient',
           error: null
         } : q));
+        return nextItem;
+      };
+
+      const processSingleQueueItem = async (nextItem) => {
+        const itemId = nextItem.id;
+        const targetFile = nextItem.file;
+        const targetDocType = nextItem.docTypeHint || 'auto';
+        const oldBlobUrl = (nextItem.previewUrl && nextItem.previewUrl.startsWith('blob:')) ? nextItem.previewUrl : '';
 
         // 2. Orientation check:
         //    - Mobile (/mobile): instant on-device 2-format check (~0.1s, 0 Gemini calls, max 1800px!)
@@ -926,12 +969,10 @@ export default function App() {
                   mobileOriginalDataUrl = dataUrl;
                   mobileSidewaysRotated = true;
                   deferredBlobUrlToRevoke = oldBlobUrl;
-                  updateQueueSafe(prev => prev.map(q => q.id === itemId ? { ...q, scanStage: 'ocr' } : q));
                 } else {
                   updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
                     ...q,
-                    previewUrl: orientedDataUrl,
-                    scanStage: 'ocr'
+                    previewUrl: orientedDataUrl
                   } : q));
                   if (oldBlobUrl) {
                     try { URL.revokeObjectURL(oldBlobUrl); } catch { /* ignore */ }
@@ -960,7 +1001,7 @@ export default function App() {
         }
 
         if (mobileRejectedEarly) {
-          continue;
+          return;
         }
 
         // Resolve non-blocking cloud training dataset if ready
@@ -987,7 +1028,15 @@ export default function App() {
             prefetchedTrainingDataset: batchTrainingDataset,
             onStageChange: (stage) => {
               updateQueueSafe(prev => prev.map(q => q.id === itemId ? { ...q, scanStage: stage } : q));
-            }
+            },
+            onOrientedPreview: isMobile
+              ? (newPreviewUrl) => {
+                  if (newPreviewUrl) {
+                    orientedDataUrl = newPreviewUrl;
+                    updateQueueSafe(prev => prev.map(q => q.id === itemId ? { ...q, previewUrl: newPreviewUrl } : q));
+                  }
+                }
+              : null
           });
 
           // Receipt Orientation Restore: the local Mobile check rotated this photo 270° as a sideways
@@ -1055,6 +1104,22 @@ export default function App() {
             error: formatKhmerScanError(err)
           } : q));
         }
+      };
+
+      // Process up to 2 items in parallel across both Mobile and PC (/mp) using round-robin API keys
+      const CONCURRENCY = 2;
+      const runWorkerLane = async () => {
+        while (true) {
+          const nextItem = claimNextPendingItem();
+          if (!nextItem) break;
+          await processSingleQueueItem(nextItem);
+        }
+      };
+
+      while ((queueRef.current || []).some(q => q.status === 'pending')) {
+        await Promise.all(
+          Array.from({ length: CONCURRENCY }, () => runWorkerLane())
+        );
       }
     } finally {
       isWorkerRunningRef.current = false;
@@ -1468,7 +1533,7 @@ export default function App() {
         onLogout={handleLogout}
         onExportTrainingDataset={exportTrainingDataset}
         onOpenStudentMaster={() => setIsStudentModalOpen(true)}
-        onOpenSettings={() => setIsApiKeyModalOpen(true)}
+        onOpenSettings={isOwner ? () => setIsApiKeyModalOpen(true) : undefined}
         onExportBackup={handleExportBackup}
         onImportBackup={handleImportBackup}
         onPrint={handlePrint}
@@ -1775,6 +1840,7 @@ export default function App() {
         isOpen={isApiKeyModalOpen}
         onClose={() => setIsApiKeyModalOpen(false)}
         onKeySaved={key => setApiKey(key)}
+        onTelegramConfigSaved={mutateTelegramConfig}
       />
     </div>
   );

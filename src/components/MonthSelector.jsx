@@ -248,15 +248,15 @@ export default function MonthSelector({
                 {isMobileMonthOpen && renderMonthPopover(184)}
               </div>
 
-              {/* Old Month Lock Indicator / Owner Toggle */}
-              {authRole === 'owner' && onToggleMonthLock ? (
+              {/* Old Month Lock / Unlock Toggle (Owner & Admin) */}
+              {(authRole === 'owner' || authRole === 'admin') && onToggleMonthLock ? (
                 <button
                   type="button"
                   onClick={() => onToggleMonthLock(currentMonth)}
                   title={
                     isOldLockedMonth
-                      ? 'ខែនេះកំពុងចាក់សោការពារពីការលុបសម្រាប់ Admin (ចុចដើម្បីដោះសោ)'
-                      : 'ខែនេះអនុញ្ញាតឱ្យ Admin កែប្រែបាន (ចុចដើម្បីចាក់សោការពារ)'
+                      ? 'ខែចាស់កំពុងជាប់សោរការពារ (ចុចដើម្បីដោះសោ 🔓 កែប្រែទិន្នន័យ)'
+                      : 'កំពុងបើកសិទ្ធិកែប្រែ (ចុចដើម្បីចាក់សោរ 🔒 ការពារ)'
                   }
                   style={{
                     display: 'inline-flex',
@@ -276,27 +276,6 @@ export default function MonthSelector({
                 >
                   {isOldLockedMonth ? <Lock size={13} /> : <Unlock size={13} />}
                 </button>
-              ) : isOldLockedMonth && authRole === 'admin' ? (
-                <span
-                  title="ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារមិនឱ្យលុប ឬកែប្រែច្រឡំ"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    background: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    color: '#b91c1c',
-                    padding: '3px 6px',
-                    borderRadius: 8,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0
-                  }}
-                >
-                  <Lock size={12} />
-                  <span>ខែចាស់</span>
-                </span>
               ) : null}
             </>
           ) : (
@@ -356,15 +335,15 @@ export default function MonthSelector({
                 {isMobileMonthOpen && renderMonthPopover(196)}
               </div>
 
-              {/* Old Month Lock Indicator / Owner Toggle */}
-              {authRole === 'owner' && onToggleMonthLock ? (
+              {/* Old Month Lock / Unlock Toggle (Owner & Admin) */}
+              {(authRole === 'owner' || authRole === 'admin') && onToggleMonthLock ? (
                 <button
                   type="button"
                   onClick={() => onToggleMonthLock(currentMonth)}
                   title={
                     isOldLockedMonth
-                      ? 'ខែនេះកំពុងចាក់សោការពារពីការលុបសម្រាប់ Admin (ចុចដើម្បីដោះសោ)'
-                      : 'ខែនេះអនុញ្ញាតឱ្យ Admin កែប្រែបាន (ចុចដើម្បីចាក់សោការពារ)'
+                      ? 'ខែចាស់កំពុងជាប់សោរការពារ (ចុចដើម្បីដោះសោ 🔓 កែប្រែទិន្នន័យ)'
+                      : 'កំពុងបើកសិទ្ធិកែប្រែ (ចុចដើម្បីចាក់សោរ 🔒 ការពារ)'
                   }
                   style={{
                     display: 'inline-flex',
@@ -385,27 +364,6 @@ export default function MonthSelector({
                   {isOldLockedMonth ? <Lock size={13} /> : <Unlock size={13} />}
                   <span>{isOldLockedMonth ? 'ចាក់សោខែចាស់' : 'បើកសិទ្ធិកែ'}</span>
                 </button>
-              ) : isOldLockedMonth && authRole === 'admin' ? (
-                <span
-                  title="ទិន្នន័យខែចាស់ត្រូវបានចាក់សោការពារមិនឱ្យលុប ឬកែប្រែច្រឡំ"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    background: '#fef2f2',
-                    border: '1px solid #fecaca',
-                    color: '#b91c1c',
-                    padding: '4px 8px',
-                    borderRadius: 8,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0
-                  }}
-                >
-                  <Lock size={12} />
-                  <span>ខែចាស់ (ការពារការលុប)</span>
-                </span>
               ) : null}
             </>
           )}

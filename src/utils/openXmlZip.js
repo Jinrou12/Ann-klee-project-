@@ -118,8 +118,43 @@ export function buildZipArchive(files = []) {
   return out;
 }
 
+let activeFileCaptureBuffer = null;
+
+export function startFileCapture() {
+  activeFileCaptureBuffer = [];
+}
+
+export function stopFileCapture() {
+  const captured = activeFileCaptureBuffer ? [...activeFileCaptureBuffer] : [];
+  activeFileCaptureBuffer = null;
+  return captured;
+}
+
+export function isFileCaptureActive() {
+  return Array.isArray(activeFileCaptureBuffer);
+}
+
+export function recordCapturedFile(blobOrBytes, filename, mimeType) {
+  const blob = blobOrBytes instanceof Blob
+    ? blobOrBytes
+    : new Blob([blobOrBytes], { type: mimeType || 'application/octet-stream' });
+  if (Array.isArray(activeFileCaptureBuffer)) {
+    activeFileCaptureBuffer.push({
+      blob,
+      filename: String(filename || 'document'),
+      mimeType: mimeType || blob.type || 'application/octet-stream'
+    });
+    return true;
+  }
+  return false;
+}
+
 export function triggerBlobDownload(bytes, filename, mimeType) {
-  const blob = new Blob([bytes], { type: mimeType });
+  if (isFileCaptureActive()) {
+    recordCapturedFile(bytes, filename, mimeType);
+    return;
+  }
+  const blob = bytes instanceof Blob ? bytes : new Blob([bytes], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

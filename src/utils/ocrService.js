@@ -330,17 +330,6 @@ export async function classifyMobileCapture(dataUrl, docTypeHint = 'auto') {
     }
   }
 
-  if (Math.max(m.w, m.h) > 1600) {
-    const compressed = await compressImageForOCR(dataUrl, 3 * 1024 * 1024, 'image/jpeg');
-    return {
-      dataUrl: compressed.dataUrl || dataUrl,
-      base64: compressed.base64 || (dataUrl.split(',')[1] || ''),
-      rotatedDegrees: 0,
-      format: 'upright',
-      metrics: roundedMetrics
-    };
-  }
-
   return unchanged('upright', roundedMetrics);
 }
 
@@ -363,7 +352,8 @@ export async function processUploadedImage(
     skipOrientRetry = false,
     isMobileCapture = false,
     prefetchedTrainingDataset = null,
-    onStageChange = null
+    onStageChange = null,
+    onOrientedPreview = null
   } = {}
 ) {
   onStageChange?.('orient');
@@ -420,6 +410,7 @@ export async function processUploadedImage(
     const oriented = await autoOrientDocumentImage(rawDataUrl, docTypeHint, effectiveApiKey);
     if (oriented?.dataUrl) {
       rawDataUrl = oriented.dataUrl;
+      onOrientedPreview?.(rawDataUrl);
     }
     targetEngine = oriented?.detectedDocType === 'finance' ? 'finance' : 'leave';
     if (oriented?.routerError) {
@@ -429,6 +420,7 @@ export async function processUploadedImage(
     const oriented = await autoOrientDocumentImage(rawDataUrl, 'leave', effectiveApiKey);
     if (oriented?.dataUrl) {
       rawDataUrl = oriented.dataUrl;
+      onOrientedPreview?.(rawDataUrl);
     }
     if (oriented?.routerError) {
       routerNetworkError = oriented.routerError;
@@ -529,12 +521,15 @@ export async function processUploadedImage(
     }
   }
 
-  // Step 2: Bandwidth-Smart Compression (~90-120 KB JPEG)
+  // Step 2: Bandwidth-Smart Compression (~90-120 KB JPEG) — use actual current dataUrl byte size so rotated images are never double-compressed
+  const currentRawBytes = rawDataUrl
+    ? Math.round(((rawDataUrl.split(',')[1] || '').length * 3) / 4)
+    : (file?.size || 0);
   const {
     base64,
     dataUrl,
     mimeType: compressedMimeType
-  } = await compressImageForOCR(rawDataUrl, file?.size || 0, file?.type || 'image/jpeg');
+  } = await compressImageForOCR(rawDataUrl, currentRawBytes, 'image/jpeg');
 
   // Fast-fail guard: if the lightweight router already timed out / failed on a dead connection,
   // return the right blank template immediately in Khmer instead of waiting a second full timeout!
