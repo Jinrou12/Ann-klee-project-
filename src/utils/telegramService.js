@@ -1,11 +1,12 @@
 // Telegram Bot Integration Service for Direct PDF, Word (.docx), and Excel (.xlsx) Document Delivery
-// Supports Auto-Discovery of all Telegram accounts/groups that have clicked /start on the Bot,
-// with Broadcast-to-All ('ALL') or Single-Account targeting.
+// Features Smart Per-Device (dev_...) Multi-Account Binding & Strict Selection Lock
 import { startFileCapture, stopFileCapture } from './openXmlZip.js';
 import { toKhmerDigits } from './khmerNumerals.js';
+import { loadAuthSession } from './auth.js';
 
 const TELEGRAM_STORAGE_KEY = 'ann_klee_telegram_config_v1';
-const APP_STATE_STORAGE_KEY = 'ann_klee_app_state_v1';
+const DEVICE_ID_STORAGE_KEY = 'ann_klee_device_id_v1';
+const DEVICE_BINDING_STORAGE_KEY = 'ann_klee_device_tg_binding_v1';
 
 export const DEFAULT_SUBSCRIBERS = [
   {
@@ -21,17 +22,66 @@ export const DEFAULT_SUBSCRIBERS = [
     username: '',
     type: 'private',
     typeLabel: 'គណនីផ្ទាល់ខ្លួន'
+  },
+  {
+    chatId: '757371398',
+    title: 'Ann khlee',
+    username: '',
+    type: 'private',
+    typeLabel: 'គណនីផ្ទាល់ខ្លួន'
   }
 ];
 
 export const DEFAULT_TELEGRAM_CONFIG = {
   botToken: '9237539087:AAEuSo00rJREK96ZpVsbAxpBFZsInk95e24',
-  chatId: 'ALL', // 'ALL' = send to all subscribers who clicked /start, or specific chatId
-  chatTitle: 'គ្រប់គណនីដែលបាន Start',
+  chatId: '1379643928',
+  chatTitle: 'ថុន វិសាល ( Thon Visal )',
   botUsername: 'Annkhlebot',
-  targetMode: 'ALL', // 'ALL' | 'SINGLE'
+  targetMode: 'SINGLE',
   subscribers: DEFAULT_SUBSCRIBERS
 };
+
+const readCookie = (key) => {
+  if (typeof document === 'undefined' || !document.cookie) return null;
+  try {
+    const prefix = `${key}=`;
+    const match = document.cookie
+      .split(';')
+      .map(c => c.trim())
+      .find(c => c.startsWith(prefix));
+    return match ? decodeURIComponent(match.slice(prefix.length)) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCookie = (key, val) => {
+  if (typeof document === 'undefined') return;
+  try {
+    document.cookie = `${key}=${encodeURIComponent(val)}; path=/; max-age=31536000; SameSite=Lax`;
+  } catch {
+    // ignore cookie errors
+  }
+};
+
+/**
+ * Get or generate a persistent unique Device ID (e.g. "dev_8f92k1a4") for this specific phone/PC
+ */
+export function getOrCreateDeviceId() {
+  if (typeof window === 'undefined') return 'dev_server';
+  try {
+    let devId = localStorage.getItem(DEVICE_ID_STORAGE_KEY) || readCookie(DEVICE_ID_STORAGE_KEY);
+    if (!devId || !/^dev_[a-z0-9]+$/i.test(devId)) {
+      const rand = Math.random().toString(36).slice(2, 7) + Date.now().toString(36).slice(-4);
+      devId = `dev_${rand.toLowerCase()}`;
+    }
+    localStorage.setItem(DEVICE_ID_STORAGE_KEY, devId);
+    writeCookie(DEVICE_ID_STORAGE_KEY, devId);
+    return devId;
+  } catch {
+    return 'dev_local';
+  }
+}
 
 /**
  * Clean a Telegram Bot Token (strips accidental leading "bot" or whitespace/quotes)
@@ -52,7 +102,7 @@ export function cleanChatId(rawChatId) {
 }
 
 /**
- * Merge and deduplicate subscriber lists by chatId, preserving defaults and newest metadata
+ * Merge and deduplicate subscriber lists by chatId
  */
 export function mergeSubscribersList(...lists) {
   const map = new Map();
@@ -78,7 +128,115 @@ export function mergeSubscribersList(...lists) {
 }
 
 /**
- * Load Telegram Bot Configuration (localStorage -> cloud-synced app_state.meta -> default fallback)
+ * Read the Telegram accounts bound specifically to THIS device:
+ * { deviceId, activeChatId, chatId, title, username, accounts: [{ chatId, title, username }] }
+ */
+export function getDeviceTelegramBinding() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DEVICE_BINDING_STORAGE_KEY) || readCookie(DEVICE_BINDING_STORAGE_KEY);
+    let parsed = raw ? JSON.parse(raw) : null;
+
+    // Normalize legacy single-account binding object into multi-account structure
+    let accounts = Array.isArray(parsed?.accounts) ? [...parsed.accounts] : [];
+    if (parsed?.chatId && !accounts.some(a => String(a.chatId) === String(parsed.chatId))) {
+      accounts.unshift({
+        chatId: String(parsed.chatId),
+        title: String(parsed.title || `Chat ${parsed.chatId}`).trim(),
+        username: String(parsed.username || '').trim()
+      });
+    }
+    accounts = mergeSubscribersList(accounts);
+
+    if (accounts.length === 0) {
+      return null;
+    }
+
+    const activeChatId =
+      parsed?.activeChatId && accounts.some(a => String(a.chatId) === String(parsed.activeChatId))
+        ? String(parsed.activeChatId)
+        : String(accounts[0].chatId);
+
+    const activeAccount = accounts.find(a => String(a.chatId) === activeChatId) || accounts[0];
+
+    return {
+      deviceId: getOrCreateDeviceId(),
+      activeChatId: activeAccount.chatId,
+      chatId: activeAccount.chatId,
+      title: activeAccount.title,
+      username: activeAccount.username || '',
+      accounts
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Add or update a Telegram account on THIS device.
+ * By default, if the device ALREADY has a locked activeChatId, adding a discovered account
+ * will NOT overwrite the locked activeChatId unless `setAsActive = true` is explicitly passed!
+ */
+export function saveDeviceTelegramBinding({ chatId, title, username = '' }, { setAsActive = false } = {}) {
+  const cleanId = cleanChatId(chatId);
+  if (!cleanId || cleanId === 'ALL') return getDeviceTelegramBinding();
+
+  const current = getDeviceTelegramBinding();
+  const prevAccounts = current?.accounts || [];
+  const nextAccounts = mergeSubscribersList(prevAccounts, [
+    {
+      chatId: cleanId,
+      title: String(title || `Chat ${cleanId}`).trim(),
+      username: String(username || '').trim()
+    }
+  ]);
+
+  // Strict First-Account Lock: keep existing activeChatId unless setAsActive is explicitly true or no activeChatId existed
+  const nextActiveChatId =
+    setAsActive || !current?.activeChatId
+      ? cleanId
+      : current.activeChatId;
+
+  const activeAccount =
+    nextAccounts.find(a => String(a.chatId) === String(nextActiveChatId)) || nextAccounts[0];
+
+  const payload = {
+    deviceId: getOrCreateDeviceId(),
+    activeChatId: activeAccount.chatId,
+    chatId: activeAccount.chatId,
+    title: activeAccount.title,
+    username: activeAccount.username || '',
+    accounts: nextAccounts,
+    updatedAt: new Date().toISOString()
+  };
+
+  try {
+    const json = JSON.stringify(payload);
+    localStorage.setItem(DEVICE_BINDING_STORAGE_KEY, json);
+    writeCookie(DEVICE_BINDING_STORAGE_KEY, json);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('telegram-config-updated', { detail: getTelegramConfig() }));
+    }
+  } catch {
+    // ignore storage errors
+  }
+
+  return payload;
+}
+
+/**
+ * Switch the active Telegram account among the accounts linked on THIS device
+ */
+export function selectDeviceActiveAccount(targetChatId) {
+  const current = getDeviceTelegramBinding();
+  if (!current) return null;
+  const found = (current.accounts || []).find(a => String(a.chatId) === String(targetChatId));
+  if (!found) return current;
+  return saveDeviceTelegramBinding(found, { setAsActive: true });
+}
+
+/**
+ * Load Telegram Bot Configuration for this device
  */
 export function getTelegramConfig() {
   try {
@@ -88,38 +246,60 @@ export function getTelegramConfig() {
       localParsed = JSON.parse(raw);
     }
 
-    let cloudParsed = null;
-    const rawState = localStorage.getItem(APP_STATE_STORAGE_KEY);
-    if (rawState) {
-      const parsedState = JSON.parse(rawState);
-      cloudParsed = parsedState?.meta?.telegramConfig || null;
-    }
+    const session = loadAuthSession();
+    const isOwner = session?.role === 'owner';
+    const deviceBinding = getDeviceTelegramBinding();
 
-    const source = localParsed || cloudParsed || {};
-    const botToken = cleanBotToken(source.botToken) || DEFAULT_TELEGRAM_CONFIG.botToken;
-    const botUsername = String(source.botUsername || '').trim() || DEFAULT_TELEGRAM_CONFIG.botUsername;
+    const botToken = cleanBotToken(localParsed?.botToken) || DEFAULT_TELEGRAM_CONFIG.botToken;
+    const botUsername = String(localParsed?.botUsername || '').trim() || DEFAULT_TELEGRAM_CONFIG.botUsername;
 
     const mergedSubscribers = mergeSubscribersList(
       DEFAULT_SUBSCRIBERS,
-      cloudParsed?.subscribers,
       localParsed?.subscribers,
-      source.chatId && source.chatId !== 'ALL'
-        ? [{ chatId: source.chatId, title: source.chatTitle || `Chat ${source.chatId}` }]
-        : []
+      deviceBinding?.accounts || []
     );
 
-    // If user hasn't explicitly chosen a targetMode v2 yet, default to 'ALL' so all accounts receive files
-    const targetMode = source.targetModeV2 || 'ALL';
+    // For non-Owner devices: strictly use ONLY this device's own linked accounts (myDeviceAccounts)
+    if (!isOwner) {
+      const myDeviceAccounts = deviceBinding?.accounts || [];
+      if (deviceBinding && deviceBinding.chatId) {
+        return {
+          botToken,
+          chatId: deviceBinding.chatId,
+          chatTitle: deviceBinding.title,
+          botUsername,
+          targetMode: 'SINGLE',
+          subscribers: mergedSubscribers,
+          myDeviceAccounts,
+          deviceBound: true
+        };
+      }
+      return {
+        botToken,
+        chatId: '',
+        chatTitle: 'មិនទាន់ភ្ជាប់ឧបករណ៍នេះ',
+        botUsername,
+        targetMode: 'SINGLE',
+        subscribers: mergedSubscribers,
+        myDeviceAccounts: [],
+        deviceBound: false
+      };
+    }
+
+    // For Owner ('thonvisal'): default to Owner's own account ('1379643928' — ថុន វិសាល) unless Owner explicitly chose another target
+    const explicitOwnerMode = localParsed?.ownerExplicitTargetV3 ? localParsed.targetMode : 'SINGLE';
     const selectedChatId =
-      targetMode === 'SINGLE' && source.chatId && source.chatId !== 'ALL'
-        ? cleanChatId(source.chatId)
-        : 'ALL';
+      explicitOwnerMode === 'ALL'
+        ? 'ALL'
+        : localParsed?.ownerExplicitTargetV3 && localParsed?.chatId
+          ? cleanChatId(localParsed.chatId)
+          : deviceBinding?.chatId || '1379643928';
 
     const selectedSub = mergedSubscribers.find(s => s.chatId === selectedChatId);
     const chatTitle =
       selectedChatId === 'ALL'
         ? `គ្រប់គណនីទាំងអស់ (${toKhmerDigits(mergedSubscribers.length)})`
-        : selectedSub?.title || String(source.chatTitle || `Chat ${selectedChatId}`);
+        : selectedSub?.title || String(localParsed?.chatTitle || 'ថុន វិសាល ( Thon Visal )');
 
     return {
       botToken,
@@ -127,8 +307,10 @@ export function getTelegramConfig() {
       chatTitle,
       botUsername,
       targetMode: selectedChatId === 'ALL' ? 'ALL' : 'SINGLE',
-      targetModeV2: selectedChatId === 'ALL' ? 'ALL' : 'SINGLE',
-      subscribers: mergedSubscribers
+      ownerExplicitTargetV3: Boolean(localParsed?.ownerExplicitTargetV3),
+      subscribers: mergedSubscribers,
+      myDeviceAccounts: deviceBinding?.accounts || [],
+      deviceBound: true
     };
   } catch (err) {
     console.warn('Error reading Telegram config:', err);
@@ -136,23 +318,26 @@ export function getTelegramConfig() {
 
   return {
     ...DEFAULT_TELEGRAM_CONFIG,
-    targetModeV2: 'ALL',
-    subscribers: [...DEFAULT_SUBSCRIBERS]
+    subscribers: [...DEFAULT_SUBSCRIBERS],
+    myDeviceAccounts: []
   };
 }
 
 /**
- * Save Telegram Bot Configuration to localStorage and broadcast update event
+ * Save Telegram Bot Configuration to localStorage
  */
 export function saveTelegramConfig(config = {}) {
   const current = getTelegramConfig();
+  const session = loadAuthSession();
+  const isOwner = session?.role === 'owner';
+
   const botToken = cleanBotToken(config.botToken ?? current.botToken) || DEFAULT_TELEGRAM_CONFIG.botToken;
   const botUsername = String(config.botUsername ?? current.botUsername ?? DEFAULT_TELEGRAM_CONFIG.botUsername).trim();
 
   const rawChatId = cleanChatId(config.chatId ?? current.chatId);
-  const isAll = !rawChatId || rawChatId.toUpperCase() === 'ALL' || config.targetMode === 'ALL';
+  const isAll = isOwner && (rawChatId.toUpperCase() === 'ALL' || config.targetMode === 'ALL');
   const targetMode = isAll ? 'ALL' : 'SINGLE';
-  const finalChatId = isAll ? 'ALL' : rawChatId;
+  const finalChatId = isAll ? 'ALL' : (rawChatId || '1379643928');
 
   const mergedSubscribers = mergeSubscribersList(
     DEFAULT_SUBSCRIBERS,
@@ -168,34 +353,46 @@ export function saveTelegramConfig(config = {}) {
     ? `គ្រប់គណនីទាំងអស់ (${toKhmerDigits(mergedSubscribers.length)})`
     : String(config.chatTitle || selectedSub?.title || `Chat ${finalChatId}`).trim();
 
+  if (!isAll && finalChatId) {
+    saveDeviceTelegramBinding(
+      {
+        chatId: finalChatId,
+        title: chatTitle,
+        username: selectedSub?.username || ''
+      },
+      { setAsActive: true }
+    );
+  }
+
   const cleaned = {
     botToken,
     chatId: finalChatId,
     chatTitle,
     botUsername,
     targetMode,
-    targetModeV2: targetMode,
+    ownerExplicitTargetV3: isOwner ? true : false,
     subscribers: mergedSubscribers
   };
 
   try {
     localStorage.setItem(TELEGRAM_STORAGE_KEY, JSON.stringify(cleaned));
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('telegram-config-updated', { detail: cleaned }));
+      window.dispatchEvent(new CustomEvent('telegram-config-updated', { detail: getTelegramConfig() }));
     }
   } catch (err) {
     console.error('Failed to save Telegram config:', err);
   }
 
-  return cleaned;
+  return getTelegramConfig();
 }
 
 /**
- * Reset Telegram Bot Configuration back to default school bot & all subscribers
+ * Reset Telegram Bot Configuration on this device
  */
 export function clearTelegramConfig() {
   try {
     localStorage.removeItem(TELEGRAM_STORAGE_KEY);
+    localStorage.removeItem(DEVICE_BINDING_STORAGE_KEY);
     const fallback = getTelegramConfig();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('telegram-config-updated', { detail: fallback }));
@@ -205,17 +402,47 @@ export function clearTelegramConfig() {
   }
 }
 
-/**
- * Check whether Bot Token and at least 1 subscriber/chatId are configured
- */
 export function isTelegramConfigured() {
   const cfg = getTelegramConfig();
-  return Boolean(cfg.botToken && (cfg.subscribers?.length > 0 || (cfg.chatId && cfg.chatId !== 'ALL')));
+  return Boolean(cfg.botToken);
+}
+
+function extractChatFromUpdate(u) {
+  const c =
+    u?.message?.chat ||
+    u?.edited_message?.chat ||
+    u?.channel_post?.chat ||
+    u?.my_chat_member?.chat ||
+    u?.chat_member?.chat ||
+    u?.callback_query?.message?.chat;
+  if (!c || !c.id) return null;
+
+  const idStr = String(c.id);
+  const fullName = [c.first_name, c.last_name].filter(Boolean).join(' ').trim();
+  const title = c.title || fullName || (c.username ? `@${c.username}` : `Chat ${idStr}`);
+  const typeLabel =
+    c.type === 'private'
+      ? 'គណនីផ្ទាល់ខ្លួន'
+      : c.type === 'group' || c.type === 'supergroup'
+        ? 'ក្រុម (Group)'
+        : c.type === 'channel'
+          ? 'ឆានែល (Channel)'
+          : c.type || 'Chat';
+
+  return {
+    chatId: idStr,
+    title,
+    username: c.username ? `@${c.username}` : '',
+    type: c.type || 'private',
+    typeLabel,
+    text: String(u?.message?.text || '').trim(),
+    date: Number(u?.message?.date || 0),
+    updateId: Number(u?.update_id || 0)
+  };
 }
 
 /**
  * Auto-detect all Chats / Groups that have interacted with this Bot Token via /getUpdates
- * and merge them into our permanent subscribers list.
  */
 export async function detectTelegramChats(rawToken) {
   const current = getTelegramConfig();
@@ -224,7 +451,6 @@ export async function detectTelegramChats(rawToken) {
     throw new Error('សូមបញ្ចូល Telegram Bot Token ឱ្យបានត្រឹមត្រូវជាមុនសិន (ឧ. 123456789:ABCdef...)។');
   }
 
-  // 1. Verify Bot Token via /getMe
   const meRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
   const meData = await meRes.json().catch(() => null);
   if (!meRes.ok || !meData?.ok) {
@@ -234,8 +460,6 @@ export async function detectTelegramChats(rawToken) {
   }
 
   const botInfo = meData.result || {};
-
-  // 2. Fetch recent updates via /getUpdates to discover Chat IDs
   const upRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=100`);
   const upData = await upRes.json().catch(() => null);
   if (!upRes.ok || !upData?.ok) {
@@ -245,42 +469,7 @@ export async function detectTelegramChats(rawToken) {
   }
 
   const updates = Array.isArray(upData.result) ? [...upData.result].reverse() : [];
-  const discovered = [];
-
-  for (const u of updates) {
-    const candidateChats = [
-      u?.message?.chat,
-      u?.edited_message?.chat,
-      u?.channel_post?.chat,
-      u?.my_chat_member?.chat,
-      u?.chat_member?.chat,
-      u?.callback_query?.message?.chat
-    ].filter(Boolean);
-
-    for (const c of candidateChats) {
-      const idStr = String(c.id || '');
-      if (!idStr) continue;
-
-      const fullName = [c.first_name, c.last_name].filter(Boolean).join(' ').trim();
-      const title = c.title || fullName || (c.username ? `@${c.username}` : `Chat ${idStr}`);
-      const typeLabel =
-        c.type === 'private'
-          ? 'គណនីផ្ទាល់ខ្លួន'
-          : c.type === 'group' || c.type === 'supergroup'
-            ? 'ក្រុម (Group)'
-            : c.type === 'channel'
-              ? 'ឆានែល (Channel)'
-              : c.type || 'Chat';
-
-      discovered.push({
-        chatId: idStr,
-        title,
-        username: c.username ? `@${c.username}` : '',
-        type: c.type || 'private',
-        typeLabel
-      });
-    }
-  }
+  const discovered = updates.map(extractChatFromUpdate).filter(Boolean);
 
   const isDefaultSchoolBot = token === DEFAULT_TELEGRAM_CONFIG.botToken;
   const mergedChats = mergeSubscribersList(
@@ -289,7 +478,6 @@ export async function detectTelegramChats(rawToken) {
     discovered
   );
 
-  // Persist newly discovered subscribers right away
   saveTelegramConfig({
     ...current,
     botToken: token,
@@ -305,12 +493,16 @@ export async function detectTelegramChats(rawToken) {
 }
 
 /**
- * Quiet background sync of any new users who clicked /start on the Bot
+ * Quiet background sync:
+ * Records any account that clicked `/start <myDeviceId>` into `myDeviceAccounts`
+ * while keeping the user's currently selected account strictly locked (`setAsActive: false`).
  */
 export async function syncSubscribersSilent() {
   try {
     const cfg = getTelegramConfig();
     if (!cfg.botToken) return cfg;
+    const myDeviceId = getOrCreateDeviceId();
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3500);
     const upRes = await fetch(`https://api.telegram.org/bot${cfg.botToken}/getUpdates?limit=100`, {
@@ -322,75 +514,163 @@ export async function syncSubscribersSilent() {
     if (!upData?.ok || !Array.isArray(upData.result)) return cfg;
 
     const discovered = [];
-    for (const u of [...upData.result].reverse()) {
-      const candidateChats = [
-        u?.message?.chat,
-        u?.edited_message?.chat,
-        u?.channel_post?.chat,
-        u?.my_chat_member?.chat,
-        u?.chat_member?.chat,
-        u?.callback_query?.message?.chat
-      ].filter(Boolean);
+    // Process in chronological order (oldest -> newest)
+    for (const u of upData.result) {
+      const info = extractChatFromUpdate(u);
+      if (!info) continue;
+      discovered.push(info);
 
-      for (const c of candidateChats) {
-        const idStr = String(c.id || '');
-        if (!idStr) continue;
-        const fullName = [c.first_name, c.last_name].filter(Boolean).join(' ').trim();
-        const title = c.title || fullName || (c.username ? `@${c.username}` : `Chat ${idStr}`);
-        const typeLabel =
-          c.type === 'private'
-            ? 'គណនីផ្ទាល់ខ្លួន'
-            : c.type === 'group' || c.type === 'supergroup'
-              ? 'ក្រុម (Group)'
-              : c.type === 'channel'
-                ? 'ឆានែល (Channel)'
-                : c.type || 'Chat';
-        discovered.push({
-          chatId: idStr,
-          title,
-          username: c.username ? `@${c.username}` : '',
-          type: c.type || 'private',
-          typeLabel
-        });
+      // If this update was triggered from THIS device (`?start=dev_...`), add it to this device's own account list
+      // (setAsActive: false preserves the user's locked choice if they already have an active account!)
+      if (info.text && info.text.includes(myDeviceId)) {
+        saveDeviceTelegramBinding(
+          {
+            chatId: info.chatId,
+            title: info.title,
+            username: info.username
+          },
+          { setAsActive: false }
+        );
       }
     }
 
     if (discovered.length > 0) {
       const merged = mergeSubscribersList(cfg.subscribers, discovered);
       if (merged.length !== (cfg.subscribers || []).length) {
-        return saveTelegramConfig({
+        const updatedRaw = {
           ...cfg,
           subscribers: merged
-        });
+        };
+        localStorage.setItem(TELEGRAM_STORAGE_KEY, JSON.stringify(updatedRaw));
       }
     }
-    return cfg;
-  } catch (_) {
+    return getTelegramConfig();
+  } catch {
     return getTelegramConfig();
   }
 }
 
 /**
- * Resolve the active list of recipient chats based on current config ('ALL' vs specific chatId)
+ * Resolve active recipients for Owner or already-bound device
  */
 export function getActiveRecipients(configOverride = null) {
   const cfg = configOverride || getTelegramConfig();
+  const session = loadAuthSession();
+  const isOwner = session?.role === 'owner';
   const subs = Array.isArray(cfg.subscribers) && cfg.subscribers.length > 0
     ? cfg.subscribers
     : DEFAULT_SUBSCRIBERS;
 
-  if (cfg.targetMode === 'SINGLE' && cfg.chatId && cfg.chatId !== 'ALL') {
-    const found = subs.find(s => String(s.chatId) === String(cfg.chatId));
+  if (isOwner) {
+    if (cfg.targetMode === 'ALL' || cfg.chatId === 'ALL') {
+      return subs;
+    }
+    const targetId = cfg.chatId || '1379643928';
+    const found = subs.find(s => String(s.chatId) === String(targetId));
     return [
       found || {
-        chatId: String(cfg.chatId),
-        title: cfg.chatTitle || `Chat ${cfg.chatId}`,
-        typeLabel: 'គណនី'
+        chatId: String(targetId),
+        title: cfg.chatTitle || 'ថុន វិសាល ( Thon Visal )',
+        typeLabel: 'គណនីផ្ទាល់ខ្លួន'
       }
     ];
   }
 
-  return subs;
+  // Non-Owner device: strictly return ONLY this device's active bound account
+  const bound = getDeviceTelegramBinding();
+  if (bound && bound.chatId) {
+    return [bound];
+  }
+  return [];
+}
+
+/**
+ * Interactive helper to link a new Telegram account (1st or 2nd account) onto THIS device (`dev_...`)
+ */
+export async function promptAndLinkDeviceTelegramAccount({ isAddingAdditional = false } = {}) {
+  const cfg = getTelegramConfig();
+  const myDeviceId = getOrCreateDeviceId();
+  const botToken = cfg.botToken || DEFAULT_TELEGRAM_CONFIG.botToken;
+  const botUsername = cfg.botUsername || DEFAULT_TELEGRAM_CONFIG.botUsername;
+
+  let baselineUpdateId = 0;
+  try {
+    const upRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=30`);
+    const upData = await upRes.json().catch(() => null);
+    if (upData?.ok && Array.isArray(upData.result)) {
+      for (const u of upData.result) {
+        if (u.update_id > baselineUpdateId) baselineUpdateId = u.update_id;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const promptMsg = isAddingAdditional
+    ? `📲 ភ្ជាប់គណនី Telegram បន្ថែមមកកាន់ឧបករណ៍នេះ (${myDeviceId})៖\n\n` +
+      `សូមបើកគណនី Telegram ទី ២ របស់អ្នក ➔ ចុច "OK" ដើម្បីបើក Bot (@${botUsername}) ➔ រួចចុចប៊ូតុង "Start" ១ ချက်!`
+    : `📱 ភ្ជាប់ឧបករណ៍នេះ (${myDeviceId}) ទៅកាន់ Telegram របស់អ្នក (ធ្វើតែ ១ ដងគត់)៖\n\n` +
+      `សូមចុច "OK" ដើម្បីបើក Telegram Bot (@${botUsername}) រួចចុចប៊ូតុង "Start" ១ ချက် — ប្រព័ន្ធនឹងចងភ្ជាប់ឧបករណ៍នេះ និងបាញ់ឯកសារចូល Telegram របស់អ្នកដោយស្វ័យប្រវត្តិភ្លាមៗ!`;
+
+  const confirmed = window.confirm(promptMsg);
+  if (!confirmed) {
+    const cancelErr = new Error('បានបោះបង់ការភ្ជាប់ទៅកាន់ Telegram។');
+    cancelErr.code = 'USER_CANCELLED';
+    throw cancelErr;
+  }
+
+  const deepLinkUrl = `https://t.me/${botUsername}?start=${myDeviceId}`;
+  window.open(deepLinkUrl, '_blank', 'noopener,noreferrer');
+
+  const promptStartSec = Math.floor(Date.now() / 1000) - 5;
+  const maxAttempts = 30;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      const pollRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=30`);
+      const pollData = await pollRes.json().catch(() => null);
+      if (pollData?.ok && Array.isArray(pollData.result)) {
+        const reversed = [...pollData.result].reverse();
+        for (const u of reversed) {
+          const info = extractChatFromUpdate(u);
+          if (
+            info &&
+            (u.update_id > baselineUpdateId || info.date >= promptStartSec) &&
+            (info.text.includes(myDeviceId) || info.text.startsWith('/start'))
+          ) {
+            const bound = saveDeviceTelegramBinding(
+              {
+                chatId: info.chatId,
+                title: info.title,
+                username: info.username
+              },
+              { setAsActive: true }
+            );
+            if (bound) return [bound];
+          }
+        }
+      }
+    } catch {
+      // ignore transient error
+    }
+  }
+
+  throw new Error(
+    `មិនទាន់ឃើញការចុច Start ក្នុង @${botUsername} ឡើយ។ សូមចុច Start ក្នុង Telegram រួចសាកល្បងម្ដងទៀត។`
+  );
+}
+
+/**
+ * Ensure the current device has a bound recipient (or trigger the 1-time link prompt)
+ */
+async function ensureDeviceBoundRecipients() {
+  const cfg = await syncSubscribersSilent();
+  const existing = getActiveRecipients(cfg);
+  if (existing.length > 0) {
+    return existing;
+  }
+  return promptAndLinkDeviceTelegramAccount({ isAddingAdditional: false });
 }
 
 /**
@@ -472,87 +752,12 @@ function toAsciiDigits(str) {
   return String(str ?? '').replace(/[០-៩]/g, ch => String(ch.charCodeAt(0) - khmerZeroCode));
 }
 
-/**
- * Convert Khmer report filenames into clean, standard English filenames for Telegram Bot API
- * (Telegram's server strips Unicode Combining Marks [Mn/Mc] from multipart filenames,
- * which otherwise turns Khmer words like "របាយការណ៍សុំច្បាប់_វិច្ឆិកា" into broken consonants "របយករណសចបប_វចឆក").
- */
 export function formatTelegramSafeFilename(rawFilename) {
   const raw = String(rawFilename || 'Document.pdf').trim();
   const extMatch = raw.match(/(\.[a-zA-Z0-9]+)$/);
   const ext = extMatch ? extMatch[1].toLowerCase() : '.pdf';
   const base = toAsciiDigits(extMatch ? raw.slice(0, -ext.length) : raw);
-
-  // If already pure ASCII, keep it clean
-  if (/^[\x20-\x7E]+$/.test(base)) {
-    return `${base.replace(/\s+/g, '_')}${ext}`;
-  }
-
-  let prefix = 'Official_Report';
-  if (base.includes('សុំច្បាប់') || base.includes('ច្បាប់សមណសិស្ស') || base.includes('គ្មានច្បាប់')) {
-    prefix = 'Leave_Report';
-  } else if (base.includes('កាត_ID') || base.includes('ទិញកាត')) {
-    prefix = 'ID_Card_Report';
-  } else if (base.includes('ចំណូលចំណាយសង្ខេប')) {
-    prefix = 'Finance_Summary_Report';
-  } else if (base.includes('ហិរញ្ញវត្ថុ') || base.includes('ចំណូលចំណាយ')) {
-    prefix = 'Finance_Report';
-  } else if (base.includes('មន្ទីរ') && base.includes('សង្ខេប')) {
-    prefix = 'Ministry_Summary_Report';
-  } else if (base.includes('មន្ទីរ')) {
-    prefix = 'Ministry_Annual_Report';
-  } else if (base.includes('សមណសិស្សមេ')) {
-    prefix = 'Student_Master_List';
-  } else if (base.includes('របាយការណ៍')) {
-    prefix = 'Admin_Report';
-  }
-
-  const khmerMonths = [
-    ['មករា', '01'],
-    ['កុម្ភៈ', '02'],
-    ['មីនា', '03'],
-    ['មេសា', '04'],
-    ['ឧសភា', '05'],
-    ['មិថុនា', '06'],
-    ['កក្កដា', '07'],
-    ['សីហា', '08'],
-    ['កញ្ញា', '09'],
-    ['តុលា', '10'],
-    ['វិច្ឆិកា', '11'],
-    ['ធ្នូ', '12']
-  ];
-
-  let periodTag = '';
-  for (const [mName, mNum] of khmerMonths) {
-    if (base.includes(mName)) {
-      periodTag = mNum;
-      break;
-    }
-  }
-
-  if (!periodTag) {
-    if (/ឆមាសទី\s*_?\s*1/.test(base)) {
-      periodTag = 'Sem1';
-    } else if (/ឆមាសទី\s*_?\s*2/.test(base)) {
-      periodTag = 'Sem2';
-    }
-  }
-
-  const yearMatch = base.match(/(20\d{2})/);
-  const yearTag = yearMatch ? yearMatch[1] : '';
-
-  const parts = [prefix];
-  if (periodTag) parts.push(periodTag);
-  if (yearTag) {
-    parts.push(yearTag);
-  } else {
-    const numMatch = base.match(/(\d+)/);
-    if (numMatch && numMatch[1] !== periodTag) {
-      parts.push(numMatch[1]);
-    }
-  }
-
-  return `${parts.join('_')}${ext}`;
+  return `${base.replace(/\s+/g, '_')}${ext}`;
 }
 
 function formatKhmerTimestamp() {
@@ -579,7 +784,7 @@ function blobToBase64(blob) {
 }
 
 /**
- * Send a single generated file Blob/Uint8Array to all active target Telegram Chat IDs
+ * Send a single generated file Blob/Uint8Array to target Telegram Chat IDs
  * Uses /api/telegram-send (MTProto DocumentAttributeFilename) first so Khmer vowels & subscripts (្)
  * in the filename are 100% preserved, falling back to Bot HTTP API only if offline/unavailable.
  */
@@ -677,19 +882,11 @@ export async function sendDocumentToTelegram(
 }
 
 /**
- * Intercept files generated by any exporter function (PDF, Word, Excel, or All 3)
- * and send them directly to all active Telegram recipients (or selected recipient).
+ * Intercept files generated by any exporter function (PDF, Word, or Excel)
+ * and send them strictly to the requesting device's locked active Telegram account (or Owner's selected target).
  */
 export async function captureAndSendToTelegram(exportFn, { reportTitle = 'របាយការណ៍ផ្លូវការ' } = {}) {
-  // 1. Auto-sync any new users who clicked /start right before sending
-  const cfg = await syncSubscribersSilent();
-  const recipients = getActiveRecipients(cfg);
-
-  if (!cfg.botToken || recipients.length === 0) {
-    const err = new Error('NOT_CONFIGURED');
-    err.code = 'TELEGRAM_NOT_CONFIGURED';
-    throw err;
-  }
+  const recipients = await ensureDeviceBoundRecipients();
 
   startFileCapture();
   let capturedFiles = [];
@@ -724,6 +921,10 @@ export async function captureAndSendToTelegram(exportFn, { reportTitle = 'រប
       recipients
     );
     deliveredRecipients = res.succeeded;
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('telegram-config-updated', { detail: getTelegramConfig() }));
   }
 
   return {

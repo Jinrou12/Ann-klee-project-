@@ -13,7 +13,8 @@ const DEFAULT_BOT_SESSION =
 // Pre-seeded & dynamically cached user access_hash map for instant MTProto peer resolution
 const peerAccessHashCache = new Map([
   ['1379643928', '-985986478348784204'],
-  ['9146504063', '5874427571656807442']
+  ['9146504063', '5874427571656807442'],
+  ['757371398', '8036969123321580619']
 ]);
 
 // Cache sessions by botToken across warm invocations

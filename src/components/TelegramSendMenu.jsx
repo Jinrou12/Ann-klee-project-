@@ -10,11 +10,14 @@ import {
   ChevronDown,
   Users,
   User,
-  RefreshCw
+  RefreshCw,
+  Plus
 } from 'lucide-react';
 import {
   getTelegramConfig,
   saveTelegramConfig,
+  selectDeviceActiveAccount,
+  promptAndLinkDeviceTelegramAccount,
   isTelegramConfigured,
   syncSubscribersSilent,
   captureAndSendToTelegram
@@ -116,6 +119,11 @@ export default function TelegramSendMenu({
   };
 
   const handleSelectTargetRecipient = (targetChatId, targetTitle = '') => {
+    if (!isOwner) {
+      selectDeviceActiveAccount(targetChatId);
+      setTgConfig(getTelegramConfig());
+      return;
+    }
     const isAll = targetChatId === 'ALL';
     const nextCfg = saveTelegramConfig({
       ...tgConfig,
@@ -124,6 +132,27 @@ export default function TelegramSendMenu({
       targetMode: isAll ? 'ALL' : 'SINGLE'
     });
     setTgConfig(nextCfg);
+  };
+
+  const handleLinkAdditionalAccount = async (e) => {
+    if (e) e.stopPropagation();
+    setIsOpen(false);
+    try {
+      setIsSending(true);
+      setSendingLabel('កំពុងភ្ជាប់គណនី...');
+      const linked = await promptAndLinkDeviceTelegramAccount({ isAddingAdditional: true });
+      setTgConfig(getTelegramConfig());
+      if (linked && linked[0]) {
+        showToast('success', `បានភ្ជាប់គណនី Telegram «${linked[0].title}» រួចរាល់!`);
+      }
+    } catch (err) {
+      if (err?.code !== 'USER_CANCELLED') {
+        showToast('error', err?.message || 'មិនអាចភ្ជាប់គណនីបានទេ។');
+      }
+    } finally {
+      setIsSending(false);
+      setSendingLabel('');
+    }
   };
 
   const handleSendFormat = async (formatType) => {
@@ -195,6 +224,9 @@ export default function TelegramSendMenu({
           : `បានផ្ញើឯកសារចូល Telegram ដោយជោគជ័យ! (${toKhmerDigits(fileNames.length)} ឯកសារ)`
       );
     } catch (err) {
+      if (err?.code === 'USER_CANCELLED') {
+        return;
+      }
       if (err?.code === 'TELEGRAM_NOT_CONFIGURED') {
         openTelegramSettingsModal();
         return;
@@ -278,8 +310,8 @@ export default function TelegramSendMenu({
               zIndex: 1351
             }}
           >
-            {/* Header Status & Recipient Switcher Bar (Visible to Owner Only) */}
-            {isOwner && (
+            {/* Header Status & Recipient Switcher Bar */}
+            {isOwner ? (
               <>
                 <div
                   style={{
@@ -431,6 +463,79 @@ export default function TelegramSendMenu({
                   </div>
                 )}
               </>
+            ) : (
+              /* Non-Owner Device Account Switcher (Strictly shows ONLY accounts linked on THIS device) */
+              <div
+                style={{
+                  padding: '8px 10px',
+                  background: '#f8fafc',
+                  borderBottom: '1px solid #e2e8f0'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: '#475569' }}>
+                    គណនី Telegram លើឧបករណ៍នេះ៖
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleLinkAdditionalAccount}
+                    style={{
+                      background: '#e0f2fe',
+                      color: '#0284c7',
+                      border: '1px solid #7dd3fc',
+                      borderRadius: 12,
+                      padding: '2px 7px',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3
+                    }}
+                  >
+                    <Plus size={10} />
+                    <span>ភ្ជាប់គណនីបន្ថែម</span>
+                  </button>
+                </div>
+
+                {Array.isArray(tgConfig.myDeviceAccounts) && tgConfig.myDeviceAccounts.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {tgConfig.myDeviceAccounts.map(sub => {
+                      const active = String(tgConfig.chatId) === String(sub.chatId);
+                      return (
+                        <button
+                          key={sub.chatId}
+                          type="button"
+                          onClick={() => handleSelectTargetRecipient(sub.chatId, sub.title)}
+                          style={{
+                            background: active ? '#0284c7' : '#ffffff',
+                            color: active ? '#ffffff' : '#334155',
+                            border: active ? '1.5px solid #0369a1' : '1px solid #cbd5e1',
+                            borderRadius: 20,
+                            padding: '4px 9px',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            maxWidth: '100%'
+                          }}
+                        >
+                          <User size={11} />
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>
+                            {sub.title}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    មិនទាន់បានភ្ជាប់ទេ (ចុចប៊ូតុងផ្ញើខាងក្រោមដើម្បីភ្ជាប់ស្វ័យប្រវត្តិ)
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Menu Action List */}
