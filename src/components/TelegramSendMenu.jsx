@@ -18,7 +18,6 @@ import {
 import {
   getTelegramConfig,
   saveTelegramConfig,
-  saveDeviceTelegramBinding,
   removeDeviceTelegramAccount,
   selectDeviceActiveAccount,
   getActiveRecipients,
@@ -266,26 +265,6 @@ export default function TelegramSendMenu({
     showToast('success', `បានដកគណនី «${targetTitle || targetChatId}» ចេញពីឧបករណ៍នេះរួចរាល់។`, 3000);
   };
 
-  const handleQuickBindExistingSubscriber = (sub) => {
-    if (!sub || !sub.chatId) return;
-    const formatToRun = linkModal?.pendingFormat || null;
-    saveDeviceTelegramBinding(
-      {
-        chatId: sub.chatId,
-        title: sub.title,
-        username: sub.username || ''
-      },
-      { setAsActive: true }
-    );
-    setLinkModal(null);
-    setTgConfig(getTelegramConfig());
-    if (formatToRun) {
-      executeFileExportAndSend(formatToRun);
-    } else {
-      showToast('success', `បានភ្ជាប់ និងប្ដូរទៅគណនី Telegram «${sub.title}» រួចរាល់!`);
-    }
-  };
-
   const openDeviceLinkModal = async (pendingFormat = null) => {
     setIsOpen(false);
     const linkToken = createDeviceLinkToken();
@@ -296,11 +275,7 @@ export default function TelegramSendMenu({
       baselineUpdateId: null,
       promptStartSec
     });
-    const [baseId, updatedCfg] = await Promise.all([
-      getBaselineUpdateId(),
-      syncSubscribersSilent()
-    ]);
-    setTgConfig(updatedCfg);
+    const baseId = await getBaselineUpdateId();
     setLinkModal(prev =>
       prev && prev.linkToken === linkToken
         ? { ...prev, baselineUpdateId: baseId }
@@ -869,10 +844,10 @@ export default function TelegramSendMenu({
             </div>
 
             {/* Modal Body */}
-            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 11 }}>
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div
                 style={{
-                  fontSize: 12.5,
+                  fontSize: 13,
                   color: '#1e293b',
                   lineHeight: 1.55,
                   background: '#f0f9ff',
@@ -881,10 +856,9 @@ export default function TelegramSendMenu({
                   padding: '10px 12px'
                 }}
               >
-                ១. បើបងបានប្ដូរ (Switch) ទៅគណនី Telegram ទី ២ រួចហើយ សូមចុចប៊ូតុងខាងក្រោមដើម្បីបើក{' '}
-                <strong>@{deepLinks.botUsername}</strong> រួចចុចប៊ូតុង{' '}
+                សូមចុចប៊ូតុងខាងក្រោមដើម្បីបើកកម្មវិធី <strong>Telegram (@{deepLinks.botUsername})</strong> រួចចុចប៊ូតុង{' '}
                 <strong style={{ color: '#0284c7' }}>&ldquo;Start&rdquo;</strong> (ឬផ្ញើសារ{' '}
-                <code style={{ background: '#e0f2fe', padding: '1px 5px', borderRadius: 4 }}>/start</code> ១ ម៉ាត់)៖
+                <code style={{ background: '#e0f2fe', padding: '1px 5px', borderRadius: 4 }}>/start</code> ១ ម៉ាត់) — ប្រព័ន្ធនឹងភ្ជាប់គណនី Telegram នោះមកកាន់ឧបករណ៍នេះដោយស្វ័យប្រវត្តិភ្លាមៗ!
               </div>
 
               {/* Clean Direct Native App Link (tg:// protocol without duplicate setTimeout window.open interference) */}
@@ -928,78 +902,6 @@ export default function TelegramSendMenu({
                 </a>
               </div>
 
-              {/* Quick 1-Tap Picker for accounts that have ALREADY pressed /start in @Annkhlebot */}
-              {subscribers.length > 0 && (
-                <div
-                  style={{
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 10,
-                    padding: '9px 11px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 6
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#334155' }}>
-                      ២. ឬជ្រើសរើសគណនីដែលបានចុច Start រួចហើយ៖
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleRefreshSubscribers}
-                      style={{
-                        background: '#ffffff',
-                        border: '1px solid #cbd5e1',
-                        color: '#0284c7',
-                        borderRadius: 6,
-                        padding: '2px 6px',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 3
-                      }}
-                    >
-                      <RefreshCw size={10} className={isSyncingUsers ? 'animate-spin' : ''} />
-                      <span>ស្កេនថ្មី</span>
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {subscribers.map(sub => {
-                      const alreadyLinked =
-                        Array.isArray(tgConfig.myDeviceAccounts) &&
-                        tgConfig.myDeviceAccounts.some(a => String(a.chatId) === String(sub.chatId));
-                      const isCurrentActive = String(tgConfig.chatId) === String(sub.chatId);
-                      return (
-                        <button
-                          key={sub.chatId}
-                          type="button"
-                          onClick={() => handleQuickBindExistingSubscriber(sub)}
-                          style={{
-                            background: isCurrentActive ? '#0284c7' : alreadyLinked ? '#e0f2fe' : '#ffffff',
-                            color: isCurrentActive ? '#ffffff' : '#0c4a6e',
-                            border: isCurrentActive ? '1.5px solid #0369a1' : '1px solid #7dd3fc',
-                            borderRadius: 18,
-                            padding: '5px 10px',
-                            fontSize: 11.5,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4
-                          }}
-                        >
-                          {alreadyLinked ? <User size={11} /> : <Plus size={11} />}
-                          <span>{sub.title}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
               {/* Live Waiting Indicator */}
               <div
                 style={{
@@ -1010,11 +912,11 @@ export default function TelegramSendMenu({
                   fontSize: 12,
                   color: '#0369a1',
                   fontWeight: 700,
-                  padding: '2px 0'
+                  padding: '4px 0'
                 }}
               >
                 <Loader2 size={15} className="animate-spin" />
-                <span>កំពុងរង់ចាំការចុច Start ពីគណនី Telegram ថ្មី...</span>
+                <span>កំពុងរង់ចាំការចុច Start ពីគណនី Telegram របស់អ្នក...</span>
               </div>
 
               <button

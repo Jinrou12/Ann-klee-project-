@@ -81,5 +81,5 @@
 * **គោលការណ៍ Rolling Snapshot**: ផ្នែកនេះត្រូវតែប្រើប្រព័ន្ធ **In-Place Overwrite** រក្សាត្រឹមតែ ៣-៤ បន្ទាត់សង្ខេបចុងក្រោយ (ហាម append logs នាំឱ្យឯកសាររីកធំ)។
 * **កាលបរិច្ឆេទ**: 2026-11-18
 * **គម្រោង**: Ann Klee Project (ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស និងចំណូលចំណាយ)
-* **ស្ថានភាព**: បានដោះស្រាយបញ្ហាការភ្ជាប់ និងប្ដូរទៅគណនី Telegram ទី ២ (Multi-Account Telegram Linking & Switching) លើឧបករណ៍តែមួយ (`/mp`) ក្នុង `telegramService.js` និង `TelegramSendMenu.jsx` ដោយប្រើ Unique One-Time Link Token (`dev_xxx_lnk_yyyy`), ការឆែក `baselineUpdateId` ត្រឹមត្រូវ, ការដក `setTimeout(window.open)` ដែលលោតជាន់គ្នា, បញ្ជីជ្រើសរើសរហ័សសម្រាប់គណនីដែលបានចុច Start រួចហើយ និងប៊ូតុង `×` សម្រាប់ដកគណនីចេញពីឧបករណ៍។
+* **ស្ថានភាព**: បានដោះស្រាយបញ្ហាការភ្ជាប់ និងប្ដូរទៅគណនី Telegram ទី ២ (Multi-Account Telegram Linking & Switching) លើឧបករណ៍តែមួយ (`/mp`) ក្នុង `telegramService.js` និង `TelegramSendMenu.jsx` ដោយប្រើ Unique One-Time Link Token (`dev_xxx_lnk_yyyy`), ការឆែក `baselineUpdateId` ត្រឹមត្រូវ, ការដក `setTimeout(window.open)` ដែលលោតជាន់គ្នា, ការលាក់បញ្ជីគណនីរួមមិនឱ្យ Admin/អ្នកដទៃមើលឃើញ និងប៊ូតុង `×` សម្រាប់ដកគណនីចេញពីឧបករណ៍។
 * **ការងារបន្ទាប់**: រង់ចាំការណែនាំបន្តពីបង។
