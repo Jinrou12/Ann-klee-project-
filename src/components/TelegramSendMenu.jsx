@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Send,
   FileText,
@@ -11,13 +11,21 @@ import {
   Users,
   User,
   RefreshCw,
-  Plus
+  Plus,
+  ExternalLink,
+  X
 } from 'lucide-react';
 import {
   getTelegramConfig,
   saveTelegramConfig,
+  saveDeviceTelegramBinding,
+  removeDeviceTelegramAccount,
   selectDeviceActiveAccount,
-  promptAndLinkDeviceTelegramAccount,
+  getActiveRecipients,
+  createDeviceLinkToken,
+  getTelegramDeepLinks,
+  getBaselineUpdateId,
+  checkDeviceLinkUpdate,
   isTelegramConfigured,
   syncSubscribersSilent,
   captureAndSendToTelegram
@@ -26,9 +34,7 @@ import { toKhmerDigits } from '../utils/khmerNumerals';
 import { loadAuthSession } from '../utils/auth';
 
 /**
- * Reusable «✈️ Telegram ▾» Button & Floating Menu for both PC and Mobile (/mp)
- * Supports broadcasting to ALL Telegram accounts that clicked /start on the Bot,
- * or selecting a specific recipient account on the fly.
+ * Reusable «✈️ Telegram ▾» Button, Floating Menu & PWA-Safe Native Link Modal (/mp)
  */
 export default function TelegramSendMenu({
   onExportPdf,
@@ -47,6 +53,9 @@ export default function TelegramSendMenu({
   const [tgConfig, setTgConfig] = useState(() => getTelegramConfig());
   const [isOwner, setIsOwner] = useState(() => loadAuthSession()?.role === 'owner');
   const [menuCoords, setMenuCoords] = useState({ top: 0, left: 0, width: 295 });
+
+  // PWA-safe In-App Link Modal state (avoids window.confirm / async window.open popup blocking in Home Screen apps)
+  const [linkModal, setLinkModal] = useState(null); // { pendingFormat: 'pdf' | 'word' | 'excel' | null, baselineUpdateId: number, promptStartSec: number }
   const buttonRef = useRef(null);
 
   useEffect(() => {
@@ -62,23 +71,140 @@ export default function TelegramSendMenu({
     };
   }, []);
 
-  const showToast = (type, message, duration = 4500) => {
+  const showToast = useCallback((type, message, duration = 4500) => {
     setToast({ type, message });
     setTimeout(() => {
       setToast(prev => (prev?.message === message ? null : prev));
     }, duration);
-  };
+  }, []);
 
-  const openTelegramSettingsModal = () => {
+  const openTelegramSettingsModal = useCallback(() => {
     setIsOpen(false);
     window.dispatchEvent(new CustomEvent('open-telegram-settings'));
-  };
+  }, []);
+
+  const executeFileExportAndSend = useCallback(async (formatType) => {
+    let exportRunner = null;
+    if (formatType === 'pdf' && onExportPdf) {
+      exportRunner = async () => {
+        await onExportPdf();
+      };
+    } else if (formatType === 'word' && onExportWord) {
+      exportRunner = async () => {
+        await onExportWord();
+      };
+    } else if (formatType === 'excel' && onExportExcel) {
+      exportRunner = async () => {
+        await onExportExcel();
+      };
+    }
+    if (!exportRunner) return;
+
+    try {
+      setIsSending(true);
+      setSendingLabel(
+        formatType === 'pdf'
+          ? 'កំពុងបញ្ជូន PDF...'
+          : formatType === 'word'
+            ? 'កំពុងបញ្ជូន Word...'
+            : 'កំពុងបញ្ជូន Excel...'
+      );
+
+      const { fileNames, recipientNames } = await captureAndSendToTelegram(exportRunner, {
+        reportTitle
+      });
+
+      const currentOwner = loadAuthSession()?.role === 'owner';
+      const targetDisplay =
+        Array.isArray(recipientNames) && recipientNames.length > 0
+          ? recipientNames.join(', ')
+          : getTelegramConfig().chatTitle || 'Telegram';
+      showToast(
+        'success',
+        currentOwner
+          ? `បានផ្ញើចូល Telegram (${targetDisplay}) ដោយជោគជ័យ! (${toKhmerDigits(fileNames.length)} ឯកសារ)`
+          : `បានផ្ញើឯកសារចូល Telegram (${targetDisplay}) ដោយជោគជ័យ!`
+      );
+    } catch (err) {
+      if (err?.code === 'DEVICE_NOT_LINKED') {
+        const linkToken = createDeviceLinkToken();
+        const promptStartSec = Math.floor(Date.now() / 1000) - 2;
+        setLinkModal({
+          pendingFormat: formatType,
+          linkToken,
+          baselineUpdateId: null,
+          promptStartSec
+        });
+        const baseId = await getBaselineUpdateId();
+        setLinkModal(prev =>
+          prev && prev.linkToken === linkToken
+            ? { ...prev, baselineUpdateId: baseId }
+            : prev
+        );
+        return;
+      }
+      if (err?.code === 'TELEGRAM_NOT_CONFIGURED') {
+        openTelegramSettingsModal();
+        return;
+      }
+      console.error('Telegram send failed:', err);
+      showToast(
+        'error',
+        'បរាជ័យក្នុងការផ្ញើទៅ Telegram៖ ' + (err?.message || 'Error')
+      );
+    } finally {
+      setIsSending(false);
+      setSendingLabel('');
+    }
+  }, [onExportPdf, onExportWord, onExportExcel, reportTitle, showToast, openTelegramSettingsModal]);
+
+  // Background polling & visibility listener while the In-App Link Modal is open
+  useEffect(() => {
+    if (!linkModal) return undefined;
+    let cancelled = false;
+
+    const checkOnce = async () => {
+      if (cancelled) return;
+      const bound = await checkDeviceLinkUpdate({
+        linkToken: linkModal.linkToken,
+        baselineUpdateId: linkModal.baselineUpdateId,
+        promptStartSec: linkModal.promptStartSec
+      });
+      if (cancelled || !bound) return;
+
+      const formatToRun = linkModal.pendingFormat;
+      setLinkModal(null);
+      setTgConfig(getTelegramConfig());
+
+      if (formatToRun) {
+        executeFileExportAndSend(formatToRun);
+      } else {
+        showToast('success', `បានភ្ជាប់គណនី Telegram «${bound.title}» រួចរាល់!`);
+      }
+    };
+
+    const intervalId = setInterval(checkOnce, 1500);
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        checkOnce();
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, [linkModal, executeFileExportAndSend, showToast]);
 
   const computeMenuPosition = (ownerRole = isOwner) => {
     if (!buttonRef.current || typeof window === 'undefined') return;
     const rect = buttonRef.current.getBoundingClientRect();
     const menuWidth = Math.min(308, window.innerWidth - 16);
-    const estimatedMenuHeight = ownerRole ? 380 : 250;
+    const estimatedMenuHeight = ownerRole ? 340 : 250;
 
     let left = rect.right - menuWidth;
     if (left < 8) left = 8;
@@ -112,7 +238,6 @@ export default function TelegramSendMenu({
       setIsOwner(currentOwner);
       setTgConfig(getTelegramConfig());
       computeMenuPosition(currentOwner);
-      // Automatically scan for any new users who clicked /start on the Bot
       syncSubscribersSilent().then(updated => setTgConfig(updated));
     }
     setIsOpen(prev => !prev);
@@ -134,117 +259,78 @@ export default function TelegramSendMenu({
     setTgConfig(nextCfg);
   };
 
-  const handleLinkAdditionalAccount = async (e) => {
+  const handleRemoveDeviceAccount = (e, targetChatId, targetTitle = '') => {
     if (e) e.stopPropagation();
-    setIsOpen(false);
-    try {
-      setIsSending(true);
-      setSendingLabel('កំពុងភ្ជាប់គណនី...');
-      const linked = await promptAndLinkDeviceTelegramAccount({ isAddingAdditional: true });
-      setTgConfig(getTelegramConfig());
-      if (linked && linked[0]) {
-        showToast('success', `បានភ្ជាប់គណនី Telegram «${linked[0].title}» រួចរាល់!`);
-      }
-    } catch (err) {
-      if (err?.code !== 'USER_CANCELLED') {
-        showToast('error', err?.message || 'មិនអាចភ្ជាប់គណនីបានទេ។');
-      }
-    } finally {
-      setIsSending(false);
-      setSendingLabel('');
+    removeDeviceTelegramAccount(targetChatId);
+    setTgConfig(getTelegramConfig());
+    showToast('success', `បានដកគណនី «${targetTitle || targetChatId}» ចេញពីឧបករណ៍នេះរួចរាល់។`, 3000);
+  };
+
+  const handleQuickBindExistingSubscriber = (sub) => {
+    if (!sub || !sub.chatId) return;
+    const formatToRun = linkModal?.pendingFormat || null;
+    saveDeviceTelegramBinding(
+      {
+        chatId: sub.chatId,
+        title: sub.title,
+        username: sub.username || ''
+      },
+      { setAsActive: true }
+    );
+    setLinkModal(null);
+    setTgConfig(getTelegramConfig());
+    if (formatToRun) {
+      executeFileExportAndSend(formatToRun);
+    } else {
+      showToast('success', `បានភ្ជាប់ និងប្ដូរទៅគណនី Telegram «${sub.title}» រួចរាល់!`);
     }
+  };
+
+  const openDeviceLinkModal = async (pendingFormat = null) => {
+    setIsOpen(false);
+    const linkToken = createDeviceLinkToken();
+    const promptStartSec = Math.floor(Date.now() / 1000) - 2;
+    setLinkModal({
+      pendingFormat,
+      linkToken,
+      baselineUpdateId: null,
+      promptStartSec
+    });
+    const [baseId, updatedCfg] = await Promise.all([
+      getBaselineUpdateId(),
+      syncSubscribersSilent()
+    ]);
+    setTgConfig(updatedCfg);
+    setLinkModal(prev =>
+      prev && prev.linkToken === linkToken
+        ? { ...prev, baselineUpdateId: baseId }
+        : prev
+    );
   };
 
   const handleSendFormat = async (formatType) => {
     setIsOpen(false);
 
     if (!isTelegramConfigured()) {
-      showToast(
-        'error',
-        'សូមបញ្ចូល Telegram Bot Token និងចុច /start ជាមុនសិន!'
-      );
+      showToast('error', 'សូមបញ្ចូល Telegram Bot Token ជាមុនសិន!');
       openTelegramSettingsModal();
       return;
     }
 
-    let exportRunner = null;
-    let formatLabel = '';
-
-    if (formatType === 'pdf' && onExportPdf) {
-      exportRunner = async () => {
-        await onExportPdf();
-      };
-      formatLabel = 'ឯកសារ PDF (.pdf)';
-    } else if (formatType === 'word' && onExportWord) {
-      exportRunner = async () => {
-        await onExportWord();
-      };
-      formatLabel = 'ឯកសារ Word (.docx)';
-    } else if (formatType === 'excel' && onExportExcel) {
-      exportRunner = async () => {
-        await onExportExcel();
-      };
-      formatLabel = 'ឯកសារ Excel (.xlsx)';
-    } else if (formatType === 'all') {
-      exportRunner = async () => {
-        if (onExportPdf) await onExportPdf();
-        if (onExportWord) await onExportWord();
-        if (onExportExcel) await onExportExcel();
-      };
-      formatLabel = 'កញ្ចប់ឯកសារពេញលេញ (PDF + Word + Excel)';
+    // Synchronous check: if this non-Owner device isn't bound yet, open the PWA-safe Link Modal immediately!
+    const currentRecipients = getActiveRecipients();
+    if (currentRecipients.length === 0) {
+      openDeviceLinkModal(formatType);
+      return;
     }
 
-    if (!exportRunner) return;
-
-    try {
-      setIsSending(true);
-      setSendingLabel(
-        formatType === 'pdf'
-          ? 'កំពុងបញ្ជូន PDF...'
-          : formatType === 'word'
-            ? 'កំពុងបញ្ជូន Word...'
-            : formatType === 'excel'
-              ? 'កំពុងបញ្ជូន Excel...'
-              : 'កំពុងបញ្ជូនទាំងអស់...'
-      );
-
-      const { fileNames, recipientNames } = await captureAndSendToTelegram(exportRunner, {
-        reportTitle,
-        formatLabel
-      });
-
-      const targetDisplay =
-        Array.isArray(recipientNames) && recipientNames.length > 0
-          ? recipientNames.join(', ')
-          : tgConfig.chatTitle || 'Telegram';
-      showToast(
-        'success',
-        isOwner
-          ? `បានផ្ញើចូល Telegram (${targetDisplay}) ដោយជោគជ័យ! (${toKhmerDigits(fileNames.length)} ឯកសារ)`
-          : `បានផ្ញើឯកសារចូល Telegram ដោយជោគជ័យ! (${toKhmerDigits(fileNames.length)} ឯកសារ)`
-      );
-    } catch (err) {
-      if (err?.code === 'USER_CANCELLED') {
-        return;
-      }
-      if (err?.code === 'TELEGRAM_NOT_CONFIGURED') {
-        openTelegramSettingsModal();
-        return;
-      }
-      console.error('Telegram send failed:', err);
-      showToast(
-        'error',
-        'បរាជ័យក្នុងការផ្ញើទៅ Telegram៖ ' + (err?.message || 'Error')
-      );
-    } finally {
-      setIsSending(false);
-      setSendingLabel('');
-    }
+    await executeFileExportAndSend(formatType);
   };
 
   const subscribers = Array.isArray(tgConfig.subscribers) ? tgConfig.subscribers : [];
   const configured = Boolean(tgConfig.botToken && subscribers.length > 0);
   const isAllSelected = tgConfig.targetMode === 'ALL' || tgConfig.chatId === 'ALL';
+  const deepLinks = getTelegramDeepLinks(linkModal?.linkToken || null);
 
   return (
     <>
@@ -478,7 +564,7 @@ export default function TelegramSendMenu({
                   </span>
                   <button
                     type="button"
-                    onClick={handleLinkAdditionalAccount}
+                    onClick={() => openDeviceLinkModal(null)}
                     style={{
                       background: '#e0f2fe',
                       color: '#0284c7',
@@ -503,30 +589,67 @@ export default function TelegramSendMenu({
                     {tgConfig.myDeviceAccounts.map(sub => {
                       const active = String(tgConfig.chatId) === String(sub.chatId);
                       return (
-                        <button
+                        <div
                           key={sub.chatId}
-                          type="button"
-                          onClick={() => handleSelectTargetRecipient(sub.chatId, sub.title)}
                           style={{
                             background: active ? '#0284c7' : '#ffffff',
                             color: active ? '#ffffff' : '#334155',
                             border: active ? '1.5px solid #0369a1' : '1px solid #cbd5e1',
                             borderRadius: 20,
-                            padding: '4px 9px',
+                            padding: '3px 6px 3px 9px',
                             fontSize: 11,
                             fontWeight: 700,
-                            cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 4,
                             maxWidth: '100%'
                           }}
                         >
-                          <User size={11} />
-                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>
-                            {sub.title}
-                          </span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectTargetRecipient(sub.chatId, sub.title)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'inherit',
+                              padding: 0,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              minWidth: 0
+                            }}
+                          >
+                            <User size={11} />
+                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>
+                              {sub.title}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemoveDeviceAccount(e, sub.chatId, sub.title)}
+                            title={`ដកគណនី «${sub.title}» ចេញពីឧបករណ៍នេះ`}
+                            style={{
+                              background: active ? 'rgba(255,255,255,0.22)' : '#f1f5f9',
+                              color: active ? '#ffffff' : '#64748b',
+                              border: 'none',
+                              borderRadius: '50%',
+                              width: 16,
+                              height: 16,
+                              padding: 0,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                              marginLeft: 2
+                            }}
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -668,6 +791,249 @@ export default function TelegramSendMenu({
                   </div>
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PWA-Safe In-App Telegram Link Alert Modal (Works 100% in Home Screen Apps & Browsers) */}
+      {linkModal && (
+        <div
+          className="no-print"
+          onClick={() => setLinkModal(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1420,
+            background: 'rgba(15, 23, 42, 0.62)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              background: '#ffffff',
+              borderRadius: 16,
+              border: '1.5px solid #7dd3fc',
+              boxShadow: '0 20px 44px rgba(15, 23, 42, 0.35)',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #0088cc 0%, #0284c7 100%)',
+                color: '#ffffff',
+                padding: '14px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <Send size={18} />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>
+                    ភ្ជាប់ឧបករណ៍ទៅកាន់ Telegram
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.9 }}>
+                    លេខសម្គាល់ឧបករណ៍៖ {deepLinks.deviceId}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLinkModal(null)}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  color: '#ffffff',
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 11 }}>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: '#1e293b',
+                  lineHeight: 1.55,
+                  background: '#f0f9ff',
+                  border: '1px solid #bae6fd',
+                  borderRadius: 10,
+                  padding: '10px 12px'
+                }}
+              >
+                ១. បើបងបានប្ដូរ (Switch) ទៅគណនី Telegram ទី ២ រួចហើយ សូមចុចប៊ូតុងខាងក្រោមដើម្បីបើក{' '}
+                <strong>@{deepLinks.botUsername}</strong> រួចចុចប៊ូតុង{' '}
+                <strong style={{ color: '#0284c7' }}>&ldquo;Start&rdquo;</strong> (ឬផ្ញើសារ{' '}
+                <code style={{ background: '#e0f2fe', padding: '1px 5px', borderRadius: 4 }}>/start</code> ១ ម៉ាត់)៖
+              </div>
+
+              {/* Clean Direct Native App Link (tg:// protocol without duplicate setTimeout window.open interference) */}
+              <a
+                href={deepLinks.tgProtocolUrl}
+                style={{
+                  width: '100%',
+                  background: 'linear-gradient(135deg, #0088cc 0%, #0284c7 100%)',
+                  color: '#ffffff',
+                  textDecoration: 'none',
+                  padding: '11px 14px',
+                  borderRadius: 10,
+                  fontSize: 13.5,
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <Send size={16} />
+                <span>📲 បើកកម្មវិធី Telegram (ចុច Start)</span>
+                <ExternalLink size={14} />
+              </a>
+
+              <div style={{ textAlign: 'center', marginTop: -4 }}>
+                <a
+                  href={deepLinks.httpsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: 11,
+                    color: '#0284c7',
+                    fontWeight: 700,
+                    textDecoration: 'underline'
+                  }}
+                >
+                  ឬបើកតាមតំណ Web (t.me/{deepLinks.botUsername}) ជំនួស
+                </a>
+              </div>
+
+              {/* Quick 1-Tap Picker for accounts that have ALREADY pressed /start in @Annkhlebot */}
+              {subscribers.length > 0 && (
+                <div
+                  style={{
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: '9px 11px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#334155' }}>
+                      ២. ឬជ្រើសរើសគណនីដែលបានចុច Start រួចហើយ៖
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRefreshSubscribers}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        color: '#0284c7',
+                        borderRadius: 6,
+                        padding: '2px 6px',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3
+                      }}
+                    >
+                      <RefreshCw size={10} className={isSyncingUsers ? 'animate-spin' : ''} />
+                      <span>ស្កេនថ្មី</span>
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                    {subscribers.map(sub => {
+                      const alreadyLinked =
+                        Array.isArray(tgConfig.myDeviceAccounts) &&
+                        tgConfig.myDeviceAccounts.some(a => String(a.chatId) === String(sub.chatId));
+                      const isCurrentActive = String(tgConfig.chatId) === String(sub.chatId);
+                      return (
+                        <button
+                          key={sub.chatId}
+                          type="button"
+                          onClick={() => handleQuickBindExistingSubscriber(sub)}
+                          style={{
+                            background: isCurrentActive ? '#0284c7' : alreadyLinked ? '#e0f2fe' : '#ffffff',
+                            color: isCurrentActive ? '#ffffff' : '#0c4a6e',
+                            border: isCurrentActive ? '1.5px solid #0369a1' : '1px solid #7dd3fc',
+                            borderRadius: 18,
+                            padding: '5px 10px',
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}
+                        >
+                          {alreadyLinked ? <User size={11} /> : <Plus size={11} />}
+                          <span>{sub.title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Live Waiting Indicator */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 7,
+                  fontSize: 12,
+                  color: '#0369a1',
+                  fontWeight: 700,
+                  padding: '2px 0'
+                }}
+              >
+                <Loader2 size={15} className="animate-spin" />
+                <span>កំពុងរង់ចាំការចុច Start ពីគណនី Telegram ថ្មី...</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setLinkModal(null)}
+                style={{
+                  width: '100%',
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 9,
+                  padding: '9px 14px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                បោះបង់
+              </button>
             </div>
           </div>
         </div>

@@ -127,6 +127,16 @@ export function mergeSubscribersList(...lists) {
   return Array.from(map.values());
 }
 
+function getRawDeviceBindingStore() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DEVICE_BINDING_STORAGE_KEY) || readCookie(DEVICE_BINDING_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Read the Telegram accounts bound specifically to THIS device:
  * { deviceId, activeChatId, chatId, title, username, accounts: [{ chatId, title, username }] }
@@ -134,8 +144,7 @@ export function mergeSubscribersList(...lists) {
 export function getDeviceTelegramBinding() {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(DEVICE_BINDING_STORAGE_KEY) || readCookie(DEVICE_BINDING_STORAGE_KEY);
-    let parsed = raw ? JSON.parse(raw) : null;
+    const parsed = getRawDeviceBindingStore();
 
     // Normalize legacy single-account binding object into multi-account structure
     let accounts = Array.isArray(parsed?.accounts) ? [...parsed.accounts] : [];
@@ -181,6 +190,18 @@ export function saveDeviceTelegramBinding({ chatId, title, username = '' }, { se
   const cleanId = cleanChatId(chatId);
   if (!cleanId || cleanId === 'ALL') return getDeviceTelegramBinding();
 
+  const rawStore = getRawDeviceBindingStore() || {};
+  const prevUnlinked = Array.isArray(rawStore.unlinkedChatIds) ? rawStore.unlinkedChatIds.map(String) : [];
+
+  // If this account was explicitly unlinked on this device, do not silently re-add it from old /getUpdates history
+  if (!setAsActive && prevUnlinked.includes(cleanId)) {
+    return getDeviceTelegramBinding();
+  }
+
+  const nextUnlinked = setAsActive
+    ? prevUnlinked.filter(id => id !== cleanId)
+    : prevUnlinked;
+
   const current = getDeviceTelegramBinding();
   const prevAccounts = current?.accounts || [];
   const nextAccounts = mergeSubscribersList(prevAccounts, [
@@ -207,6 +228,7 @@ export function saveDeviceTelegramBinding({ chatId, title, username = '' }, { se
     title: activeAccount.title,
     username: activeAccount.username || '',
     accounts: nextAccounts,
+    unlinkedChatIds: nextUnlinked,
     updatedAt: new Date().toISOString()
   };
 
@@ -222,6 +244,50 @@ export function saveDeviceTelegramBinding({ chatId, title, username = '' }, { se
   }
 
   return payload;
+}
+
+/**
+ * Remove / unlink a Telegram account from THIS device
+ */
+export function removeDeviceTelegramAccount(targetChatId) {
+  const cleanId = cleanChatId(targetChatId);
+  if (!cleanId) return getDeviceTelegramBinding();
+
+  const rawStore = getRawDeviceBindingStore() || {};
+  const current = getDeviceTelegramBinding();
+  const prevAccounts = current?.accounts || [];
+  const nextAccounts = prevAccounts.filter(a => String(a.chatId) !== cleanId);
+  const prevUnlinked = Array.isArray(rawStore.unlinkedChatIds) ? rawStore.unlinkedChatIds.map(String) : [];
+  const nextUnlinked = Array.from(new Set([...prevUnlinked, cleanId]));
+
+  const nextActiveAccount =
+    nextAccounts.find(a => String(a.chatId) === String(current?.activeChatId)) ||
+    nextAccounts[0] ||
+    null;
+
+  const payload = {
+    deviceId: getOrCreateDeviceId(),
+    activeChatId: nextActiveAccount ? nextActiveAccount.chatId : '',
+    chatId: nextActiveAccount ? nextActiveAccount.chatId : '',
+    title: nextActiveAccount ? nextActiveAccount.title : '',
+    username: nextActiveAccount ? (nextActiveAccount.username || '') : '',
+    accounts: nextAccounts,
+    unlinkedChatIds: nextUnlinked,
+    updatedAt: new Date().toISOString()
+  };
+
+  try {
+    const json = JSON.stringify(payload);
+    localStorage.setItem(DEVICE_BINDING_STORAGE_KEY, json);
+    writeCookie(DEVICE_BINDING_STORAGE_KEY, json);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('telegram-config-updated', { detail: getTelegramConfig() }));
+    }
+  } catch {
+    // ignore storage errors
+  }
+
+  return getDeviceTelegramBinding();
 }
 
 /**
@@ -585,84 +651,130 @@ export function getActiveRecipients(configOverride = null) {
 }
 
 /**
- * Interactive helper to link a new Telegram account (1st or 2nd account) onto THIS device (`dev_...`)
+ * Generate a unique one-time link token for a new account-linking session on this device.
+ * Format: "dev_xxxx_lnk_yyyy" (contains deviceId while guaranteeing old /start messages never re-trigger)
  */
-export async function promptAndLinkDeviceTelegramAccount({ isAddingAdditional = false } = {}) {
-  const cfg = getTelegramConfig();
-  const myDeviceId = getOrCreateDeviceId();
-  const botToken = cfg.botToken || DEFAULT_TELEGRAM_CONFIG.botToken;
-  const botUsername = cfg.botUsername || DEFAULT_TELEGRAM_CONFIG.botUsername;
-
-  let baselineUpdateId = 0;
-  try {
-    const upRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=30`);
-    const upData = await upRes.json().catch(() => null);
-    if (upData?.ok && Array.isArray(upData.result)) {
-      for (const u of upData.result) {
-        if (u.update_id > baselineUpdateId) baselineUpdateId = u.update_id;
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  const promptMsg = isAddingAdditional
-    ? `📲 ភ្ជាប់គណនី Telegram បន្ថែមមកកាន់ឧបករណ៍នេះ (${myDeviceId})៖\n\n` +
-      `សូមបើកគណនី Telegram ទី ២ របស់អ្នក ➔ ចុច "OK" ដើម្បីបើក Bot (@${botUsername}) ➔ រួចចុចប៊ូតុង "Start" ១ ချက်!`
-    : `📱 ភ្ជាប់ឧបករណ៍នេះ (${myDeviceId}) ទៅកាន់ Telegram របស់អ្នក (ធ្វើតែ ១ ដងគត់)៖\n\n` +
-      `សូមចុច "OK" ដើម្បីបើក Telegram Bot (@${botUsername}) រួចចុចប៊ូតុង "Start" ១ ချက် — ប្រព័ន្ធនឹងចងភ្ជាប់ឧបករណ៍នេះ និងបាញ់ឯកសារចូល Telegram របស់អ្នកដោយស្វ័យប្រវត្តិភ្លាមៗ!`;
-
-  const confirmed = window.confirm(promptMsg);
-  if (!confirmed) {
-    const cancelErr = new Error('បានបោះបង់ការភ្ជាប់ទៅកាន់ Telegram។');
-    cancelErr.code = 'USER_CANCELLED';
-    throw cancelErr;
-  }
-
-  const deepLinkUrl = `https://t.me/${botUsername}?start=${myDeviceId}`;
-  window.open(deepLinkUrl, '_blank', 'noopener,noreferrer');
-
-  const promptStartSec = Math.floor(Date.now() / 1000) - 5;
-  const maxAttempts = 30;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    try {
-      const pollRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=30`);
-      const pollData = await pollRes.json().catch(() => null);
-      if (pollData?.ok && Array.isArray(pollData.result)) {
-        const reversed = [...pollData.result].reverse();
-        for (const u of reversed) {
-          const info = extractChatFromUpdate(u);
-          if (
-            info &&
-            (u.update_id > baselineUpdateId || info.date >= promptStartSec) &&
-            (info.text.includes(myDeviceId) || info.text.startsWith('/start'))
-          ) {
-            const bound = saveDeviceTelegramBinding(
-              {
-                chatId: info.chatId,
-                title: info.title,
-                username: info.username
-              },
-              { setAsActive: true }
-            );
-            if (bound) return [bound];
-          }
-        }
-      }
-    } catch {
-      // ignore transient error
-    }
-  }
-
-  throw new Error(
-    `មិនទាន់ឃើញការចុច Start ក្នុង @${botUsername} ឡើយ។ សូមចុច Start ក្នុង Telegram រួចសាកល្បងម្ដងទៀត។`
-  );
+export function createDeviceLinkToken() {
+  const deviceId = getOrCreateDeviceId();
+  const nonce = Math.random().toString(36).slice(2, 6) + Date.now().toString(36).slice(-4);
+  return `${deviceId}_lnk_${nonce.toLowerCase()}`;
 }
 
 /**
- * Ensure the current device has a bound recipient (or trigger the 1-time link prompt)
+ * Get direct deep-link URLs for launching the native Telegram app from both Home Screen PWA and Browser
+ */
+export function getTelegramDeepLinks(customStartToken = null) {
+  const cfg = getTelegramConfig();
+  const deviceId = getOrCreateDeviceId();
+  const startToken = customStartToken || deviceId;
+  const botUsername = cfg.botUsername || DEFAULT_TELEGRAM_CONFIG.botUsername;
+  return {
+    deviceId,
+    startToken,
+    botUsername,
+    tgProtocolUrl: `tg://resolve?domain=${botUsername}&start=${startToken}`,
+    httpsUrl: `https://t.me/${botUsername}?start=${startToken}`
+  };
+}
+
+/**
+ * Fetch the current latest update_id from /getUpdates before the user taps Start in Telegram
+ */
+export async function getBaselineUpdateId() {
+  try {
+    const cfg = getTelegramConfig();
+    const botToken = cfg.botToken || DEFAULT_TELEGRAM_CONFIG.botToken;
+    const upRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=50`);
+    const upData = await upRes.json().catch(() => null);
+    let maxId = 0;
+    if (upData?.ok && Array.isArray(upData.result)) {
+      for (const u of upData.result) {
+        if (u.update_id > maxId) maxId = u.update_id;
+      }
+      return maxId;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check /getUpdates once to see if the user has tapped Start (or sent a message) in Telegram for this link session
+ */
+export async function checkDeviceLinkUpdate({
+  linkToken = '',
+  baselineUpdateId = null,
+  promptStartSec = 0
+} = {}) {
+  try {
+    const cfg = getTelegramConfig();
+    const botToken = cfg.botToken || DEFAULT_TELEGRAM_CONFIG.botToken;
+
+    const pollRes = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=50`);
+    const pollData = await pollRes.json().catch(() => null);
+    if (!pollData?.ok || !Array.isArray(pollData.result)) return null;
+
+    const reversed = [...pollData.result].reverse();
+
+    // 1. Exact match for this modal session's unique one-time linkToken (e.g. "dev_xxx_lnk_yyyy")
+    // Old /start messages from Account #1 will NEVER match this unique linkToken!
+    if (linkToken) {
+      for (const u of reversed) {
+        const info = extractChatFromUpdate(u);
+        if (info && info.text && info.text.includes(linkToken)) {
+          return saveDeviceTelegramBinding(
+            {
+              chatId: info.chatId,
+              title: info.title,
+              username: info.username
+            },
+            { setAsActive: true }
+          );
+        }
+      }
+    }
+
+    // 2. Match any genuinely NEW message (update_id > baselineUpdateId) sent to the Bot after the modal opened
+    // Works even if the 2nd account already had a chat open and typed "/start" or any message directly
+    if (baselineUpdateId !== null) {
+      for (const u of reversed) {
+        const info = extractChatFromUpdate(u);
+        if (info && u.update_id > baselineUpdateId) {
+          return saveDeviceTelegramBinding(
+            {
+              chatId: info.chatId,
+              title: info.title,
+              username: info.username
+            },
+            { setAsActive: true }
+          );
+        }
+      }
+    } else if (promptStartSec > 0) {
+      // Fallback only if baselineUpdateId request failed: strictly require message timestamp >= modal open timestamp
+      for (const u of reversed) {
+        const info = extractChatFromUpdate(u);
+        if (info && info.date >= promptStartSec && info.text) {
+          return saveDeviceTelegramBinding(
+            {
+              chatId: info.chatId,
+              title: info.title,
+              username: info.username
+            },
+            { setAsActive: true }
+          );
+        }
+      }
+    }
+  } catch {
+    // ignore transient error
+  }
+  return null;
+}
+
+/**
+ * Ensure the current device has a bound recipient
  */
 async function ensureDeviceBoundRecipients() {
   const cfg = await syncSubscribersSilent();
@@ -670,7 +782,9 @@ async function ensureDeviceBoundRecipients() {
   if (existing.length > 0) {
     return existing;
   }
-  return promptAndLinkDeviceTelegramAccount({ isAddingAdditional: false });
+  const err = new Error('DEVICE_NOT_LINKED');
+  err.code = 'DEVICE_NOT_LINKED';
+  throw err;
 }
 
 /**
