@@ -8,7 +8,6 @@ import {
   AlertCircle,
   Loader2,
   ChevronDown,
-  Layers,
   Users,
   User,
   RefreshCw
@@ -211,7 +210,6 @@ export default function TelegramSendMenu({
     }
   };
 
-  const availableCount = [onExportPdf, onExportWord, onExportExcel].filter(Boolean).length;
   const subscribers = Array.isArray(tgConfig.subscribers) ? tgConfig.subscribers : [];
   const configured = Boolean(tgConfig.botToken && subscribers.length > 0);
   const isAllSelected = tgConfig.targetMode === 'ALL' || tgConfig.chatId === 'ALL';
@@ -561,50 +559,6 @@ export default function TelegramSendMenu({
                     </div>
                     <div style={{ fontSize: 10.5, color: '#15803d' }}>
                       តារាងទិន្នន័យផ្លូវការ (.xlsx)
-                    </div>
-                  </div>
-                </button>
-              )}
-
-              {availableCount >= 2 && (
-                <button
-                  type="button"
-                  onClick={() => handleSendFormat('all')}
-                  style={{
-                    width: '100%',
-                    background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-                    border: '1px solid #fcd34d',
-                    borderRadius: 9,
-                    padding: '9px 11px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    marginTop: 2
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: 8,
-                      background: '#b45309',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    <Layers size={16} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#78350f' }}>
-                      ផ្ញើទាំងអស់រួមគ្នា (PDF + Word + Excel)
-                    </div>
-                    <div style={{ fontSize: 10.5, color: '#92400e' }}>
-                      បញ្ជូនគ្រប់ទម្រង់ចូល Telegram តែម្ដង
                     </div>
                   </div>
                 </button>
