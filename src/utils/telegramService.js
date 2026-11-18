@@ -467,6 +467,94 @@ function escapeHtmlTelegram(str) {
     .replace(/>/g, '&gt;');
 }
 
+function toAsciiDigits(str) {
+  const khmerZeroCode = '០'.charCodeAt(0);
+  return String(str ?? '').replace(/[០-៩]/g, ch => String(ch.charCodeAt(0) - khmerZeroCode));
+}
+
+/**
+ * Convert Khmer report filenames into clean, standard English filenames for Telegram Bot API
+ * (Telegram's server strips Unicode Combining Marks [Mn/Mc] from multipart filenames,
+ * which otherwise turns Khmer words like "របាយការណ៍សុំច្បាប់_វិច្ឆិកា" into broken consonants "របយករណសចបប_វចឆក").
+ */
+export function formatTelegramSafeFilename(rawFilename) {
+  const raw = String(rawFilename || 'Document.pdf').trim();
+  const extMatch = raw.match(/(\.[a-zA-Z0-9]+)$/);
+  const ext = extMatch ? extMatch[1].toLowerCase() : '.pdf';
+  const base = toAsciiDigits(extMatch ? raw.slice(0, -ext.length) : raw);
+
+  // If already pure ASCII, keep it clean
+  if (/^[\x20-\x7E]+$/.test(base)) {
+    return `${base.replace(/\s+/g, '_')}${ext}`;
+  }
+
+  let prefix = 'Official_Report';
+  if (base.includes('សុំច្បាប់') || base.includes('ច្បាប់សមណសិស្ស') || base.includes('គ្មានច្បាប់')) {
+    prefix = 'Leave_Report';
+  } else if (base.includes('កាត_ID') || base.includes('ទិញកាត')) {
+    prefix = 'ID_Card_Report';
+  } else if (base.includes('ចំណូលចំណាយសង្ខេប')) {
+    prefix = 'Finance_Summary_Report';
+  } else if (base.includes('ហិរញ្ញវត្ថុ') || base.includes('ចំណូលចំណាយ')) {
+    prefix = 'Finance_Report';
+  } else if (base.includes('មន្ទីរ') && base.includes('សង្ខេប')) {
+    prefix = 'Ministry_Summary_Report';
+  } else if (base.includes('មន្ទីរ')) {
+    prefix = 'Ministry_Annual_Report';
+  } else if (base.includes('សមណសិស្សមេ')) {
+    prefix = 'Student_Master_List';
+  } else if (base.includes('របាយការណ៍')) {
+    prefix = 'Admin_Report';
+  }
+
+  const khmerMonths = [
+    ['មករា', '01'],
+    ['កុម្ភៈ', '02'],
+    ['មីនា', '03'],
+    ['មេសា', '04'],
+    ['ឧសភា', '05'],
+    ['មិថុនា', '06'],
+    ['កក្កដា', '07'],
+    ['សីហា', '08'],
+    ['កញ្ញា', '09'],
+    ['តុលា', '10'],
+    ['វិច្ឆិកា', '11'],
+    ['ធ្នូ', '12']
+  ];
+
+  let periodTag = '';
+  for (const [mName, mNum] of khmerMonths) {
+    if (base.includes(mName)) {
+      periodTag = mNum;
+      break;
+    }
+  }
+
+  if (!periodTag) {
+    if (/ឆមាសទី\s*_?\s*1/.test(base)) {
+      periodTag = 'Sem1';
+    } else if (/ឆមាសទី\s*_?\s*2/.test(base)) {
+      periodTag = 'Sem2';
+    }
+  }
+
+  const yearMatch = base.match(/(20\d{2})/);
+  const yearTag = yearMatch ? yearMatch[1] : '';
+
+  const parts = [prefix];
+  if (periodTag) parts.push(periodTag);
+  if (yearTag) {
+    parts.push(yearTag);
+  } else {
+    const numMatch = base.match(/(\d+)/);
+    if (numMatch && numMatch[1] !== periodTag) {
+      parts.push(numMatch[1]);
+    }
+  }
+
+  return `${parts.join('_')}${ext}`;
+}
+
 function formatKhmerTimestamp() {
   const now = new Date();
   const dd = String(now.getDate()).padStart(2, '0');
@@ -477,8 +565,23 @@ function formatKhmerTimestamp() {
   return toKhmerDigits(`${dd}/${mm}/${yyyy} ម៉ោង ${hh}:${min}`);
 }
 
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = String(reader.result || '');
+      const commaIdx = dataUrl.indexOf(',');
+      resolve(commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
- * Send a single generated file Blob/Uint8Array to all active target Telegram Chat IDs via /sendDocument
+ * Send a single generated file Blob/Uint8Array to all active target Telegram Chat IDs
+ * Uses /api/telegram-send (MTProto DocumentAttributeFilename) first so Khmer vowels & subscripts (្)
+ * in the filename are 100% preserved, falling back to Bot HTTP API only if offline/unavailable.
  */
 export async function sendDocumentToTelegram(
   blobOrBytes,
@@ -501,10 +604,42 @@ export async function sendDocumentToTelegram(
     ? blobOrBytes
     : new Blob([blobOrBytes], { type: mimeType });
 
+  const cleanKhmerFilename = String(filename || 'ឯកសាររបាយការណ៍.pdf').normalize('NFC').trim();
+
+  // 1. Primary Path: MTProto endpoint (/api/telegram-send) preserving 100% of Khmer vowels & subscripts
+  try {
+    const fileBase64 = await blobToBase64(blob);
+    const mtRes = await fetch('/api/telegram-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        botToken: cfg.botToken,
+        recipients,
+        filename: cleanKhmerFilename,
+        mimeType: mimeType || blob.type || 'application/octet-stream',
+        caption,
+        fileBase64
+      })
+    });
+
+    if (mtRes.ok) {
+      const mtData = await mtRes.json().catch(() => null);
+      if (mtData?.ok && Array.isArray(mtData.succeeded) && mtData.succeeded.length > 0) {
+        return {
+          succeeded: mtData.succeeded,
+          failed: mtData.failed || []
+        };
+      }
+    }
+  } catch (mtErr) {
+    console.warn('MTProto endpoint fallback triggered:', mtErr);
+  }
+
+  // 2. Fallback Path: Direct Bot HTTP API if serverless endpoint is unreachable
   const sendPromises = recipients.map(async (recipient) => {
     const formData = new FormData();
     formData.append('chat_id', recipient.chatId);
-    formData.append('document', blob, filename);
+    formData.append('document', blob, cleanKhmerFilename);
     if (caption) {
       formData.append('caption', caption);
       formData.append('parse_mode', 'HTML');
@@ -545,7 +680,7 @@ export async function sendDocumentToTelegram(
  * Intercept files generated by any exporter function (PDF, Word, Excel, or All 3)
  * and send them directly to all active Telegram recipients (or selected recipient).
  */
-export async function captureAndSendToTelegram(exportFn, { reportTitle = 'របាយការណ៍ផ្លូវការ', formatLabel = '' } = {}) {
+export async function captureAndSendToTelegram(exportFn, { reportTitle = 'របាយការណ៍ផ្លូវការ' } = {}) {
   // 1. Auto-sync any new users who clicked /start right before sending
   const cfg = await syncSubscribersSilent();
   const recipients = getActiveRecipients(cfg);
@@ -574,17 +709,16 @@ export async function captureAndSendToTelegram(exportFn, { reportTitle = 'រប
 
   for (let i = 0; i < totalFiles; i++) {
     const item = capturedFiles[i];
+    const khmerFilename = String(item.filename || 'ឯកសាររបាយការណ៍.pdf').normalize('NFC');
     const indexBadge = totalFiles > 1 ? ` (${toKhmerDigits(i + 1)}/${toKhmerDigits(totalFiles)})` : '';
     const captionLines = [
       `📄 <b>${escapeHtmlTelegram(reportTitle)}${indexBadge}</b>`,
-      formatLabel ? `📌 ប្រភេទ៖ <b>${escapeHtmlTelegram(formatLabel)}</b>` : null,
-      `📎 ឯកសារ៖ <code>${escapeHtmlTelegram(item.filename)}</code>`,
       `🕒 ផ្ញើនៅ៖ ${escapeHtmlTelegram(timeStr)}`
-    ].filter(Boolean);
+    ];
 
     const res = await sendDocumentToTelegram(
       item.blob,
-      item.filename,
+      khmerFilename,
       captionLines.join('\n'),
       item.mimeType,
       recipients
