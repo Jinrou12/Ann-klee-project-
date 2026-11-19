@@ -260,7 +260,8 @@ export default function OfficialSchoolHistoryDocument({
           <div
             key={`hist-bg-${idx}`}
             style={{
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               textIndent: 46,
               lineHeight: 1.78,
               marginBottom: 6,
@@ -282,7 +283,8 @@ export default function OfficialSchoolHistoryDocument({
           <div
             key="hist-table-intro"
             style={{
-              textAlign: 'justify',
+              textAlign: 'left',
+              wordSpacing: 'normal',
               textIndent: 46,
               lineHeight: 1.78,
               marginBottom: 8,

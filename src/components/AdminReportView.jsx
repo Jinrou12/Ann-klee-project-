@@ -2562,7 +2562,7 @@ export default function AdminReportView({
                   </div>
                   <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
                     {(schoolHistoryModel.backgroundParagraphs || []).map((p, i) => (
-                      <p key={i} style={{ margin: '0 0 8px', textIndent: 24, textAlign: 'justify' }}>
+                      <p key={i} style={{ margin: '0 0 8px', textIndent: 24, textAlign: 'left' }}>
                         {p}
                       </p>
                     ))}
@@ -2809,7 +2809,7 @@ export default function AdminReportView({
                 </div>
                 <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
                   {(displayModel.schoolHistory.backgroundParagraphs || []).map((p, i) => (
-                    <p key={i} style={{ margin: '0 0 8px', textIndent: 24, textAlign: 'justify' }}>
+                    <p key={i} style={{ margin: '0 0 8px', textIndent: 24, textAlign: 'left' }}>
                       {p}
                     </p>
                   ))}

@@ -448,7 +448,8 @@ export default function OfficialAdminReportDocument({
             <div
               key={`hist-bg-para-${idx}`}
               style={{
-                textAlign: 'justify',
+                textAlign: 'left',
+                wordSpacing: 'normal',
                 textIndent: 56,
                 marginBottom: 6,
                 lineHeight: 1.8
@@ -688,7 +689,8 @@ export default function OfficialAdminReportDocument({
               style={{
                 paddingTop: 6,
                 marginBottom: 6,
-                textAlign: 'justify',
+                textAlign: 'left',
+                wordSpacing: 'normal',
                 textIndent: 52,
                 lineHeight: 1.78
               }}

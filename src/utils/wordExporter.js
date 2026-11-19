@@ -1249,7 +1249,7 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
       ? [
           sectionHeading('I. សាវតារ'),
           ...(displayModel.schoolHistory.backgroundParagraphs || []).map(p =>
-            wParagraph(p, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', firstLine: FIRST_LINE, spaceAfter: 40 })
+            wParagraph(p, { font: FONT_SIEMREAP, sizePt: SZ, align: 'left', firstLine: FIRST_LINE, spaceAfter: 40 })
           )
         ]
       : []),
@@ -1290,7 +1290,7 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
                 wParagraph(displayModel.schoolHistory.tableIntro, {
                   font: FONT_SIEMREAP,
                   sizePt: SZ,
-                  align: 'both',
+                  align: 'left',
                   firstLine: FIRST_LINE,
                   spaceBefore: 60,
                   spaceAfter: 60
@@ -1932,10 +1932,10 @@ export async function exportSchoolHistoryToWord(historyModel) {
     }),
     wParagraph('១.១. សាវតារ', { font: FONT_MOUL, sizePt: 11.5, color: NAVY, align: 'left', indentLeft: 280, spaceAfter: 40 }),
     ...(historyModel.backgroundParagraphs || []).map(p =>
-      wParagraph(p, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 60 })
+      wParagraph(p, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'left', firstLine: 720, spaceAfter: 60 })
     ),
     ...(historyModel.tableIntro
-      ? [wParagraph(historyModel.tableIntro, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 80 })]
+      ? [wParagraph(historyModel.tableIntro, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'left', firstLine: 720, spaceAfter: 80 })]
       : []),
     buildSchoolHistoryTableXml(historyModel, contentWidth),
     wParagraph('', { sizePt: 8, spaceAfter: 120 }),

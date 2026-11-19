@@ -897,10 +897,108 @@ function blobToBase64(blob) {
   });
 }
 
+const MTPROTO_PART_SIZE = 512 * 1024; // 512 KB exact Telegram MTProto part size
+const MTPROTO_SINGLE_SHOT_MAX_BYTES = 2.4 * 1024 * 1024; // ~3.2 MB base64 JSON (safely below Vercel 4.5 MB limit)
+const MTPROTO_PARTS_PER_BATCH = 3; // 3 x 512 KB = 1.5 MB raw (~2.0 MB JSON per request)
+const MTPROTO_BIG_FILE_THRESHOLD = 10 * 1024 * 1024; // 10 MB -> SaveBigFilePart / InputFileBig
+
+function generateMtprotoFileIdString() {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const arr = new Uint32Array(2);
+    crypto.getRandomValues(arr);
+    // Keep positive signed 63-bit integer using BigInt when available
+    if (typeof BigInt !== 'undefined') {
+      const hi = BigInt(arr[0] & 0x7fffffff);
+      const lo = BigInt(arr[1]);
+      return ((hi << 32n) | lo).toString();
+    }
+  }
+  return `${Date.now()}${Math.floor(Math.random() * 1e6)}`;
+}
+
+async function sendViaChunkedMtproto({
+  blob,
+  botToken,
+  recipients,
+  filename,
+  mimeType,
+  caption
+}) {
+  const totalBytes = blob.size;
+  const totalParts = Math.ceil(totalBytes / MTPROTO_PART_SIZE);
+  const isBigFile = totalBytes > MTPROTO_BIG_FILE_THRESHOLD;
+  const fileId = generateMtprotoFileIdString();
+
+  // 1. Upload 512KB MTProto parts in safe <= 1.5MB batches (stateless across Vercel serverless functions)
+  for (let startPart = 0; startPart < totalParts; startPart += MTPROTO_PARTS_PER_BATCH) {
+    const endPart = Math.min(totalParts, startPart + MTPROTO_PARTS_PER_BATCH);
+    const batchParts = [];
+
+    for (let p = startPart; p < endPart; p++) {
+      const startByte = p * MTPROTO_PART_SIZE;
+      const endByte = Math.min(totalBytes, startByte + MTPROTO_PART_SIZE);
+      const sliceBlob = blob.slice(startByte, endByte);
+      const dataBase64 = await blobToBase64(sliceBlob);
+      batchParts.push({ partIndex: p, dataBase64 });
+    }
+
+    const chunkRes = await fetch('/api/telegram-send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'upload_parts',
+        botToken,
+        fileId,
+        totalParts,
+        isBigFile,
+        parts: batchParts
+      })
+    });
+
+    if (!chunkRes.ok) {
+      throw new Error(`MTProto chunk upload failed (${chunkRes.status})`);
+    }
+    const chunkData = await chunkRes.json().catch(() => null);
+    if (!chunkData?.ok) {
+      throw new Error(chunkData?.description || 'MTProto chunk upload rejected');
+    }
+  }
+
+  // 2. Finalize uploaded file on Telegram servers with exact Khmer filename
+  const finRes = await fetch('/api/telegram-send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'finalize_chunked',
+      botToken,
+      fileId,
+      totalParts,
+      isBigFile,
+      recipients,
+      filename,
+      mimeType,
+      caption
+    })
+  });
+
+  if (!finRes.ok) {
+    throw new Error(`MTProto finalize failed (${finRes.status})`);
+  }
+  const finData = await finRes.json().catch(() => null);
+  if (!finData?.ok || !Array.isArray(finData.succeeded) || finData.succeeded.length === 0) {
+    throw new Error(finData?.description || 'MTProto finalize rejected');
+  }
+  return {
+    succeeded: finData.succeeded,
+    failed: finData.failed || []
+  };
+}
+
 /**
  * Send a single generated file Blob/Uint8Array to target Telegram Chat IDs
  * Uses /api/telegram-send (MTProto DocumentAttributeFilename) first so Khmer vowels & subscripts (្)
- * in the filename are 100% preserved, falling back to Bot HTTP API only if offline/unavailable.
+ * in the filename are 100% preserved (with automatic chunked upload for large multi-page PDFs > 2.4 MB),
+ * falling back to Bot HTTP API only if offline/unavailable.
  */
 export async function sendDocumentToTelegram(
   blobOrBytes,
@@ -924,9 +1022,21 @@ export async function sendDocumentToTelegram(
     : new Blob([blobOrBytes], { type: mimeType });
 
   const cleanKhmerFilename = String(filename || 'ឯកសាររបាយការណ៍.pdf').normalize('NFC').trim();
+  const resolvedMime = mimeType || blob.type || 'application/octet-stream';
 
   // 1. Primary Path: MTProto endpoint (/api/telegram-send) preserving 100% of Khmer vowels & subscripts
   try {
+    if (blob.size > MTPROTO_SINGLE_SHOT_MAX_BYTES) {
+      return await sendViaChunkedMtproto({
+        blob,
+        botToken: cfg.botToken,
+        recipients,
+        filename: cleanKhmerFilename,
+        mimeType: resolvedMime,
+        caption
+      });
+    }
+
     const fileBase64 = await blobToBase64(blob);
     const mtRes = await fetch('/api/telegram-send', {
       method: 'POST',
@@ -935,7 +1045,7 @@ export async function sendDocumentToTelegram(
         botToken: cfg.botToken,
         recipients,
         filename: cleanKhmerFilename,
-        mimeType: mimeType || blob.type || 'application/octet-stream',
+        mimeType: resolvedMime,
         caption,
         fileBase64
       })

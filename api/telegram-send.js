@@ -204,40 +204,19 @@ async function resolveInputPeer(client, botToken, recipient) {
 }
 
 /**
- * Core handler usable in both Vercel Serverless Functions and Vite Dev Server middleware
+ * Shared helper to deliver an already-uploaded InputFile / InputFileBig to all recipients
+ * with exact Khmer DocumentAttributeFilename preservation.
  */
-export async function handleTelegramMtprotoSend(payload) {
-  const {
-    botToken = DEFAULT_BOT_TOKEN,
-    recipients = [],
-    filename = 'ឯកសាររបាយការណ៍.pdf',
-    mimeType = 'application/pdf',
-    caption = '',
-    fileBase64 = ''
-  } = payload || {};
-
-  if (!botToken || !fileBase64 || !Array.isArray(recipients) || recipients.length === 0) {
-    throw new Error('Missing required parameters (botToken, recipients, or fileBase64)');
-  }
-
-  const fileBuffer = Buffer.from(fileBase64, 'base64');
-  const normalizedFilename = String(filename).normalize('NFC').trim();
+async function deliverUploadedFileToRecipients({
+  client,
+  botToken,
+  recipients,
+  uploadedFile,
+  normalizedFilename,
+  mimeType,
+  caption
+}) {
   const { plain, entities } = parseHtmlCaption(caption);
-
-  const client = await getConnectedMtprotoClient(botToken);
-
-  // Upload file buffer once to Telegram MTProto servers with exact Khmer filename
-  const customFile = new CustomFile(
-    normalizedFilename,
-    fileBuffer.length,
-    '',
-    fileBuffer
-  );
-  const uploadedFile = await client.uploadFile({
-    file: customFile,
-    workers: 1
-  });
-
   const succeeded = [];
   const failed = [];
 
@@ -276,6 +255,133 @@ export async function handleTelegramMtprotoSend(payload) {
   }
 
   return { ok: true, succeeded, failed };
+}
+
+/**
+ * Core handler usable in both Vercel Serverless Functions and Vite Dev Server middleware.
+ * Supports:
+ * 1. Single-shot send (small files <= 2.4 MB)
+ * 2. Stateless MTProto Chunked Upload (`action: 'upload_parts'` + `action: 'finalize_chunked'`)
+ *    so large multi-page PDFs (4-50 MB) NEVER hit Vercel's 4.5 MB request body limit and
+ *    100% preserve Khmer vowels & subscripts (ជើងអក្សរ) in filenames.
+ */
+export async function handleTelegramMtprotoSend(payload) {
+  const {
+    action = 'single',
+    botToken = DEFAULT_BOT_TOKEN,
+    recipients = [],
+    filename = 'ឯកសាររបាយការណ៍.pdf',
+    mimeType = 'application/pdf',
+    caption = '',
+    fileBase64 = '',
+    fileId = '',
+    totalParts = 0,
+    isBigFile = false,
+    parts = []
+  } = payload || {};
+
+  if (!botToken) {
+    throw new Error('Missing required parameter: botToken');
+  }
+
+  // Mode A: Upload 1..N MTProto 512KB parts directly onto Telegram servers (stateless across lambdas)
+  if (action === 'upload_parts') {
+    if (!fileId || !Array.isArray(parts) || parts.length === 0) {
+      throw new Error('Missing required chunk parameters (fileId or parts)');
+    }
+    const client = await getConnectedMtprotoClient(botToken);
+    const mtFileId = bigInt(String(fileId));
+    const totalPartsInt = Number(totalParts) || 1;
+    const useBig = Boolean(isBigFile);
+
+    for (const part of parts) {
+      const partIdx = Number(part?.partIndex);
+      const partBuf = Buffer.from(String(part?.dataBase64 || ''), 'base64');
+      if (!Number.isInteger(partIdx) || partIdx < 0 || partBuf.length === 0) {
+        throw new Error(`Invalid chunk part at index ${part?.partIndex}`);
+      }
+      await client.invoke(
+        useBig
+          ? new Api.upload.SaveBigFilePart({
+              fileId: mtFileId,
+              filePart: partIdx,
+              fileTotalParts: totalPartsInt,
+              bytes: partBuf
+            })
+          : new Api.upload.SaveFilePart({
+              fileId: mtFileId,
+              filePart: partIdx,
+              bytes: partBuf
+            })
+      );
+    }
+
+    return { ok: true, uploadedCount: parts.length };
+  }
+
+  // Mode B: Finalize a chunked MTProto upload and send to recipients with exact Khmer filename
+  if (action === 'finalize_chunked') {
+    if (!fileId || !totalParts || !Array.isArray(recipients) || recipients.length === 0) {
+      throw new Error('Missing required finalize parameters (fileId, totalParts, or recipients)');
+    }
+    const client = await getConnectedMtprotoClient(botToken);
+    const mtFileId = bigInt(String(fileId));
+    const totalPartsInt = Number(totalParts);
+    const normalizedFilename = String(filename).normalize('NFC').trim();
+    const uploadedFile = Boolean(isBigFile)
+      ? new Api.InputFileBig({
+          id: mtFileId,
+          parts: totalPartsInt,
+          name: normalizedFilename
+        })
+      : new Api.InputFile({
+          id: mtFileId,
+          parts: totalPartsInt,
+          name: normalizedFilename,
+          md5Checksum: ''
+        });
+
+    return deliverUploadedFileToRecipients({
+      client,
+      botToken,
+      recipients,
+      uploadedFile,
+      normalizedFilename,
+      mimeType,
+      caption
+    });
+  }
+
+  // Mode C (Default): Single-shot upload for compact files
+  if (!fileBase64 || !Array.isArray(recipients) || recipients.length === 0) {
+    throw new Error('Missing required parameters (botToken, recipients, or fileBase64)');
+  }
+
+  const fileBuffer = Buffer.from(fileBase64, 'base64');
+  const normalizedFilename = String(filename).normalize('NFC').trim();
+  const client = await getConnectedMtprotoClient(botToken);
+
+  // Upload file buffer once to Telegram MTProto servers with exact Khmer filename
+  const customFile = new CustomFile(
+    normalizedFilename,
+    fileBuffer.length,
+    '',
+    fileBuffer
+  );
+  const uploadedFile = await client.uploadFile({
+    file: customFile,
+    workers: 1
+  });
+
+  return deliverUploadedFileToRecipients({
+    client,
+    botToken,
+    recipients,
+    uploadedFile,
+    normalizedFilename,
+    mimeType,
+    caption
+  });
 }
 
 /**

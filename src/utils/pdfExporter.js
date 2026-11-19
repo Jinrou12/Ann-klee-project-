@@ -149,7 +149,8 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
             pdf.addPage(isLetter ? 'letter' : 'a4', 'portrait');
           }
           pdf.setPage(idx + 1);
-          const imgData = canvas.toDataURL('image/jpeg', 0.9);
+          const jpegQuality = discreteSheets.length >= 4 ? 0.82 : 0.9;
+          const imgData = canvas.toDataURL('image/jpeg', jpegQuality);
           pdf.addImage(imgData, 'JPEG', 0, 0, mmW, mmH);
         } finally {
           sheet.style.boxShadow = prevShadow;
