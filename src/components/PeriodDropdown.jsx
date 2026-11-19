@@ -8,9 +8,9 @@ import { SEMESTER_1_MONTH_NUMS, SEMESTER_2_MONTH_NUMS, ACADEMIC_MONTH_NUMS } fro
  * Modern Custom Period Dropdown (Shared across PC & Mobile /mp)
  * Supports:
  * - Full Academic Year (ពេញមួយឆ្នាំសិក្សា - ១០ ខែសិក្សា ដកខែមីនា និងខែមេសា)
- * - Semester 1 (ឆមាសទី ១៖ ឧសភា - កញ្ញា)
- * - Semester 2 (ឆមាសទី ២៖ តុលា - កុម្ភៈ)
- * - Individual Academic Months (ឧសភា..កញ្ញា និង តុលា..កុម្ភៈ)
+ * - Semester 1 (ឆមាសទី ១៖ ឧសភា - តុលា)
+ * - Semester 2 (ឆមាសទី ២៖ វិច្ឆិកា - កុម្ភៈ)
+ * - Individual Academic Months (ឧសភា..តុលា និង វិច្ឆិកា..កុម្ភៈ)
  */
 export default function PeriodDropdown({
   periodMode = 'month',
@@ -125,10 +125,10 @@ export default function PeriodDropdown({
       return `${fmtNum(selectedYear)} (ពេញមួយឆ្នាំសិក្សា)`;
     }
     if (periodMode === 'semester1') {
-      return `ឆមាសទី ${fmtNum(1)} (ឧសភា-កញ្ញា)`;
+      return `ឆមាសទី ${fmtNum(1)} (ឧសភា-តុលា)`;
     }
     if (periodMode === 'semester2') {
-      return `ឆមាសទី ${fmtNum(2)} (តុលា-កុម្ភៈ)`;
+      return `ឆមាសទី ${fmtNum(2)} (វិច្ឆិកា-កុម្ភៈ)`;
     }
     const found = monthItems.find((m) => m.mKey === selectedMonth);
     if (found) return found.label;
@@ -351,7 +351,7 @@ export default function PeriodDropdown({
 
           <div style={{ height: 1, background: '#f1f5f9', margin: '0 2px' }} />
 
-          {/* Group 2: Semester 1 (ឧសភា - កញ្ញា) */}
+          {/* Group 2: Semester 1 (ឧសភា - តុលា) */}
           <div>
             <button
               type="button"
@@ -374,11 +374,11 @@ export default function PeriodDropdown({
                 cursor: 'pointer',
                 textAlign: 'left'
               }}
-              title="ចុចដើម្បីមើល និងទាញយក PDF សរុបឆមាសទី ១ (ឧសភា - កញ្ញា)"
+              title="ចុចដើម្បីមើល និងទាញយក PDF សរុបឆមាសទី ១ (ឧសភា - តុលា)"
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <BookOpen size={14} color={accentColor} />
-                <span>ឆមាសទី {fmtNum(1)} (ឧសភា - កញ្ញា)</span>
+                <span>ឆមាសទី {fmtNum(1)} (ឧសភា - តុលា)</span>
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 <span
@@ -410,7 +410,7 @@ export default function PeriodDropdown({
 
           <div style={{ height: 1, background: '#f1f5f9', margin: '0 2px' }} />
 
-          {/* Group 3: Semester 2 (តុលា - កុម្ភៈ) */}
+          {/* Group 3: Semester 2 (វិច្ឆិកា - កុម្ភៈ) */}
           <div>
             <button
               type="button"
@@ -433,11 +433,11 @@ export default function PeriodDropdown({
                 cursor: 'pointer',
                 textAlign: 'left'
               }}
-              title="ចុចដើម្បីមើល និងទាញយក PDF សរុបឆមាសទី ២ (តុលា - កុម្ភៈ)"
+              title="ចុចដើម្បីមើល និងទាញយក PDF សរុបឆមាសទី ២ (វិច្ឆិកា - កុម្ភៈ)"
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <BookOpen size={14} color={accentColor} />
-                <span>ឆមាសទី {fmtNum(2)} (តុលា - កុម្ភៈ)</span>
+                <span>ឆមាសទី {fmtNum(2)} (វិច្ឆិកា - កុម្ភៈ)</span>
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 <span

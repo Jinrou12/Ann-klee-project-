@@ -341,9 +341,10 @@ export default function OfficialMinistryReportDocument({
 
     // Helper for Hourly Teacher Tables (ច & ច.១)
     const renderHourlySemesterTableBlock = (key, title, tableData) => {
+      const rowCount = (tableData?.rows || []).length || 5;
       blocks.push({
         id: key,
-        estPx: 280,
+        estPx: 110 + rowCount * 34,
         node: (
           <div key={key} style={{ marginTop: 8, marginBottom: 10 }}>
             <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>{title}</div>
@@ -1039,7 +1040,7 @@ export default function OfficialMinistryReportDocument({
 
     measureNow();
     if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
-      document.fonts.ready.then(measureNow).catch(() => {});
+      document.fonts.ready.then(measureNow).catch(() => { });
     }
   }, [flowBlocks]);
 
@@ -1063,11 +1064,11 @@ export default function OfficialMinistryReportDocument({
           measuredHeights && measuredHeights[i] && Array.isArray(measuredHeights[i].rowHeights)
             ? measuredHeights[i]
             : {
-                titlePx: blk.estTitlePx || 0,
-                theadPx: blk.estTheadPx || 62,
-                rowHeights: blk.estRowHeights || [],
-                totalRowPx: blk.estTotalRowPx || 32
-              };
+              titlePx: blk.estTitlePx || 0,
+              theadPx: blk.estTheadPx || 62,
+              rowHeights: blk.estRowHeights || [],
+              totalRowPx: blk.estTotalRowPx || 32
+            };
 
         const totalRows = blk.rows.length;
         if (totalRows === 0) {

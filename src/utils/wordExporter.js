@@ -1114,6 +1114,48 @@ const ADMIN_PAGE_NUMBER_FOOTER_XML = (() => {
  * Layout mirrors របាយការណ៍_ប្រចាំខែ..._ឆ្នាំ២០២៦.docx: single spacing, 12pt body, official margins,
  * floral watermark in the header and a centered page number in the footer.
  */
+/**
+ * Shared 8-column School History Training Table XML builder with auto-repeating header (<w:tblHeader/>)
+ */
+function buildSchoolHistoryTableXml(historyModel, contentWidth) {
+  const cols = fitColumns([620, 1850, 1520, 1460, 1460, 1460, 1560, 985], contentWidth);
+  const headers = ['ល.រ', 'ឆ្នាំសិក្សា', 'ថ្នាក់មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'];
+  const hdrRow = `<w:tr><w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>${headers
+    .map((h, i) =>
+      wCell(wParagraph(h, { font: FONT_MOUL, sizePt: 10.5, align: 'center', spaceBefore: 36, spaceAfter: 36 }), {
+        widthDxa: cols[i]
+      })
+    )
+    .join('')}</w:tr>`;
+
+  const dataRows = (historyModel?.rows || []).map(r => {
+    const vals = [r.no, r.academicYearDisplay, r.kgText, r.g1Text, r.g2Text, r.g3Text, r.totalText, r.note || ''];
+    return `<w:tr><w:trPr><w:cantSplit/></w:trPr>${vals
+      .map((val, i) =>
+        wCell(wParagraph(val, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceBefore: 24, spaceAfter: 24 }), {
+          widthDxa: cols[i]
+        })
+      )
+      .join('')}</w:tr>`;
+  });
+
+  const totals = historyModel?.totals;
+  const totalRow = totals
+    ? `<w:tr><w:trPr><w:cantSplit/></w:trPr>
+      ${wCell(wParagraph('', { font: FONT_SIEMREAP, sizePt: 10.5, align: 'center' }), { widthDxa: cols[0] })}
+      ${wCell(wParagraph(totals.label, { font: FONT_MOUL, sizePt: 10, align: 'center', spaceBefore: 32, spaceAfter: 32 }), { widthDxa: cols[1] })}
+      ${wCell(wParagraph(totals.kgText, { font: FONT_SIEMREAP, sizePt: 10.5, bold: true, align: 'center', spaceBefore: 32, spaceAfter: 32 }), { widthDxa: cols[2] })}
+      ${wCell(wParagraph(totals.g1Text, { font: FONT_SIEMREAP, sizePt: 10.5, bold: true, align: 'center', spaceBefore: 32, spaceAfter: 32 }), { widthDxa: cols[3] })}
+      ${wCell(wParagraph(totals.g2Text, { font: FONT_SIEMREAP, sizePt: 10.5, bold: true, align: 'center', spaceBefore: 32, spaceAfter: 32 }), { widthDxa: cols[4] })}
+      ${wCell(wParagraph(totals.g3Text, { font: FONT_SIEMREAP, sizePt: 10.5, bold: true, align: 'center', spaceBefore: 32, spaceAfter: 32 }), { widthDxa: cols[5] })}
+      ${wCell(wParagraph(totals.grandTotalText, { font: FONT_SIEMREAP, sizePt: 10.5, bold: true, align: 'center', spaceBefore: 32, spaceAfter: 32 }), { widthDxa: cols[6] })}
+      ${wCell(wParagraph('', { font: FONT_SIEMREAP, sizePt: 10.5, align: 'center' }), { widthDxa: cols[7] })}
+    </w:tr>`
+    : '';
+
+  return wTable(cols, [hdrRow, ...dataRows, ...(totalRow ? [totalRow] : [])], { bordered: true });
+}
+
 export async function exportAdminReportToWord(displayModel, _metadata = {}) {
   const [logoBytes, bgBytes, tacteingOdttf] = await Promise.all([
     loadOfficialLogoBytes(),
@@ -1175,6 +1217,16 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     wMultiRunParagraph(buildHighlightedRuns(text, boldPhrases, SZ), { align: 'left', firstLine: FIRST_LINE });
 
   const roleTabPos = 4680;
+  const includeHist = Boolean(displayModel.includeHistory && displayModel.schoolHistory);
+  const secNums = displayModel.sectionNumbers || {
+    background: null,
+    management: 'I',
+    stats: 'II',
+    progress: 'III',
+    challenges: 'IV',
+    directions: 'V',
+    conclusion: 'VI'
+  };
 
   const bodyParts = [
     topKingdomParas,
@@ -1192,8 +1244,18 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     // Intro Paragraph
     bodyPara(displayModel.introParagraph, [displayModel.inPeriodPhrase]),
 
-    // I. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
-    sectionHeading('I. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា'),
+    // Optional I. សាវតារ (Semester 1 + School History Combined Mode)
+    ...(includeHist
+      ? [
+          sectionHeading('I. សាវតារ'),
+          ...(displayModel.schoolHistory.backgroundParagraphs || []).map(p =>
+            wParagraph(p, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', firstLine: FIRST_LINE, spaceAfter: 40 })
+          )
+        ]
+      : []),
+
+    // I (or II). តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
+    sectionHeading(`${secNums.management}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា`),
     bodyPara(displayModel.section1Intro),
     ...(displayModel.managementRoles || []).map((m) => {
       const { prefix, personal } = splitMonkTitleAndName(m.name);
@@ -1206,25 +1268,48 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
       ], { align: 'left', indentLeft: BODY_INDENT + SUB_INDENT, tabStops: [roleTabPos] });
     }),
 
-    // II. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
-    sectionHeading('II. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស'),
+    // II (or III). ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
+    sectionHeading(`${secNums.stats}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`),
     subHeading('ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ'),
     ...(displayModel.staffStats || []).map(line => listItem(line)),
     subHeading('ខ-ចំនួនថ្នាក់ សមណសិស្ស'),
     ...(displayModel.studentStatLines || []).map(line => listItem(line)),
 
-    // III. វឌ្ឍនភាពការងារ
-    sectionHeading(String(displayModel.section3Heading || '').replace(/^III\.+\s*/, 'III. ')),
+    // III (or IV). វឌ្ឍនភាពការងារ
+    sectionHeading(
+      `${secNums.progress}. ${String(displayModel.section3Heading || '').replace(/^[IVX]+\.+\s*/, '')}`
+    ),
     subHeading(displayModel.section3SubAHeading),
     ...(displayModel.activities || []).map(line => listItem(line, '❖')),
+
+    // Optional School History Intro + 16-Year Training Table under IV. ក
+    ...(includeHist
+      ? [
+          ...(displayModel.schoolHistory.tableIntro
+            ? [
+                wParagraph(displayModel.schoolHistory.tableIntro, {
+                  font: FONT_SIEMREAP,
+                  sizePt: SZ,
+                  align: 'both',
+                  firstLine: FIRST_LINE,
+                  spaceBefore: 60,
+                  spaceAfter: 60
+                })
+              ]
+            : []),
+          buildSchoolHistoryTableXml(displayModel.schoolHistory, contentWidth),
+          wParagraph('', { sizePt: 6, spaceAfter: 40 })
+        ]
+      : []),
+
     subHeading('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍'),
     ...(displayModel.adminDocLines || []).map(line => listItem(line)),
     subHeading(displayModel.section3SubCHeading),
     subHeading(displayModel.section3SubDHeading),
     ...(displayModel.appendixItems || []).map(line => listItem(line)),
 
-    // IV. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
-    sectionHeading('IV. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ'),
+    // IV (or V). បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
+    sectionHeading(`${secNums.challenges}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`),
     subHeading('១-បញ្ហាប្រឈម'),
     ...(displayModel.challenges || []).map(line => listItem(line)),
     subHeading('២-ដំណោះស្រាយ'),
@@ -1232,12 +1317,12 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     subHeading('៣-សំណូមពរ'),
     ...(displayModel.requests || []).map(line => listItem(line)),
 
-    // V. ទិសដៅបន្ត
-    sectionHeading('V. ទិសដៅបន្ត'),
+    // V (or VI). ទិសដៅបន្ត
+    sectionHeading(`${secNums.directions}. ទិសដៅបន្ត`),
     ...(displayModel.directions || []).map(line => listItem(line)),
 
-    // VI. សន្និដ្ឋាន
-    sectionHeading('VI. សន្និដ្ឋាន'),
+    // VI (or VII). សន្និដ្ឋាន
+    sectionHeading(`${secNums.conclusion}. សន្និដ្ឋាន`),
     bodyPara(displayModel.conclusionText),
     bodyPara(displayModel.closingLine1),
     bodyPara(displayModel.closingLine2),
@@ -1770,6 +1855,94 @@ export async function exportMinistryReportToWord(ministryModel) {
   ];
 
   downloadDocxDocument(bodyParts.join(''), `របាយការណ៍_${ministryModel.shortFullFileNameTag}.docx`, null, {
+    tacteingOdttf,
+    pageSize: { w: 11906, h: 16838 },
+    pageMargins,
+    footerXml: ADMIN_PAGE_NUMBER_FOOTER_XML
+  });
+}
+
+/**
+ * Export Standalone School History Report (របាយការណ៍ស្ដីពី ប្រវត្តិសាលា — A4 Portrait) to Word (.docx)
+ */
+export async function exportSchoolHistoryToWord(historyModel) {
+  if (!historyModel) return;
+  const [logoBytes, tacteingOdttf] = await Promise.all([
+    loadOfficialLogoBytes(),
+    loadTacteingOdttfBytes()
+  ]);
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const NAVY = '002060';
+  const pageMargins = { top: 680, right: 620, bottom: 900, left: 620, header: 450, footer: 320 };
+  const contentWidth = 11906 - pageMargins.left - pageMargins.right; // 10,666 dxa
+
+  const leftHeaderParas = [
+    ...(hasLogo ? [wLogoParagraph(480000)] : []),
+    wParagraph('មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, color: NAVY, align: 'center' }),
+    wParagraph('សាលាពុទ្ធិកបឋមសិក្សា កម្រង ហ៊ុន ណេង', { font: FONT_MOUL, sizePt: 11, color: NAVY, align: 'center' }),
+    wParagraph('ក្រុងកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, color: NAVY, align: 'center' })
+  ].join('');
+
+  const rightHeaderParas = [
+    wParagraph('ព្រះរាជាណាចក្រកម្ពុជា', { font: FONT_MOUL, sizePt: 13.5, align: 'center' }),
+    wParagraph('ជាតិ   សាសនា   ព្រះមហាក្សត្រ', { font: FONT_MOUL, sizePt: 12, align: 'center' }),
+    wTacteingDividerParagraph({ color: '000000', sizePt: 26 })
+  ].join('');
+
+  const hdrWidths = [5800, contentWidth - 5800];
+  const headerTableXml = wTable(
+    hdrWidths,
+    [
+      `<w:tr>${wCell(leftHeaderParas, { widthDxa: hdrWidths[0], vAlign: 'top', marginsDxa: ZERO_MARGINS })}${wCell(
+        rightHeaderParas,
+        { widthDxa: hdrWidths[1], vAlign: 'top', marginsDxa: ZERO_MARGINS }
+      )}</w:tr>`
+    ],
+    { bordered: false }
+  );
+
+  const sigLeftW = 4400;
+  const sigRightParas = [
+    wParagraph(historyModel.lunarDateLine || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(historyModel.solarDateLine || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(historyModel.signerTitle || 'នាយកសាលា', { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: 40 })
+  ].join('');
+  const sigTableXml = wTable(
+    [sigLeftW, contentWidth - sigLeftW],
+    [
+      `<w:tr><w:trPr><w:cantSplit/></w:trPr>${wCell(wParagraph('', { sizePt: 11 }), {
+        widthDxa: sigLeftW,
+        vAlign: 'top',
+        marginsDxa: ZERO_MARGINS
+      })}${wCell(sigRightParas, { widthDxa: contentWidth - sigLeftW, vAlign: 'top', marginsDxa: ZERO_MARGINS })}</w:tr>`
+    ],
+    { bordered: false }
+  );
+
+  const bodyParts = [
+    headerTableXml,
+    wParagraph('របាយការណ៍', { font: FONT_MOUL, sizePt: 13.5, color: NAVY, align: 'center', spaceBefore: 80 }),
+    wParagraph('ស្ដីពី', { font: FONT_MOUL, sizePt: 12.5, color: NAVY, align: 'center' }),
+    wParagraph(historyModel.title || 'ប្រវត្តិសាលាពុទ្ធិកសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម', {
+      font: FONT_MOUL,
+      sizePt: 12.5,
+      color: NAVY,
+      align: 'center',
+      spaceAfter: 120
+    }),
+    wParagraph('១.១. សាវតារ', { font: FONT_MOUL, sizePt: 11.5, color: NAVY, align: 'left', indentLeft: 280, spaceAfter: 40 }),
+    ...(historyModel.backgroundParagraphs || []).map(p =>
+      wParagraph(p, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 60 })
+    ),
+    ...(historyModel.tableIntro
+      ? [wParagraph(historyModel.tableIntro, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 80 })]
+      : []),
+    buildSchoolHistoryTableXml(historyModel, contentWidth),
+    wParagraph('', { sizePt: 8, spaceAfter: 120 }),
+    sigTableXml
+  ];
+
+  downloadDocxDocument(bodyParts.join(''), `របាយការណ៍_${historyModel.shortFileNameTag}.docx`, logoBytes, {
     tacteingOdttf,
     pageSize: { w: 11906, h: 16838 },
     pageMargins,

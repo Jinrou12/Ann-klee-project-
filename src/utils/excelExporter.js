@@ -1076,9 +1076,19 @@ export async function exportFinanceDualExcel(
 export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   const logoBytes = await loadOfficialLogoBytes();
   const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const includeHist = Boolean(displayModel.includeHistory && displayModel.schoolHistory);
+  const secNums = displayModel.sectionNumbers || {
+    background: null,
+    management: 'I',
+    stats: 'II',
+    progress: 'III',
+    challenges: 'IV',
+    directions: 'V',
+    conclusion: 'VI'
+  };
   const rows = [];
   const merges = [];
-  const numCols = 5;
+  const numCols = includeHist ? 8 : 5;
 
   const pushFullRow = (text, styleIdx = 0, height = 24) => {
     const rNum = rows.length + 1;
@@ -1103,8 +1113,18 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   pushFullRow(displayModel.introParagraph, 0, 42);
   rows.push({ height: 10, cells: [] });
 
-  // I. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
-  pushFullRow('I.តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា', 12, 26);
+  // Optional I. សាវតារ (Combined Mode)
+  if (includeHist) {
+    pushFullRow('I. សាវតារ', 12, 26);
+    (displayModel.schoolHistory.backgroundParagraphs || []).forEach(p => {
+      const ht = Math.max(42, Math.ceil(String(p || '').length / 100) * 20);
+      pushFullRow(p, 0, ht);
+    });
+    rows.push({ height: 8, cells: [] });
+  }
+
+  // I (or II). តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
+  pushFullRow(`${secNums.management}.តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា`, 12, 26);
   pushFullRow(displayModel.section1Intro, 0, 38);
   const fmtNum = (n) => toKhmerDigits(n);
   (displayModel.managementRoles || []).forEach((m, idx) => {
@@ -1112,8 +1132,8 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   });
   rows.push({ height: 8, cells: [] });
 
-  // II. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
-  pushFullRow('II.ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស', 12, 26);
+  // II (or III). ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
+  pushFullRow(`${secNums.stats}.ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`, 12, 26);
   pushFullRow('ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ', 12, 24);
   (displayModel.staffStats || []).forEach(line => {
     pushFullRow(`❖ ${line}`, 0, 24);
@@ -1124,13 +1144,57 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   });
   rows.push({ height: 8, cells: [] });
 
-  // III. វឌ្ឍនភាពការងារ
+  // III (or IV). វឌ្ឍនភាពការងារ
   pushFullRow(displayModel.section3Heading, 12, 26);
   pushFullRow(displayModel.section3SubAHeading, 12, 24);
   (displayModel.activities || []).forEach(line => {
     const ht = line.length > 95 ? 42 : 24;
     pushFullRow(`- ${line}`, 0, ht);
   });
+
+  // Optional 16-Year Human Resource Training Table under IV. ក
+  if (includeHist) {
+    if (displayModel.schoolHistory.tableIntro) {
+      pushFullRow(displayModel.schoolHistory.tableIntro, 0, 42);
+    }
+    rows.push({
+      height: 26,
+      cells: ['ល.រ', 'ឆ្នាំសិក្សា', 'ថ្នាក់មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'].map(h => ({ v: h, s: 4 }))
+    });
+    (displayModel.schoolHistory.rows || []).forEach(r => {
+      rows.push({
+        height: 24,
+        cells: [
+          { v: r.no, s: 5 },
+          { v: r.academicYearDisplay, s: 5 },
+          { v: r.kgText, s: 5 },
+          { v: r.g1Text, s: 5 },
+          { v: r.g2Text, s: 5 },
+          { v: r.g3Text, s: 5 },
+          { v: r.totalText, s: 5 },
+          { v: r.note || '', s: 5 }
+        ]
+      });
+    });
+    if (displayModel.schoolHistory.totals) {
+      const t = displayModel.schoolHistory.totals;
+      rows.push({
+        height: 26,
+        cells: [
+          { v: '', s: 9 },
+          { v: t.label, s: 9 },
+          { v: t.kgText, s: 9 },
+          { v: t.g1Text, s: 9 },
+          { v: t.g2Text, s: 9 },
+          { v: t.g3Text, s: 9 },
+          { v: t.grandTotalText, s: 9 },
+          { v: '', s: 9 }
+        ]
+      });
+    }
+    rows.push({ height: 8, cells: [] });
+  }
+
   pushFullRow('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍', 12, 24);
   (displayModel.adminDocLines || []).forEach(line => {
     pushFullRow(`- ${line}`, 0, 24);
@@ -1142,8 +1206,8 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   });
   rows.push({ height: 8, cells: [] });
 
-  // IV. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
-  pushFullRow('IV.បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ', 12, 26);
+  // IV (or V). បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
+  pushFullRow(`${secNums.challenges}.បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`, 12, 26);
   pushFullRow('១-បញ្ហាប្រឈម', 12, 24);
   (displayModel.challenges || []).forEach(line => {
     const ht = line.length > 95 ? 38 : 24;
@@ -1160,15 +1224,15 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   });
   rows.push({ height: 8, cells: [] });
 
-  // V. ទិសដៅបន្ត
-  pushFullRow('V.ទិសដៅបន្ត', 12, 26);
+  // V (or VI). ទិសដៅបន្ត
+  pushFullRow(`${secNums.directions}.ទិសដៅបន្ត`, 12, 26);
   (displayModel.directions || []).forEach(line => {
     pushFullRow(`- ${line}`, 0, 24);
   });
   rows.push({ height: 8, cells: [] });
 
-  // VI. សន្និដ្ឋាន
-  pushFullRow('VI.សន្និដ្ឋាន', 12, 26);
+  // VI (or VII). សន្និដ្ឋាន
+  pushFullRow(`${secNums.conclusion}.សន្និដ្ឋាន`, 12, 26);
   pushFullRow(displayModel.conclusionText, 0, 48);
   pushFullRow(displayModel.closingLine1, 0, 24);
   pushFullRow(displayModel.closingLine2, 0, 24);
@@ -1181,7 +1245,7 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
 
   downloadStyledXlsx({
     sheetName: 'របាយការណ៍រដ្ឋបាល',
-    colWidths: [12, 30, 19, 19, 19],
+    colWidths: includeHist ? [7, 18, 15, 15, 15, 15, 16, 12] : [12, 30, 19, 19, 19],
     rows,
     merges,
     fileName: `របាយការណ៍_${displayModel.shortFileNameTag}.xlsx`,
@@ -1669,6 +1733,94 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
     rows,
     merges,
     fileName: `របាយការណ៍_${ministryModel.shortFullFileNameTag}.xlsx`,
+    logoBytes
+  });
+}
+
+/**
+ * Export Standalone School History Report (របាយការណ៍ស្ដីពី ប្រវត្តិសាលា) to Styled Excel (.xlsx)
+ */
+export async function exportSchoolHistoryToExcel(historyModel, metadata = {}) {
+  if (!historyModel) return;
+  const logoBytes = await loadOfficialLogoBytes();
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
+  const rows = [];
+  const merges = [];
+  const numCols = 8;
+
+  const pushFullRow = (text, styleIdx = 0, height = 24) => {
+    const rNum = rows.length + 1;
+    rows.push({
+      height,
+      cells: [{ v: text, s: styleIdx }]
+    });
+    merges.push(`${cellRef(rNum, 0)}:${cellRef(rNum, numCols - 1)}`);
+  };
+
+  appendOfficialHeader(rows, merges, numCols, metadata, false, hasLogo);
+
+  pushFullRow('របាយការណ៍', 1, 26);
+  pushFullRow('ស្ដីពី', 1, 24);
+  pushFullRow(historyModel.title || 'ប្រវត្តិសាលាពុទ្ធិកសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម', 2, 28);
+  rows.push({ height: 8, cells: [] });
+
+  pushFullRow('១.១. សាវតារ', 12, 26);
+  (historyModel.backgroundParagraphs || []).forEach(p => {
+    const ht = Math.max(44, Math.ceil(String(p || '').length / 100) * 20);
+    pushFullRow(p, 0, ht);
+  });
+  if (historyModel.tableIntro) {
+    pushFullRow(historyModel.tableIntro, 0, 42);
+  }
+  rows.push({ height: 8, cells: [] });
+
+  rows.push({
+    height: 26,
+    cells: ['ល.រ', 'ឆ្នាំសិក្សា', 'ថ្នាក់មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'].map(h => ({ v: h, s: 4 }))
+  });
+  (historyModel.rows || []).forEach(r => {
+    rows.push({
+      height: 24,
+      cells: [
+        { v: r.no, s: 5 },
+        { v: r.academicYearDisplay, s: 5 },
+        { v: r.kgText, s: 5 },
+        { v: r.g1Text, s: 5 },
+        { v: r.g2Text, s: 5 },
+        { v: r.g3Text, s: 5 },
+        { v: r.totalText, s: 5 },
+        { v: r.note || '', s: 5 }
+      ]
+    });
+  });
+  if (historyModel.totals) {
+    const t = historyModel.totals;
+    rows.push({
+      height: 26,
+      cells: [
+        { v: '', s: 9 },
+        { v: t.label, s: 9 },
+        { v: t.kgText, s: 9 },
+        { v: t.g1Text, s: 9 },
+        { v: t.g2Text, s: 9 },
+        { v: t.g3Text, s: 9 },
+        { v: t.grandTotalText, s: 9 },
+        { v: '', s: 9 }
+      ]
+    });
+  }
+
+  rows.push({ height: 14, cells: [] });
+  pushFullRow(historyModel.lunarDateLine || '', 13, 22);
+  pushFullRow(historyModel.solarDateLine || '', 13, 22);
+  pushFullRow(historyModel.signerTitle || 'នាយកសាលា', 1, 26);
+
+  downloadStyledXlsx({
+    sheetName: 'ប្រវត្តិសាលា',
+    colWidths: [7, 18, 15, 15, 15, 15, 16, 12],
+    rows,
+    merges,
+    fileName: `របាយការណ៍_${historyModel.shortFileNameTag}.xlsx`,
     logoBytes
   });
 }

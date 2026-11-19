@@ -92,7 +92,7 @@ export function buildFinanceSummaryModel(
     } else if (khMonthMatch && khMonthMatch[1] && !khMonthMatch[1].includes('ចាស់') && !khMonthMatch[1].includes('ចាស')) {
       prevMonthLabel = khMonthMatch[1].trim();
     } else if (periodMode === 'semester2') {
-      prevMonthLabel = 'កញ្ញា';
+      prevMonthLabel = 'តុលា';
     } else if (rawMonth === '05') {
       carryoverDesc = 'ចំណូល ប្រាក់តម្កល់សល់ពីឆ្នាំចាស់';
     } else {

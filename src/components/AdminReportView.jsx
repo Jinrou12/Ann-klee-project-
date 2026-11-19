@@ -11,11 +11,14 @@ import {
   Award,
   AlertTriangle,
   Compass,
-  CheckCircle2
+  CheckCircle2,
+  Landmark
 } from 'lucide-react';
 import OfficialAdminReportDocument from './OfficialAdminReportDocument';
 import OfficialMinistryReportDocument from './OfficialMinistryReportDocument';
 import OfficialMinistrySummaryDocument from './OfficialMinistrySummaryDocument';
+import OfficialSchoolHistoryDocument from './OfficialSchoolHistoryDocument';
+import SchoolHistoryEditorFields from './SchoolHistoryEditorFields';
 import A4SheetScaler from './A4SheetScaler';
 import TelegramSendMenu from './TelegramSendMenu';
 import {
@@ -29,16 +32,22 @@ import {
   MINISTRY_SEM1_MONTHS,
   MINISTRY_SEM2_MONTHS
 } from '../utils/ministryReportBuilder';
+import {
+  buildSchoolHistoryModel,
+  SCHOOL_HISTORY_STORAGE_KEY
+} from '../utils/schoolHistoryBuilder';
 import { exportElementToPdf } from '../utils/pdfExporter';
 import {
   exportAdminReportToWord,
   exportMinistryReportToWord,
-  exportMinistrySummaryToWord
+  exportMinistrySummaryToWord,
+  exportSchoolHistoryToWord
 } from '../utils/wordExporter';
 import {
   exportAdminReportToExcel,
   exportMinistryReportToExcel,
-  exportMinistrySummaryToExcel
+  exportMinistrySummaryToExcel,
+  exportSchoolHistoryToExcel
 } from '../utils/excelExporter';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 
@@ -255,15 +264,19 @@ export default function AdminReportView({
   onResetSynthesizedReport
 }) {
   const [periodType, setPeriodType] = useState('month'); // 'month' | 'sem1' | 'sem2' | 'year'
+  const [sem1Mode, setSem1Mode] = useState('standard'); // 'standard' | 'combined' | 'history_only'
   const [annualTemplate, setAnnualTemplate] = useState('anukon'); // 'anukon' | 'ministry'
   const [ministryDocType, setMinistryDocType] = useState('full'); // 'full' | 'summary'
   const isMinistryActive = periodType === 'year' && annualTemplate === 'ministry';
+  const isSem1Combined = periodType === 'sem1' && sem1Mode === 'combined';
+  const isHistoryOnly = periodType === 'sem1' && sem1Mode === 'history_only';
   const canEdit = periodType === 'month' ? canEditMonth : (canEditSummary ?? canEditMonth);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(null);
   const [ministryEditDraft, setMinistryEditDraft] = useState(null);
+  const [historyEditDraft, setHistoryEditDraft] = useState(null);
   const fileInputRef = useRef(null);
 
   // Close inline editor automatically whenever user switches month or year in top bar
@@ -273,6 +286,16 @@ export default function AdminReportView({
 
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
 
+  const schoolHistoryModel = useMemo(
+    () =>
+      buildSchoolHistoryModel({
+        adminReports,
+        year: activeYear,
+        useKhmerNumerals
+      }),
+    [adminReports, activeYear, useKhmerNumerals]
+  );
+
   const displayModel = useMemo(
     () =>
       buildAdminReportDisplayModel({
@@ -281,9 +304,11 @@ export default function AdminReportView({
         year: activeYear,
         adminReports,
         studentMaster,
-        useKhmerNumerals
+        useKhmerNumerals,
+        includeHistory: isSem1Combined,
+        schoolHistory: schoolHistoryModel
       }),
-    [periodType, currentMonthKey, activeYear, adminReports, studentMaster, useKhmerNumerals]
+    [periodType, currentMonthKey, activeYear, adminReports, studentMaster, useKhmerNumerals, isSem1Combined, schoolHistoryModel]
   );
 
   const ministryModel = useMemo(
@@ -300,7 +325,14 @@ export default function AdminReportView({
 
   const hasCustomMultiMonthOverride = isMinistryActive
     ? Boolean(adminReports && adminReports[ministryModel.storageKey])
-    : periodType !== 'month' && Boolean(adminReports && adminReports[displayModel.storageKey]);
+    : isHistoryOnly
+      ? Boolean(schoolHistoryModel.hasCustomOverride)
+      : periodType !== 'month' &&
+        Boolean(
+          adminReports &&
+            (adminReports[displayModel.storageKey] ||
+              (isSem1Combined && adminReports[SCHOOL_HISTORY_STORAGE_KEY]))
+        );
 
   const formatLinesWithBullet = (items = [], bullet = '❖') =>
     (items || [])
@@ -343,7 +375,52 @@ export default function AdminReportView({
     });
   }, [isEditing, periodType, currentMonthKey, displayModel.prevMonthTotalStudents, useKhmerNumerals]);
 
+  const makeHistoryDraftFromModel = (hModel) => ({
+    title: hModel.title || '',
+    backgroundText: (hModel.backgroundParagraphs || []).join('\n\n'),
+    tableIntro: hModel.tableIntro || '',
+    rows: (hModel.rows || []).map(r => ({
+      academicYear: r.academicYear,
+      gradeKindergarten: r.gradeKindergarten,
+      grade1: r.grade1,
+      grade2: r.grade2,
+      grade3: r.grade3,
+      note: r.note || ''
+    })),
+    lunarDateLine: hModel.lunarDateLine || '',
+    solarDateLine: hModel.solarDateLine || '',
+    signerTitle: hModel.signerTitle || 'នាយកសាលា'
+  });
+
+  const serializeHistoryDraft = (draft) => ({
+    ...(schoolHistoryModel.rawSaved || {}),
+    id: `admin-${SCHOOL_HISTORY_STORAGE_KEY}`,
+    title: String(draft.title || '').trim(),
+    backgroundParagraphs: String(draft.backgroundText || '')
+      .split(/\n+/)
+      .map(s => s.trim())
+      .filter(Boolean),
+    tableIntro: String(draft.tableIntro || '').trim(),
+    rows: (draft.rows || []).map(r => ({
+      academicYear: String(r.academicYear || '').trim(),
+      gradeKindergarten: Math.max(0, Number(r.gradeKindergarten) || 0),
+      grade1: Math.max(0, Number(r.grade1) || 0),
+      grade2: Math.max(0, Number(r.grade2) || 0),
+      grade3: Math.max(0, Number(r.grade3) || 0),
+      note: String(r.note || '').trim()
+    })),
+    lunarDateLine: String(draft.lunarDateLine || '').trim(),
+    solarDateLine: String(draft.solarDateLine || '').trim(),
+    signerTitle: String(draft.signerTitle || 'នាយកសាលា').trim()
+  });
+
   const handleOpenEditor = () => {
+    if (isHistoryOnly) {
+      setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
+      setIsEditing(true);
+      return;
+    }
+
     if (isMinistryActive) {
       const st = ministryModel.stats || {};
       const hourlyMap = {};
@@ -407,7 +484,7 @@ export default function AdminReportView({
     setEditDraft({
       docNumber: displayModel.docNumber || '......................',
       recipientTitle: displayModel.recipientTitle || '',
-      customSubjectText: raw.customSubjectText || '',
+      customSubjectText: displayModel.subjectText || raw.customSubjectText || '',
       totalStudents: st.totalStudents ?? 81,
       gradeKindergarten: st.gradeKindergarten ?? 15,
       grade1: st.grade1 ?? 15,
@@ -429,6 +506,9 @@ export default function AdminReportView({
       solarDateLine: displayModel.solarDateLine || '',
       signerTitle: displayModel.signerTitle || 'ព្រះនាយក'
     });
+    if (isSem1Combined) {
+      setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
+    }
     setIsEditing(true);
   };
 
@@ -630,6 +710,11 @@ export default function AdminReportView({
     const didUserCustomEditChallengeText =
       JSON.stringify(cleanedChallenges) !== JSON.stringify(autoSyncedChallenges);
 
+    const trimmedSubject = String(editDraft.customSubjectText || '').trim();
+    const isCustomSubjectEdited = Boolean(
+      trimmedSubject && trimmedSubject !== String(displayModel.defaultAutoSubject || '').trim()
+    );
+
     const updatedReport = {
       ...displayModel.rawReport,
       id: `admin-${displayModel.storageKey}`,
@@ -638,7 +723,8 @@ export default function AdminReportView({
       year: activeYear,
       docNumber: String(editDraft.docNumber || '').trim() || '......................',
       recipientTitle: String(editDraft.recipientTitle || '').trim(),
-      customSubjectText: String(editDraft.customSubjectText || '').trim(),
+      customSubjectText: isCustomSubjectEdited ? trimmedSubject : '',
+      manualSubjectOverride: isCustomSubjectEdited,
       manualStudentStatsOverride: didManuallyChangeStudentStats
         ? true
         : Boolean(displayModel.rawReport?.manualStudentStatsOverride),
@@ -672,6 +758,16 @@ export default function AdminReportView({
     };
 
     onUpdateAdminReport(displayModel.storageKey, updatedReport);
+    if (isSem1Combined && historyEditDraft) {
+      onUpdateAdminReport(SCHOOL_HISTORY_STORAGE_KEY, serializeHistoryDraft(historyEditDraft));
+    }
+    setIsEditing(false);
+  };
+
+  const handleSaveHistoryEditor = (e) => {
+    e.preventDefault();
+    if (!historyEditDraft || !onUpdateAdminReport) return;
+    onUpdateAdminReport(SCHOOL_HISTORY_STORAGE_KEY, serializeHistoryDraft(historyEditDraft));
     setIsEditing(false);
   };
 
@@ -754,7 +850,12 @@ export default function AdminReportView({
     if (isExportingPdf) return;
     setIsExportingPdf(true);
     try {
-      if (isMinistryActive) {
+      if (isHistoryOnly) {
+        const targetId = isMobile
+          ? '#printable-school-history-mobile-hidden'
+          : '#printable-school-history-document';
+        await exportElementToPdf(targetId, `របាយការណ៍_${schoolHistoryModel.shortFileNameTag}.pdf`);
+      } else if (isMinistryActive) {
         if (ministryDocType === 'summary') {
           const targetId = isMobile
             ? '#printable-ministry-summary-mobile-hidden'
@@ -781,7 +882,9 @@ export default function AdminReportView({
 
   const handleDownloadWord = async () => {
     try {
-      if (isMinistryActive) {
+      if (isHistoryOnly) {
+        await exportSchoolHistoryToWord(schoolHistoryModel);
+      } else if (isMinistryActive) {
         if (ministryDocType === 'summary') {
           await exportMinistrySummaryToWord(ministryModel);
         } else {
@@ -797,7 +900,9 @@ export default function AdminReportView({
 
   const handleDownloadExcel = async () => {
     try {
-      if (isMinistryActive) {
+      if (isHistoryOnly) {
+        await exportSchoolHistoryToExcel(schoolHistoryModel, metadata);
+      } else if (isMinistryActive) {
         if (ministryDocType === 'summary') {
           await exportMinistrySummaryToExcel(ministryModel, metadata);
         } else {
@@ -841,6 +946,12 @@ export default function AdminReportView({
 
   const handleResetToAutoSynthesis = () => {
     if (periodType === 'month') return;
+    if (isHistoryOnly) {
+      if (onResetSynthesizedReport) {
+        onResetSynthesizedReport(SCHOOL_HISTORY_STORAGE_KEY);
+      }
+      return;
+    }
     const keyToReset = isMinistryActive ? ministryModel.storageKey : displayModel.storageKey;
     if (onResetSynthesizedReport) {
       onResetSynthesizedReport(keyToReset);
@@ -856,8 +967,8 @@ export default function AdminReportView({
 
   const periodTabs = [
     { id: 'month', label: 'ប្រចាំខែ', sub: displayModel.inPeriodPhrase.replace(/^ក្នុង/, '') },
-    { id: 'sem1', label: 'ឆមាសទី ១', sub: 'ឧសភា - កញ្ញា' },
-    { id: 'sem2', label: 'ឆមាសទី ២', sub: 'តុលា - កុម្ភៈ' },
+    { id: 'sem1', label: 'ឆមាសទី ១', sub: 'ឧសភា - តុលា' },
+    { id: 'sem2', label: 'ឆមាសទី ២', sub: 'វិច្ឆិកា - កុម្ភៈ' },
     { id: 'year', label: 'ប្រចាំឆ្នាំ', sub: `ឆ្នាំ ${fmtNum(activeYear)}` }
   ];
 
@@ -950,6 +1061,87 @@ export default function AdminReportView({
           })}
         </div>
 
+        {/* Choice A: 3-Button Segmented Template Selector (Visible ONLY in Semester 1 — PC & Mobile /mp) */}
+        {periodType === 'sem1' && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: isMobile ? 5 : 8,
+              marginBottom: isMobile ? 10 : 12,
+              background: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              borderRadius: 10,
+              padding: isMobile ? 4 : 5
+            }}
+          >
+            {[
+              { id: 'standard', label: 'ធម្មតា', sub: 'របាយការណ៍ឆមាសទី ១', Icon: FileText },
+              { id: 'combined', label: 'ឆមាសទី១ + ប្រវត្តិ', sub: 'លាយសាវតារ និងតារាង ១៦ ឆ្នាំ', Icon: BookOpen },
+              { id: 'history_only', label: 'ប្រវត្តិសាលាសុទ្ធ', sub: 'ឯកសារប្រវត្តិសាលាដាច់ដោយឡែក', Icon: Landmark }
+            ].map(opt => {
+              const active = sem1Mode === opt.id;
+              const IconComp = opt.Icon;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setSem1Mode(opt.id);
+                    setIsEditing(false);
+                  }}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 2,
+                    padding: isMobile ? '7px 4px' : '8px 10px',
+                    borderRadius: 8,
+                    border: active ? '1.5px solid #0284c7' : '1px solid transparent',
+                    background: active
+                      ? 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)'
+                      : 'transparent',
+                    color: active ? '#0c4a6e' : '#475569',
+                    cursor: 'pointer',
+                    transition: 'all 0.16s ease',
+                    boxShadow: active ? '0 1px 4px rgba(2, 132, 199, 0.18)' : 'none',
+                    minWidth: 0
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: isMobile ? 3 : 5,
+                      fontSize: isMobile ? 11 : 13,
+                      fontWeight: 800,
+                      lineHeight: 1.3,
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    <IconComp size={isMobile ? 12 : 14} style={{ flexShrink: 0 }} />
+                    <span>{opt.label}</span>
+                  </span>
+                  {!isMobile && (
+                    <span
+                      style={{
+                        fontSize: 10.5,
+                        color: active ? '#0369a1' : '#64748b',
+                        fontWeight: 600,
+                        lineHeight: 1.2
+                      }}
+                    >
+                      {opt.sub}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Smart Synthesis Notice Banner when viewing Semester 1, Semester 2, or Annual */}
         {periodType !== 'month' && (
           <div
@@ -974,6 +1166,16 @@ export default function AdminReportView({
                 <span>
                   <strong>ប្រព័ន្ធសំយោគស្វ័យប្រវត្តិ (ទម្រង់មន្ទីរ — ប្រចាំឆ្នាំសិក្សា {ministryModel.yearKhmer})៖</strong>{' '}
                   បានរៀបចំផ្នែក <strong>ក ដល់ ដ, តារាងហិរញ្ញវត្ថុទាំង {fmtNum(7)} ផ្នែក និងតារាងសង្ខេប {fmtNum(10)} ជួរ</strong> ដោយភ្ជាប់ទិន្នន័យស្វ័យប្រវត្តិពីរបាយការណ៍ប្រចាំខែ និងផ្ទាំងចំណូល-ចំណាយ។
+                </span>
+              ) : isHistoryOnly ? (
+                <span>
+                  <strong>ឯកសារប្រវត្តិសាលាសុទ្ធ (១.១. សាវតារ + តារាងធនធានមនុស្ស {fmtNum(schoolHistoryModel.rows.length)} ឆ្នាំ)៖</strong>{' '}
+                  តារាងបូកសរុបស្វ័យប្រវត្តិតាមគណិតវិទ្យា និងភ្ជាប់ទិន្នន័យរួមជាមួយទម្រង់ <strong>ឆមាសទី១ + ប្រវត្តិ</strong>។
+                </span>
+              ) : isSem1Combined ? (
+                <span>
+                  <strong>របាយការណ៍ឆមាសទី១ + ប្រវត្តិសាលា៖</strong>{' '}
+                  បានបញ្ចូល <strong>I. សាវតារ</strong>, រុញលេខរ៉ូម៉ាំង <strong>II–VII</strong> និងភ្ជាប់ <strong>តារាងធនធានមនុស្ស {fmtNum(schoolHistoryModel.rows.length)} ឆ្នាំ</strong> ក្រោមផ្នែក IV. ក ដោយស្វ័យប្រវត្តិ។
                 </span>
               ) : (
                 <span>
@@ -1001,7 +1203,7 @@ export default function AdminReportView({
                 }}
               >
                 <RotateCcw size={13} />
-                <span>បូកសរុបស្វ័យប្រវត្តិឡើងវិញ</span>
+                <span>{isHistoryOnly ? 'ស្ដារប្រវត្តិសាលាដើមវិញ' : 'បូកសរុបស្វ័យប្រវត្តិឡើងវិញ'}</span>
               </button>
             )}
           </div>
@@ -1083,9 +1285,13 @@ export default function AdminReportView({
                     onExportWord={handleDownloadWord}
                     onExportExcel={handleDownloadExcel}
                     reportTitle={
-                      isMinistryActive
-                        ? `របាយការណ៍មន្ទីរ (${ministryDocType === 'summary' ? 'សង្ខេប' : 'ពេញ'}) ឆ្នាំ${ministryModel.yearKhmer}`
-                        : `របាយការណ៍រដ្ឋបាល (${displayModel.periodTitlePhrase})`
+                      isHistoryOnly
+                        ? `របាយការណ៍ប្រវត្តិសាលា (ឆ្នាំ${schoolHistoryModel.yearKhmer})`
+                        : isMinistryActive
+                          ? `របាយការណ៍មន្ទីរ (${ministryDocType === 'summary' ? 'សង្ខេប' : 'ពេញ'}) ឆ្នាំ${ministryModel.yearKhmer}`
+                          : isSem1Combined
+                            ? `របាយការណ៍ឆមាសទី១ និងប្រវត្តិសាលា (${displayModel.periodTitlePhrase})`
+                            : `របាយការណ៍រដ្ឋបាល (${displayModel.periodTitlePhrase})`
                     }
                     buttonStyle={{ padding: '9px 6px', fontSize: 12 }}
                   />
@@ -1129,7 +1335,7 @@ export default function AdminReportView({
                   </button>
                 )}
 
-                {canEdit && canExportOffice && (
+                {canEdit && canExportOffice && !isHistoryOnly && (
                   <button
                     type="button"
                     onClick={handleTriggerImport}
@@ -1236,9 +1442,13 @@ export default function AdminReportView({
                       onExportWord={handleDownloadWord}
                       onExportExcel={handleDownloadExcel}
                       reportTitle={
-                        isMinistryActive
-                          ? `របាយការណ៍មន្ទីរ (${ministryDocType === 'summary' ? 'សង្ខេប' : 'ពេញ'}) ឆ្នាំ${ministryModel.yearKhmer}`
-                          : `របាយការណ៍រដ្ឋបាល (${displayModel.periodTitlePhrase})`
+                        isHistoryOnly
+                          ? `របាយការណ៍ប្រវត្តិសាលា (ឆ្នាំ${schoolHistoryModel.yearKhmer})`
+                          : isMinistryActive
+                            ? `របាយការណ៍មន្ទីរ (${ministryDocType === 'summary' ? 'សង្ខេប' : 'ពេញ'}) ឆ្នាំ${ministryModel.yearKhmer}`
+                            : isSem1Combined
+                              ? `របាយការណ៍ឆមាសទី១ និងប្រវត្តិសាលា (${displayModel.periodTitlePhrase})`
+                              : `របាយការណ៍រដ្ឋបាល (${displayModel.periodTitlePhrase})`
                       }
                       buttonStyle={{ padding: '8px 14px', borderRadius: 8 }}
                     />
@@ -1251,19 +1461,19 @@ export default function AdminReportView({
       </div>
 
       {/* ================================================================== */}
-      {/* INLINE EDITOR PANEL (When user clicks "កែប្រែអត្ថបទ")               */}
+      {/* STANDALONE SCHOOL HISTORY INLINE EDITOR PANEL                      */}
       {/* ================================================================== */}
-      {canEdit && isEditing && !isMinistryActive && editDraft && (
+      {canEdit && isEditing && isHistoryOnly && historyEditDraft && (
         <form
-          onSubmit={handleSaveEditor}
+          onSubmit={handleSaveHistoryEditor}
           className="no-print"
           style={{
             background: '#ffffff',
-            border: '2px solid #f59e0b',
+            border: '2px solid #0284c7',
             borderRadius: 14,
             padding: isMobile ? 14 : 20,
             marginBottom: 18,
-            boxShadow: '0 6px 20px rgba(180, 83, 9, 0.12)'
+            boxShadow: '0 6px 20px rgba(2, 132, 199, 0.14)'
           }}
         >
           <div
@@ -1271,13 +1481,15 @@ export default function AdminReportView({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
               marginBottom: 14,
               paddingBottom: 10,
-              borderBottom: '1px solid #fde68a'
+              borderBottom: '1px solid #bae6fd'
             }}
           >
-            <h3 className="font-moul" style={{ margin: 0, fontSize: 15, color: '#92400e' }}>
-              កែសម្រួលរបាយការណ៍រដ្ឋបាល ({displayModel.periodTitlePhrase})
+            <h3 className="font-moul" style={{ margin: 0, fontSize: 15, color: '#0c4a6e' }}>
+              កែសម្រួលរបាយការណ៍ប្រវត្តិសាលា (ឆ្នាំ{schoolHistoryModel.yearKhmer})
             </h3>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
@@ -1321,6 +1533,190 @@ export default function AdminReportView({
               </button>
             </div>
           </div>
+
+          <SchoolHistoryEditorFields
+            draft={historyEditDraft}
+            onChangeDraft={setHistoryEditDraft}
+            showStandaloneMeta={true}
+            isMobile={isMobile}
+            fmtNum={fmtNum}
+          />
+        </form>
+      )}
+
+      {/* ================================================================== */}
+      {/* INLINE EDITOR PANEL (When user clicks "កែប្រែអត្ថបទ")               */}
+      {/* ================================================================== */}
+      {canEdit && isEditing && !isMinistryActive && !isHistoryOnly && editDraft && (
+        <form
+          onSubmit={handleSaveEditor}
+          className="no-print"
+          style={{
+            background: '#ffffff',
+            border: '2px solid #f59e0b',
+            borderRadius: 14,
+            padding: isMobile ? 14 : 20,
+            marginBottom: 18,
+            boxShadow: '0 6px 20px rgba(180, 83, 9, 0.12)'
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 14,
+              paddingBottom: 10,
+              borderBottom: '1px solid #fde68a'
+            }}
+          >
+            <h3 className="font-moul" style={{ margin: 0, fontSize: 15, color: '#92400e' }}>
+              កែសម្រួលរបាយការណ៍រដ្ឋបាល ({displayModel.periodTitlePhrase}{isSem1Combined ? ' + ប្រវត្តិសាលា' : ''})
+            </h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="submit"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  background: '#15803d',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <Check size={15} />
+                <span>រក្សាទុក</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  background: '#f1f5f9',
+                  color: '#475569',
+                  border: '1px solid #cbd5e1',
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={15} />
+                <span>បោះបង់</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Editable Subject Box (កម្មវត្ថុ៖) */}
+          <div
+            style={{
+              marginBottom: 14,
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: 10,
+              padding: 12
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 6,
+                marginBottom: 5
+              }}
+            >
+              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#92400e' }}>
+                កម្មវត្ថុ៖ (អាចកែប្រែបានតាមតម្រូវការ — ទុកទទេដើម្បីប្រើស្វ័យប្រវត្តិ)
+              </label>
+              {editDraft.customSubjectText &&
+                String(editDraft.customSubjectText).trim() !== String(displayModel.defaultAutoSubject || '').trim() && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditDraft(prev => ({
+                        ...prev,
+                        customSubjectText: displayModel.defaultAutoSubject || ''
+                      }))
+                    }
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #f59e0b',
+                      color: '#b45309',
+                      borderRadius: 6,
+                      padding: '2px 8px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ប្រើកម្មវត្ថុដើមវិញ
+                  </button>
+                )}
+            </div>
+            <textarea
+              rows={2}
+              value={editDraft.customSubjectText ?? ''}
+              onChange={e => setEditDraft({ ...editDraft, customSubjectText: e.target.value })}
+              placeholder={displayModel.defaultAutoSubject}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                borderRadius: 8,
+                border: '1px solid #fcd34d',
+                fontSize: 13,
+                lineHeight: 1.55,
+                boxSizing: 'border-box',
+                fontFamily: 'inherit',
+                background: '#ffffff'
+              }}
+            />
+          </div>
+
+          {/* Combined Mode: Editable School History Section (I. សាវតារ + Table Intro + 16-Year Auto-Sum Table) */}
+          {isSem1Combined && historyEditDraft && (
+            <div
+              style={{
+                marginBottom: 16,
+                background: '#f0f9ff',
+                border: '1.5px solid #7dd3fc',
+                borderRadius: 12,
+                padding: isMobile ? 10 : 14
+              }}
+            >
+              <div
+                className="font-moul"
+                style={{
+                  fontSize: 13.5,
+                  color: '#0c4a6e',
+                  marginBottom: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Landmark size={16} color="#0284c7" />
+                <span>ផ្នែកប្រវត្តិសាលា (I. សាវតារ និងតារាងធនធានមនុស្សក្រោម IV. ក)</span>
+              </div>
+              <SchoolHistoryEditorFields
+                draft={historyEditDraft}
+                onChangeDraft={setHistoryEditDraft}
+                showStandaloneMeta={false}
+                isMobile={isMobile}
+                fmtNum={fmtNum}
+              />
+            </div>
+          )}
 
           {/* Grid for Student Counts & Admin Doc Counts */}
           <div
@@ -1448,11 +1844,11 @@ export default function AdminReportView({
             </div>
           </div>
 
-          {/* Textareas for Sections III, IV, V, VI */}
+          {/* Textareas for Sections III-VI (or IV-VII in Combined mode) */}
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                III. ក. សកម្មភាពការងារ (❖ ចុច Enter ចុះបន្ទាត់ថ្មី)
+                {displayModel.sectionNumbers?.progress || 'III'}. ក. សកម្មភាពការងារ (❖ ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <HangingBulletEditor
                 rows={6}
@@ -1464,7 +1860,7 @@ export default function AdminReportView({
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                IV. ១-បញ្ហាប្រឈម (- ចុច Enter ចុះបន្ទាត់ថ្មី)
+                {displayModel.sectionNumbers?.challenges || 'IV'}. ១-បញ្ហាប្រឈម (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <HangingBulletEditor
                 rows={6}
@@ -1476,7 +1872,7 @@ export default function AdminReportView({
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                IV. ២-ដំណោះស្រាយ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
+                {displayModel.sectionNumbers?.challenges || 'IV'}. ២-ដំណោះស្រាយ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <HangingBulletEditor
                 rows={5}
@@ -1488,7 +1884,7 @@ export default function AdminReportView({
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                IV. ៣-សំណូមពរ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
+                {displayModel.sectionNumbers?.challenges || 'IV'}. ៣-សំណូមពរ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <HangingBulletEditor
                 rows={5}
@@ -1500,7 +1896,7 @@ export default function AdminReportView({
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                V. ទិសដៅបន្ត (- ចុច Enter ចុះបន្ទាត់ថ្មី)
+                {displayModel.sectionNumbers?.directions || 'V'}. ទិសដៅបន្ត (- ចុច Enter ចុះបន្ទាត់ថ្មី)
               </label>
               <HangingBulletEditor
                 rows={5}
@@ -1512,7 +1908,7 @@ export default function AdminReportView({
 
             <div>
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                VI. សេចក្ដីសន្និដ្ឋាន
+                {displayModel.sectionNumbers?.conclusion || 'VI'}. សេចក្ដីសន្និដ្ឋាន
               </label>
               <textarea
                 rows={5}
@@ -1912,7 +2308,13 @@ export default function AdminReportView({
           )}
 
           <div style={{ margin: '0 auto' }}>
-            {isMinistryActive ? (
+            {isHistoryOnly ? (
+              <OfficialSchoolHistoryDocument
+                id="printable-school-history-document"
+                historyModel={schoolHistoryModel}
+                useKhmerNumerals={useKhmerNumerals}
+              />
+            ) : isMinistryActive ? (
               ministryDocType === 'summary' ? (
                 <OfficialMinistrySummaryDocument
                   id="printable-ministry-summary-document"
@@ -2000,7 +2402,13 @@ export default function AdminReportView({
           )}
 
           <A4SheetScaler>
-            {isMinistryActive ? (
+            {isHistoryOnly ? (
+              <OfficialSchoolHistoryDocument
+                id="printable-school-history-document"
+                historyModel={schoolHistoryModel}
+                useKhmerNumerals={useKhmerNumerals}
+              />
+            ) : isMinistryActive ? (
               ministryDocType === 'summary' ? (
                 <OfficialMinistrySummaryDocument
                   id="printable-ministry-summary-document"
@@ -2088,7 +2496,152 @@ export default function AdminReportView({
               </div>
             )}
 
-            {isMinistryActive ? (
+            {isHistoryOnly ? (
+              <>
+                {/* Standalone School History Mobile Cards */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #0c4a6e 0%, #0369a1 100%)',
+                    color: '#ffffff',
+                    borderRadius: 14,
+                    padding: 14,
+                    boxShadow: '0 4px 12px rgba(3, 105, 161, 0.22)'
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      marginBottom: 8,
+                      paddingBottom: 8,
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.2)'
+                    }}
+                  >
+                    <img
+                      src="/logo.png?v=nobg1"
+                      alt="Logo"
+                      style={{
+                        width: 42,
+                        height: 42,
+                        objectFit: 'contain',
+                        background: '#ffffff',
+                        borderRadius: '50%',
+                        padding: 2,
+                        flexShrink: 0
+                      }}
+                    />
+                    <div style={{ lineHeight: 1.45 }}>
+                      <div className="font-moul" style={{ fontSize: 11.5 }}>
+                        មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម
+                      </div>
+                      <div className="font-moul" style={{ fontSize: 11.5 }}>
+                        សាលាពុទ្ធិកបឋមសិក្សា កម្រង ហ៊ុន ណេង
+                      </div>
+                    </div>
+                  </div>
+                  <div className="font-moul" style={{ fontSize: 13.5, lineHeight: 1.55, textAlign: 'center' }}>
+                    របាយការណ៍ ស្ដីពី {schoolHistoryModel.title}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    padding: 14
+                  }}
+                >
+                  <div
+                    className="font-moul"
+                    style={{ fontSize: 13, color: '#0c4a6e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Landmark size={16} />
+                    <span>{fmtNum(1)}.{fmtNum(1)}. សាវតារ</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
+                    {(schoolHistoryModel.backgroundParagraphs || []).map((p, i) => (
+                      <p key={i} style={{ margin: '0 0 8px', textIndent: 24, textAlign: 'justify' }}>
+                        {p}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 12,
+                    padding: 14
+                  }}
+                >
+                  {schoolHistoryModel.tableIntro && (
+                    <div style={{ fontSize: 12.5, color: '#1e293b', lineHeight: 1.65, marginBottom: 10, textIndent: 24 }}>
+                      {schoolHistoryModel.tableIntro}
+                    </div>
+                  )}
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: 500, borderCollapse: 'collapse', fontSize: 11.5 }}>
+                      <thead>
+                        <tr style={{ background: '#e0f2fe', color: '#0c4a6e' }}>
+                          {['ល.រ', 'ឆ្នាំសិក្សា', 'មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'].map(h => (
+                            <th key={h} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(schoolHistoryModel.rows || []).map((r, ri) => (
+                          <tr key={ri} style={{ background: ri % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.no}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 600 }}>{r.academicYearDisplay}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.kgText}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g1Text}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g2Text}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g3Text}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 700, color: '#0c4a6e' }}>{r.totalText}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.note || ''}</td>
+                          </tr>
+                        ))}
+                        {schoolHistoryModel.totals && (
+                          <tr style={{ background: '#fef3c7', fontWeight: 700, color: '#78350f' }}>
+                            <td colSpan={2} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
+                              {schoolHistoryModel.totals.label}
+                            </td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.kgText}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.g1Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.g2Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.g3Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.grandTotalText}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1' }}></td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div
+                    style={{
+                      borderTop: '1px dashed #cbd5e1',
+                      marginTop: 12,
+                      paddingTop: 10,
+                      textAlign: 'right',
+                      fontSize: 12,
+                      color: '#475569'
+                    }}
+                  >
+                    <div>{schoolHistoryModel.lunarDateLine}</div>
+                    <div>{schoolHistoryModel.solarDateLine}</div>
+                    <div className="font-moul" style={{ marginTop: 4, color: '#0f172a' }}>
+                      {schoolHistoryModel.signerTitle}
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : isMinistryActive ? (
               ministryDocType === 'summary' ? (
                 <div
                   style={{
@@ -2237,7 +2790,34 @@ export default function AdminReportView({
               </div>
             </div>
 
-            {/* Card I & II: គណៈគ្រប់គ្រង និងស្ថិតិសមណសិស្ស */}
+            {/* Combined Mode ONLY: Card I. សាវតារ */}
+            {displayModel.includeHistory && displayModel.schoolHistory && (
+              <div
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #bae6fd',
+                  borderRadius: 12,
+                  padding: 14
+                }}
+              >
+                <div
+                  className="font-moul"
+                  style={{ fontSize: 13, color: '#0c4a6e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Landmark size={16} />
+                  <span>I. សាវតារ</span>
+                </div>
+                <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
+                  {(displayModel.schoolHistory.backgroundParagraphs || []).map((p, i) => (
+                    <p key={i} style={{ margin: '0 0 8px', textIndent: 24, textAlign: 'justify' }}>
+                      {p}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Card I & II (or II & III): គណៈគ្រប់គ្រង និងស្ថិតិសមណសិស្ស */}
             <div
               style={{
                 background: '#ffffff',
@@ -2251,7 +2831,9 @@ export default function AdminReportView({
                 style={{ fontSize: 13, color: '#92400e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 <BookOpen size={16} />
-                <span>I & II. គណៈគ្រប់គ្រង និងស្ថិតិសមណសិស្ស</span>
+                <span>
+                  {displayModel.sectionNumbers?.management || 'I'} & {displayModel.sectionNumbers?.stats || 'II'}. គណៈគ្រប់គ្រង និងស្ថិតិសមណសិស្ស
+                </span>
               </div>
               <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 8 }}>
                 {(displayModel.managementRoles || []).map((m, i) => (
@@ -2301,6 +2883,57 @@ export default function AdminReportView({
                 ))}
               </div>
 
+              {/* Combined Mode ONLY: Editable Table Intro + 16-Year Human Resource Training Table */}
+              {displayModel.includeHistory && displayModel.schoolHistory && (
+                <div style={{ marginBottom: 12 }}>
+                  {displayModel.schoolHistory.tableIntro && (
+                    <div style={{ fontSize: 12.5, color: '#1e293b', lineHeight: 1.65, marginBottom: 8, textIndent: 22 }}>
+                      {displayModel.schoolHistory.tableIntro}
+                    </div>
+                  )}
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: 500, borderCollapse: 'collapse', fontSize: 11.5 }}>
+                      <thead>
+                        <tr style={{ background: '#e0f2fe', color: '#0c4a6e' }}>
+                          {['ល.រ', 'ឆ្នាំសិក្សា', 'មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'].map(h => (
+                            <th key={h} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(displayModel.schoolHistory.rows || []).map((r, ri) => (
+                          <tr key={ri} style={{ background: ri % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.no}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 600 }}>{r.academicYearDisplay}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.kgText}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g1Text}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g2Text}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g3Text}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 700, color: '#0c4a6e' }}>{r.totalText}</td>
+                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.note || ''}</td>
+                          </tr>
+                        ))}
+                        {displayModel.schoolHistory.totals && (
+                          <tr style={{ background: '#fef3c7', fontWeight: 700, color: '#78350f' }}>
+                            <td colSpan={2} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
+                              {displayModel.schoolHistory.totals.label}
+                            </td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.kgText}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.g1Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.g2Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.g3Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.grandTotalText}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1' }}></td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 6 }}>
                 ខ. ការងារគ្រប់គ្រង លិខិតរដ្ឋបាល និងរបាយការណ៍
               </div>
@@ -2334,7 +2967,7 @@ export default function AdminReportView({
                 style={{ fontSize: 13, color: '#b91c1c', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 <AlertTriangle size={16} />
-                <span>IV. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ</span>
+                <span>{displayModel.sectionNumbers?.challenges || 'IV'}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ</span>
               </div>
 
               <div style={{ fontWeight: 700, fontSize: 12.5, color: '#991b1b', marginBottom: 4 }}>
@@ -2379,7 +3012,7 @@ export default function AdminReportView({
                 style={{ fontSize: 13, color: '#15803d', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 <Compass size={16} />
-                <span>V. ទិសដៅបន្ត</span>
+                <span>{displayModel.sectionNumbers?.directions || 'V'}. ទិសដៅបន្ត</span>
               </div>
               <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 12, lineHeight: 1.6 }}>
                 {(displayModel.directions || []).map((line, i) => (
@@ -2388,7 +3021,7 @@ export default function AdminReportView({
               </div>
 
               <div className="font-moul" style={{ fontSize: 13, color: '#78350f', marginBottom: 6 }}>
-                VI. សន្និដ្ឋាន
+                {displayModel.sectionNumbers?.conclusion || 'VI'}. សន្និដ្ឋាន
               </div>
               <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6, marginBottom: 8 }}>
                 {displayModel.conclusionText}
@@ -2432,7 +3065,13 @@ export default function AdminReportView({
           }}
           aria-hidden="true"
         >
-          {isMinistryActive ? (
+          {isHistoryOnly ? (
+            <OfficialSchoolHistoryDocument
+              id="printable-school-history-mobile-hidden"
+              historyModel={schoolHistoryModel}
+              useKhmerNumerals={useKhmerNumerals}
+            />
+          ) : isMinistryActive ? (
             ministryDocType === 'summary' ? (
               <OfficialMinistrySummaryDocument
                 id="printable-ministry-summary-mobile-hidden"

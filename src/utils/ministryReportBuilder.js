@@ -20,11 +20,11 @@ export const MINISTRY_SEM1_MONTHS = [
   { num: '06', name: 'ខែមិថុនា', shortName: 'មិថុនា' },
   { num: '07', name: 'ខែកក្កដា', shortName: 'កក្កដា' },
   { num: '08', name: 'ខែសីហា', shortName: 'សីហា' },
-  { num: '09', name: 'ខែកញ្ញា', shortName: 'កញ្ញា' }
+  { num: '09', name: 'ខែកញ្ញា', shortName: 'កញ្ញា' },
+  { num: '10', name: 'ខែតុលា', shortName: 'តុលា' }
 ];
 
 export const MINISTRY_SEM2_MONTHS = [
-  { num: '10', name: 'តុលា', fullLabel: 'ខែតុលា' },
   { num: '11', name: 'វិច្ឆិកា', fullLabel: 'ខែវិច្ឆិកា' },
   { num: '12', name: 'ធ្នូ', fullLabel: 'ខែធ្នូ' },
   { num: '01', name: 'មករា', fullLabel: 'ខែមករា' },

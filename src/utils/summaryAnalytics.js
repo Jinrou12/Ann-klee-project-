@@ -16,10 +16,10 @@ import {
 import { KHMER_SOLAR_MONTHS } from './khmerCalendar';
 import { matchStudentName } from './studentMaster';
 
-// ឆមាសទី ១: ឧសភា - កញ្ញា (មិនរាប់បញ្ចូលខែមីនា 03 និងខែមេសា 04 ដែលជាខែវិស្សមកាល)
-export const SEMESTER_1_MONTH_NUMS = ['05', '06', '07', '08', '09'];
-// ឆមាសទី ២: តុលា - កុម្ភៈ
-export const SEMESTER_2_MONTH_NUMS = ['10', '11', '12', '01', '02'];
+// ឆមាសទី ១: ឧសភា - តុលា (មិនរាប់បញ្ចូលខែមីនា 03 និងខែមេសា 04 ដែលជាខែវិស្សមកាល)
+export const SEMESTER_1_MONTH_NUMS = ['05', '06', '07', '08', '09', '10'];
+// ឆមាសទី ២: វិច្ឆិកា - កុម្ភៈ
+export const SEMESTER_2_MONTH_NUMS = ['11', '12', '01', '02'];
 // ខែសិក្សាទាំង ១០ ខែក្នុង ១ ឆ្នាំសិក្សា (ដកខែមីនា 03 និងខែមេសា 04 ចេញ)
 export const ACADEMIC_MONTH_NUMS = [...SEMESTER_1_MONTH_NUMS, ...SEMESTER_2_MONTH_NUMS];
 export const EXCLUDED_VACATION_MONTH_NUMS = ['03', '04'];

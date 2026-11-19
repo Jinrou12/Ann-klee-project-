@@ -214,7 +214,7 @@ export default function SummaryMobileView({
   );
 
   const effectiveReportMonthKey = useMemo(() => {
-    if (periodMode === 'semester1') return `${selectedYear}-09`;
+    if (periodMode === 'semester1') return `${selectedYear}-10`;
     if (periodMode === 'semester2') return `${selectedYear}-02`;
     if (periodMode === 'year') return `${selectedYear}-02`;
     return selectedMonth;

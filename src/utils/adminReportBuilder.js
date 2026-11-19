@@ -3,8 +3,8 @@ import * as XLSX from 'xlsx';
 import { toKhmerDigits, toEnglishDigits } from './khmerNumerals.js';
 import { KHMER_SOLAR_MONTHS } from './khmerCalendar.js';
 
-const SEMESTER_1_MONTH_NUMS = ['05', '06', '07', '08', '09'];
-const SEMESTER_2_MONTH_NUMS = ['10', '11', '12', '01', '02'];
+const SEMESTER_1_MONTH_NUMS = ['05', '06', '07', '08', '09', '10'];
+const SEMESTER_2_MONTH_NUMS = ['11', '12', '01', '02'];
 
 export const DEFAULT_MANAGEMENT_ROLES = [
   { name: 'ព្រះបុណ្ណមេធា វ៉ាន់ សុក', role: 'ជានាយកទទួលបន្ទុកដឹកនាំរួម' },
@@ -970,7 +970,9 @@ export function buildAdminReportDisplayModel({
   year = '2026',
   adminReports = {},
   studentMaster = null,
-  useKhmerNumerals = true
+  useKhmerNumerals = true,
+  includeHistory = false,
+  schoolHistory = null
 }) {
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
   const activeYear = periodType === 'month'
@@ -1053,13 +1055,34 @@ export function buildAdminReportDisplayModel({
         ? 'ក្នុងឆមាសទី២'
         : `ក្នុងឆ្នាំសិក្សា ${yrKh}`;
 
+  const shouldIncludeHistory = periodType === 'sem1' && Boolean(includeHistory) && Boolean(schoolHistory);
+  const sectionNumbers = shouldIncludeHistory
+    ? {
+        background: 'I',
+        management: 'II',
+        stats: 'III',
+        progress: 'IV',
+        challenges: 'V',
+        directions: 'VI',
+        conclusion: 'VII'
+      }
+    : {
+        background: null,
+        management: 'I',
+        stats: 'II',
+        progress: 'III',
+        challenges: 'IV',
+        directions: 'V',
+        conclusion: 'VI'
+      };
+
   const section3Heading = periodType === 'month'
-    ? `III. វឌ្ឍនភាពការងារក្នុងខែ${monthName} ឆ្នាំ${yrKh}`
+    ? `${sectionNumbers.progress}. វឌ្ឍនភាពការងារក្នុងខែ${monthName} ឆ្នាំ${yrKh}`
     : periodType === 'sem1'
-      ? `III. វឌ្ឍនភាពការងារក្នុងឆមាសទី១ ឆ្នាំ${yrKh}`
+      ? `${sectionNumbers.progress}. វឌ្ឍនភាពការងារក្នុងឆមាសទី១ ឆ្នាំ${yrKh}`
       : periodType === 'sem2'
-        ? `III. វឌ្ឍនភាពការងារក្នុងឆមាសទី២ ឆ្នាំ${yrKh}`
-        : `III. វឌ្ឍនភាពការងារក្នុងឆ្នាំសិក្សា ${yrKh}`;
+        ? `${sectionNumbers.progress}. វឌ្ឍនភាពការងារក្នុងឆមាសទី២ ឆ្នាំ${yrKh}`
+        : `${sectionNumbers.progress}. វឌ្ឍនភាពការងារក្នុងឆ្នាំសិក្សា ${yrKh}`;
 
   const section3SubAHeading = periodType === 'month'
     ? 'ក. សកម្មភាពប្រចាំខែ'
@@ -1079,11 +1102,14 @@ export function buildAdminReportDisplayModel({
       ? 'ឃ. ចំណាយប្រចាំឆមាស (តារាងឧសម្ព័ន្ធ)'
       : 'ឃ. ចំណាយប្រចាំឆ្នាំ (តារាងឧសម្ព័ន្ធ)';
 
+  const defaultAutoSubject = `របាយការណ៍បូកសរុបលទ្ធផលការងារ${periodTitlePhrase} និងលើកទិសដៅការងារបន្តរបស់សាលាពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម។`;
   const rawCustomSubj = String(rawReport.customSubjectText || '').trim();
   const isStandardAutoSubj = rawCustomSubj.startsWith('របាយការណ៍បូកសរុបលទ្ធផលការងារ');
-  const subjectText = (!isStandardAutoSubj && rawCustomSubj)
+  const subjectText = (rawReport.manualSubjectOverride && rawCustomSubj)
     ? rawCustomSubj
-    : `របាយការណ៍បូកសរុបលទ្ធផលការងារ${periodTitlePhrase} និងលើកទិសដៅការងារបន្តរបស់សាលាពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម។`;
+    : (!isStandardAutoSubj && rawCustomSubj)
+      ? rawCustomSubj
+      : defaultAutoSubject;
 
   const introParagraph = rawReport.customIntroParagraph ||
     `សេចក្ដីដូចមានចែងក្នុងកម្មវត្ថុខាងលើ ខ្ញុំព្រះករុណាមានកិត្តិយស សូមអនុញ្ញាតប្រគេន ព្រះធម្មសាលវង្ស ព្រះអនុគណ មេត្តាជ្រាបដ៏ខ្ពង់ខ្ពស់នូវរបាយការណ៍${inPeriodPhrase}កន្លងទៅនេះ គណៈគ្រប់គ្រងសាលាបានបំពេញការងារសម្រេចបានជាលទ្ធផលដូចខាងក្រោម៖`;
@@ -1122,38 +1148,38 @@ export function buildAdminReportDisplayModel({
     ? rawReport.customStudentLines.map(replaceLegacyTermWords)
     : isMultiMonth
       ? [
-          `ថ្នាក់រៀនមានចំនួន ${classCountStr}ថ្នាក់ សមណសិស្ស${startTermLabel}មានចំនួន ${fmtNum(sTotalVal)}អង្គ/នាក់ និង${endTermLabel}មានចំនួន ${fmtNum(st.totalStudents ?? 81)}អង្គ/នាក់`,
-          `ថ្នាក់ទីមត្តេយ្យ មានចំនួន ${fmtNum(st.gradeKindergarten ?? 15)}អង្គ/នាក់ (${startTermLabel} ${fmtNum(sKgVal)}អង្គ/នាក់)`,
-          `ថ្នាក់ទី១ មានចំនួន ${fmtNum(st.grade1 ?? 15)}អង្គ (${startTermLabel} ${fmtNum(sG1Val)}អង្គ)`,
-          `ថ្នាក់ទី២ មានចំនួន ${fmtNum(st.grade2 ?? 30)}អង្គ/នាក់ (${startTermLabel} ${fmtNum(sG2Val)}អង្គ/នាក់)`,
-          `ថ្នាក់ទី៣ មានចំនួន ${fmtNum(st.grade3 ?? 21)}អង្គ (${startTermLabel} ${fmtNum(sG3Val)}អង្គ)`
-        ]
+        `ថ្នាក់រៀនមានចំនួន ${classCountStr}ថ្នាក់ សមណសិស្ស${startTermLabel}មានចំនួន ${fmtNum(sTotalVal)}អង្គ/នាក់ និង${endTermLabel}មានចំនួន ${fmtNum(st.totalStudents ?? 81)}អង្គ/នាក់`,
+        `ថ្នាក់ទីមត្តេយ្យ មានចំនួន ${fmtNum(st.gradeKindergarten ?? 15)}អង្គ/នាក់ (${startTermLabel} ${fmtNum(sKgVal)}អង្គ/នាក់)`,
+        `ថ្នាក់ទី១ មានចំនួន ${fmtNum(st.grade1 ?? 15)}អង្គ (${startTermLabel} ${fmtNum(sG1Val)}អង្គ)`,
+        `ថ្នាក់ទី២ មានចំនួន ${fmtNum(st.grade2 ?? 30)}អង្គ/នាក់ (${startTermLabel} ${fmtNum(sG2Val)}អង្គ/នាក់)`,
+        `ថ្នាក់ទី៣ មានចំនួន ${fmtNum(st.grade3 ?? 21)}អង្គ (${startTermLabel} ${fmtNum(sG3Val)}អង្គ)`
+      ]
       : [
-          `ថ្នាក់រៀនមានចំនួន ${classCountStr}ថ្នាក់ សមណសិស្សសរុបចំនួន ${fmtNum(st.totalStudents ?? 81)}អង្គ/នាក់`,
-          `ថ្នាក់ទីមត្តេយ្យ មានចំនួន ${fmtNum(st.gradeKindergarten ?? 15)}អង្គ/នាក់`,
-          `ថ្នាក់ទី១ មានចំនួន ${fmtNum(st.grade1 ?? 15)}អង្គ`,
-          `ថ្នាក់ទី២ មានចំនួន ${fmtNum(st.grade2 ?? 30)}អង្គ/នាក់`,
-          `ថ្នាក់ទី៣ មានចំនួន ${fmtNum(st.grade3 ?? 21)}អង្គ`
-        ];
+        `ថ្នាក់រៀនមានចំនួន ${classCountStr}ថ្នាក់ សមណសិស្សសរុបចំនួន ${fmtNum(st.totalStudents ?? 81)}អង្គ/នាក់`,
+        `ថ្នាក់ទីមត្តេយ្យ មានចំនួន ${fmtNum(st.gradeKindergarten ?? 15)}អង្គ/នាក់`,
+        `ថ្នាក់ទី១ មានចំនួន ${fmtNum(st.grade1 ?? 15)}អង្គ`,
+        `ថ្នាក់ទី២ មានចំនួន ${fmtNum(st.grade2 ?? 30)}អង្គ/នាក់`,
+        `ថ្នាក់ទី៣ មានចំនួន ${fmtNum(st.grade3 ?? 21)}អង្គ`
+      ];
 
   // Format Section III (ខ) Admin Doc Lines
   const ad = rawReport.adminDocs || {};
   const adminDocLines = Array.isArray(rawReport.customAdminDocLines) && rawReport.customAdminDocLines.length > 0
     ? rawReport.customAdminDocLines
     : [
-        `បានធ្វើលិខិតចេញចំនួន ${fmtNum(ad.outgoingLetters ?? 0)}ច្បាប់`,
-        `បានទទួលលិខិតចូលចំនួន ${fmtNum(ad.incomingLetters ?? 0)}ច្បាប់`,
-        `កំណត់ហេតុប្រជុំសាលា ${fmtNum(ad.schoolMinutes ?? 0)}ច្បាប់`,
-        ...(Number(ad.schoolReportsToMinistry) > 0
-          ? [`របាយការណ៍របស់សាលា ${fmtNum(ad.schoolReportsToMinistry)}ច្បាប់ (ទៅមន្ទីរ)`]
-          : []),
-        `ប្រជុំតូច-ធំ ក្នុងមន្ទីរមានចំនួន ${fmtNum(ad.ministryMeetings ?? 0)}លើក`
-      ];
+      `បានធ្វើលិខិតចេញចំនួន ${fmtNum(ad.outgoingLetters ?? 0)}ច្បាប់`,
+      `បានទទួលលិខិតចូលចំនួន ${fmtNum(ad.incomingLetters ?? 0)}ច្បាប់`,
+      `កំណត់ហេតុប្រជុំសាលា ${fmtNum(ad.schoolMinutes ?? 0)}ច្បាប់`,
+      ...(Number(ad.schoolReportsToMinistry) > 0
+        ? [`របាយការណ៍របស់សាលា ${fmtNum(ad.schoolReportsToMinistry)}ច្បាប់ (ទៅមន្ទីរ)`]
+        : []),
+      `ប្រជុំតូច-ធំ ក្នុងមន្ទីរមានចំនួន ${fmtNum(ad.ministryMeetings ?? 0)}លើក`
+    ];
 
   const shortFileNameTag = periodType === 'month'
     ? `ខែ${monthName}_${yrKh}`
     : periodType === 'sem1'
-      ? `ឆមាសទី១_${yrKh}`
+      ? (shouldIncludeHistory ? `ឆមាសទី១_និងប្រវត្តិសាលា_${yrKh}` : `ឆមាសទី១_${yrKh}`)
       : periodType === 'sem2'
         ? `ឆមាសទី២_${yrKh}`
         : `ប្រចាំឆ្នាំ_${yrKh}`;
@@ -1164,12 +1190,12 @@ export function buildAdminReportDisplayModel({
 
   const resolvedChallenges = periodType === 'month'
     ? syncMonthlyDropoutChallengeLine({
-        monthKey,
-        prevTotal: prevMonthTotalStudents,
-        currTotal: st.totalStudents,
-        challenges: rawReport.challenges || [],
-        useKhmerNumerals
-      })
+      monthKey,
+      prevTotal: prevMonthTotalStudents,
+      currTotal: st.totalStudents,
+      challenges: rawReport.challenges || [],
+      useKhmerNumerals
+    })
     : (rawReport.challenges || []).map(replaceLegacyTermWords);
 
   return {
@@ -1177,6 +1203,9 @@ export function buildAdminReportDisplayModel({
     periodType,
     monthKey,
     year: activeYear,
+    includeHistory: shouldIncludeHistory,
+    schoolHistory: shouldIncludeHistory ? schoolHistory : null,
+    sectionNumbers,
     periodTitlePhrase,
     inPeriodPhrase,
     shortFileNameTag,
@@ -1184,6 +1213,7 @@ export function buildAdminReportDisplayModel({
     prevMonthTotalStudents,
     docNumber: rawReport.docNumber || '......................',
     recipientTitle: rawReport.recipientTitle || DEFAULT_RECIPIENT_TITLE,
+    defaultAutoSubject,
     subjectText,
     introParagraph,
     section1Intro: rawReport.section1Intro || DEFAULT_SECTION1_INTRO,
