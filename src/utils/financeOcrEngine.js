@@ -336,8 +336,8 @@ export async function extractFinanceReceiptWithGemini({
     parts,
     apiKey,
     thinkingBudget: 1024,
-    timeoutMs: 36000,
-    maxTimeoutAttempts: 2
+    timeoutMs: 20000,
+    maxTimeoutAttempts: 4
   });
 }
 

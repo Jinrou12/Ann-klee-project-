@@ -1,5 +1,8 @@
-// Cloud-Shared Gemini API Key Health Monitor, Healthy Pool Router, Auto-Heal Quarantine & Admin Telegram Alerter
-// Zero raw API keys are ever persisted in the shared health registry (uses non-reversible fingerprint + masked label).
+// Strict 2-Pool Cloud-Shared Gemini API Key Health Monitor:
+//   Pool 1 (🟢 Healthy Pool):    Verified 200 OK keys sorted fastest-first — EXCLUSIVELY used for user scans.
+//   Pool 2 (🔴/🟡 Quarantine):   Timed-out / 503 / 429 / 403 keys — LOCKED away from user scans until a real
+//                                background Auto-Heal probe confirms HTTP 200 OK!
+// Never stores raw API keys in the shared Supabase health row (uses non-reversible fingerprint + masked label).
 import { supabase } from './supabaseClient';
 import {
   DEFAULT_GEMINI_KEYS,
@@ -13,26 +16,30 @@ export const ADMIN_ALERT_CHAT_ID = '1379643928';
 export const HEALTH_MONITOR_MODEL = 'gemini-3-flash-preview';
 
 const HEALTH_CLOUD_ROW_ID = 'gemini_key_health';
-const HEALTH_STORAGE_KEY = 'ann_klee_gemini_key_health_v1';
-const HEALTH_CHECK_TTL_MS = 20 * 60 * 1000; // 20 minutes shared cloud TTL (prevents multi-device quota burn)
+const HEALTH_STORAGE_KEY = 'ann_klee_gemini_key_health_v2';
+const HEALTH_CHECK_TTL_MS = 5 * 60 * 1000; // 5 minutes shared cloud TTL for full pool check
+const QUARANTINE_PROBE_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes dedicated Auto-Heal check for quarantined keys ONLY
 const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // Max 1 Telegram failure alert per key per hour (anti-spam)
-const RPM_COOLDOWN_MS = 65 * 1000; // 65s cooldown for per-minute 429
-const DAILY_QUOTA_COOLDOWN_MS = 30 * 60 * 1000; // 30m cooldown for daily quota 429
-const TRANSIENT_COOLDOWN_MS = 3 * 60 * 1000; // 3m cooldown for 503 / Timeout
-const AUTO_HEAL_DELAY_TRANSIENT_MS = 12 * 1000; // 12s auto-heal probe after transient timeout/503
-const AUTO_HEAL_DELAY_RPM_MS = 65 * 1000; // 65s auto-heal probe after 429 RPM
+const RPM_HEAL_WAIT_MS = 65 * 1000; // 65s wait before auto-heal probe on 429 RPM
+const DAILY_QUOTA_HEAL_WAIT_MS = 30 * 60 * 1000; // 30m wait before re-probing daily quota 429
+const TRANSIENT_FIRST_HEAL_WAIT_MS = 12 * 1000; // 12s quick auto-heal probe on first timeout/503
+const TRANSIENT_REPEAT_HEAL_WAIT_MS = 2 * 60 * 1000; // 2m wait between repeated quarantine probes
+const FAST_KEY_LATENCY_THRESHOLD_MS = 4000; // Keys <= 4s get top priority over sluggish 6s-12s keys
 
 const healthStore = {
   checkedAt: 0,
   isChecking: false,
-  keys: {} // keyId -> { masked, status, latencyMs, errorDetail, statusCode, isDailyQuota, cooldownUntil, consecutiveFailures, lastCheckedAt, lastAlertedAt, alertedDown }
+  isHealingQuarantine: false,
+  keys: {} // keyId -> { masked, status, latencyMs, errorDetail, statusCode, isDailyQuota, nextHealProbeAt, consecutiveFailures, lastCheckedAt, lastAlertedAt, alertedDown }
 };
 
 const listeners = new Set();
 const scheduledHealTimers = new Map();
 let roundRobinCursor = 0;
-let periodicTimerId = null;
+let healthyTimerId = null;
+let quarantineTimerId = null;
 let inflightFullCheck = null;
+let inflightQuarantineHeal = null;
 let cloudSyncDebounceTimer = null;
 
 /**
@@ -151,7 +158,6 @@ function mergeCloudHealthPayload(cloudPayload) {
     if (!prev || nextTs > prevTs) {
       healthStore.keys[id] = {
         ...entry,
-        // Keep the latest alert timestamp across devices to prevent duplicate alerts
         lastAlertedAt: Math.max(Number(prev?.lastAlertedAt) || 0, Number(entry.lastAlertedAt) || 0)
       };
     } else if (prev && (Number(entry.lastAlertedAt) || 0) > (Number(prev.lastAlertedAt) || 0)) {
@@ -187,7 +193,7 @@ function scheduleCloudHealthSync() {
     } catch {
       // non-blocking cloud sync
     }
-  }, 600);
+  }, 500);
 }
 
 function getAllConfiguredKeys(explicitApiKey = '') {
@@ -205,74 +211,101 @@ function getAllConfiguredKeys(explicitApiKey = '') {
   return [...modern, ...legacy];
 }
 
-function resolveEffectiveStatus(entry, now = Date.now()) {
+/**
+ * STRICT 2-POOL STATUS RESOLVER:
+ * A quarantined key ('unstable', 'quota', 'invalid') NEVER auto-promotes back to healthy just because
+ * time passed — ONLY a real HTTP 200 OK from a background Auto-Heal probe can unlock it!
+ */
+function resolveStrictStatus(entry) {
   if (!entry || !entry.status) return 'unknown';
-  if (entry.status === 'invalid') return 'invalid';
   if (entry.status === 'ok') return 'ok';
-  if (entry.status === 'quota' || entry.status === 'unstable') {
-    const until = Number(entry.cooldownUntil) || 0;
-    if (until > 0 && now >= until) {
-      // Cooldown expired — ready to be retried as recovered candidate
-      return 'recovering';
-    }
-    return entry.status;
-  }
+  if (entry.status === 'invalid') return 'invalid';
+  if (entry.status === 'quota') return 'quota';
+  if (entry.status === 'unstable') return 'unstable';
   return 'unknown';
 }
 
 /**
- * Determine whether a key is currently eligible in the Healthy Pool.
+ * True ONLY for keys in Pool 1 (Healthy Pool: verified 'ok' or untested 'unknown').
+ * Strictly FALSE for every key locked in Pool 2 (Quarantine: unstable / quota / invalid).
  */
 export function isKeyHealthyNow(key) {
   const id = getKeyHealthId(key);
   if (!id) return false;
-  const entry = healthStore.keys[id];
-  const st = resolveEffectiveStatus(entry);
-  return st === 'ok' || st === 'unknown' || st === 'recovering';
+  const st = resolveStrictStatus(healthStore.keys[id]);
+  return st === 'ok' || st === 'unknown';
 }
 
 /**
- * Return keys ordered so Healthy Pool keys come FIRST (round-robin load balanced),
- * followed by cooldown-expired recovering keys, then cooling keys (last resort),
- * while strictly excluding confirmed-invalid (401/403) keys.
+ * Strict 2-Pool Key Selector for user scans (0ms, zero probing):
+ *  - Pool 1 (Healthy Pool):
+ *      1. Fast verified keys (<= 4s latency) — round-robin balanced so all fast keys share load evenly
+ *      2. Unchecked ('unknown') keys (before first check finishes)
+ *      3. Slow verified keys (> 4s latency, e.g., 6s-12s) sorted fastest-first
+ *  - Pool 2 (Quarantine):
+ *      STRICTLY EXCLUDED whenever Pool 1 has >= 1 healthy key!
+ *      Only returned as an absolute emergency last resort when ALL keys are quarantined (healthy === 0).
+ *  - Revoked ('invalid' 401/403): NEVER returned.
  */
 export function getOrderedHealthyKeys(allKeys = []) {
   const list = Array.isArray(allKeys) ? allKeys.filter(Boolean) : [];
   if (list.length === 0) return [];
-  const now = Date.now();
 
-  const healthy = [];
-  const recovering = [];
-  const cooling = [];
+  const fastOk = [];
+  const unknownKeys = [];
+  const slowOk = [];
+  const quarantineFallback = [];
 
   list.forEach(key => {
     const id = getKeyHealthId(key);
     const entry = healthStore.keys[id];
-    const st = resolveEffectiveStatus(entry, now);
-    if (st === 'invalid') return; // Never try revoked/invalid keys
-    if (st === 'ok' || st === 'unknown') {
-      healthy.push(key);
-    } else if (st === 'recovering') {
-      recovering.push(key);
+    const st = resolveStrictStatus(entry);
+    if (st === 'invalid') return;
+
+    if (st === 'ok') {
+      const lat = Number(entry?.latencyMs) || 1500;
+      if (lat <= FAST_KEY_LATENCY_THRESHOLD_MS) {
+        fastOk.push({ key, lat });
+      } else {
+        slowOk.push({ key, lat });
+      }
+    } else if (st === 'unknown') {
+      unknownKeys.push(key);
     } else {
-      cooling.push({ key, until: Number(entry?.cooldownUntil) || Number.MAX_SAFE_INTEGER });
+      // Strictly quarantined ('unstable' | 'quota')
+      quarantineFallback.push({
+        key,
+        priority: st === 'unstable' ? 1 : (entry?.isDailyQuota ? 3 : 2),
+        nextProbe: Number(entry?.nextHealProbeAt) || 0
+      });
     }
   });
 
-  cooling.sort((a, b) => a.until - b.until);
+  // Sort fast & slow tiers by latency ascending
+  fastOk.sort((a, b) => a.lat - b.lat);
+  slowOk.sort((a, b) => a.lat - b.lat);
 
-  let rotatedHealthy = healthy;
-  if (healthy.length > 1) {
-    const offset = roundRobinCursor % healthy.length;
-    roundRobinCursor = (roundRobinCursor + 1) % healthy.length;
-    rotatedHealthy = [...healthy.slice(offset), ...healthy.slice(0, offset)];
+  let rotatedFast = fastOk.map(x => x.key);
+  if (rotatedFast.length > 1) {
+    const offset = roundRobinCursor % rotatedFast.length;
+    roundRobinCursor = (roundRobinCursor + 1) % rotatedFast.length;
+    rotatedFast = [...rotatedFast.slice(offset), ...rotatedFast.slice(0, offset)];
   }
 
-  return [...rotatedHealthy, ...recovering, ...cooling.map(c => c.key)];
+  const healthyPool = [...rotatedFast, ...unknownKeys, ...slowOk.map(x => x.key)];
+
+  // STRICT ISOLATION: never hand a quarantined key to a user scan if ANY healthy key exists!
+  if (healthyPool.length > 0) {
+    return healthyPool;
+  }
+
+  // Emergency fallback ONLY when 0 healthy keys remain across the entire pool
+  quarantineFallback.sort((a, b) => a.priority - b.priority || a.nextProbe - b.nextProbe);
+  return quarantineFallback.map(x => x.key);
 }
 
 /**
- * Build a complete live UI snapshot for UploadSection & ApiKeyModal.
+ * Build a complete live 2-Pool UI snapshot for ApiKeyModal & diagnostics.
  */
 export function getGeminiKeyHealthSnapshot(explicitApiKey = '') {
   const allKeys = getAllConfiguredKeys(explicitApiKey);
@@ -283,55 +316,85 @@ export function getGeminiKeyHealthSnapshot(explicitApiKey = '') {
   let invalidCount = 0;
   let unknownCount = 0;
 
+  const healthyItems = [];
+  const quarantineItems = [];
+
   const items = allKeys.map((key, idx) => {
     const id = getKeyHealthId(key);
     const masked = maskApiKey(key);
     const entry = healthStore.keys[id] || null;
-    const effStatus = resolveEffectiveStatus(entry, now);
-    const cooldownUntil = Number(entry?.cooldownUntil) || 0;
-    const cooldownRemainingSec = cooldownUntil > now ? Math.ceil((cooldownUntil - now) / 1000) : 0;
+    const st = resolveStrictStatus(entry);
+    const nextProbeAt = Number(entry?.nextHealProbeAt) || 0;
+    const nextProbeInSec = nextProbeAt > now ? Math.ceil((nextProbeAt - now) / 1000) : 0;
+    const latencyMs = Number(entry?.latencyMs) || 0;
 
-    let displayStatus = effStatus;
-    let statusLabel = 'មិនទាន់ពិនិត្យ';
+    let pool = 'healthy';
+    let statusLabel = 'រួចរាល់ (មិនទាន់តេស្ត)';
 
-    if (effStatus === 'ok') {
+    if (st === 'ok') {
       healthyCount++;
-      statusLabel = entry?.latencyMs ? `ដំណើរការល្អ (${(entry.latencyMs / 1000).toFixed(1)}s)` : 'ដំណើរការល្អ';
-    } else if (effStatus === 'recovering') {
-      healthyCount++;
-      displayStatus = 'ok';
-      statusLabel = 'រួចរាល់ (បានសម្រាកចប់)';
-    } else if (effStatus === 'quota') {
+      pool = 'healthy';
+      if (latencyMs > FAST_KEY_LATENCY_THRESHOLD_MS) {
+        statusLabel = `ល្អ តែយឺត (${(latencyMs / 1000).toFixed(1)}s)`;
+      } else if (latencyMs > 0) {
+        statusLabel = `ល្អ • លឿន (${(latencyMs / 1000).toFixed(1)}s)`;
+      } else {
+        statusLabel = 'ដំណើរការល្អ';
+      }
+    } else if (st === 'quota') {
       quotaCount++;
+      pool = 'quarantine';
       statusLabel = entry?.isDailyQuota
-        ? 'អស់កូតាប្រចាំថ្ងៃ (429)'
-        : `អស់កូតាបណ្ដោះអាសន្ន (${cooldownRemainingSec}s)`;
-    } else if (effStatus === 'unstable') {
+        ? 'អស់កូតាប្រចាំថ្ងៃ (ដាក់ដាច់)'
+        : (nextProbeInSec > 0
+          ? `អស់កូតា 429 • តេស្តវិញក្នុង ${nextProbeInSec}s`
+          : 'អស់កូតា 429 (រង់ចាំ Auto-Heal)');
+    } else if (st === 'unstable') {
       unstableCount++;
-      statusLabel = `គាំង / យឺត (${cooldownRemainingSec}s)`;
-    } else if (effStatus === 'invalid') {
+      pool = 'quarantine';
+      statusLabel = nextProbeInSec > 0
+        ? `គាំង/Timeout (ដាក់ដាច់ • តេស្តវិញ ${nextProbeInSec}s)`
+        : 'គាំង/Timeout (ដាក់ដាច់ • កំពុងតាមដាន)';
+    } else if (st === 'invalid') {
       invalidCount++;
+      pool = 'quarantine';
       statusLabel = 'ខូច / ផុតកំណត់ (401/403)';
     } else {
       unknownCount++;
-      statusLabel = 'រួចរាល់ (មិនទាន់តេស្ត)';
+      pool = 'healthy';
+      statusLabel = 'រួចរាល់ (កំពុងរង់ចាំតេស្ត)';
     }
 
-    return {
+    const row = {
       index: idx + 1,
       id,
       masked,
-      status: displayStatus,
-      rawStatus: effStatus,
+      pool,
+      status: st,
       statusLabel,
-      latencyMs: Number(entry?.latencyMs) || 0,
+      latencyMs,
+      isSlow: st === 'ok' && latencyMs > FAST_KEY_LATENCY_THRESHOLD_MS,
       errorDetail: entry?.errorDetail || '',
       isDailyQuota: Boolean(entry?.isDailyQuota),
-      cooldownRemainingSec,
+      nextProbeInSec,
       consecutiveFailures: Number(entry?.consecutiveFailures) || 0,
       lastCheckedAt: Number(entry?.lastCheckedAt) || 0,
       lastAlertedAt: Number(entry?.lastAlertedAt) || 0
     };
+
+    if (pool === 'healthy') {
+      healthyItems.push(row);
+    } else {
+      quarantineItems.push(row);
+    }
+    return row;
+  });
+
+  // Display fastest healthy keys first inside Bucket 1
+  healthyItems.sort((a, b) => {
+    const la = a.status === 'ok' ? (a.latencyMs || 1500) : 5000;
+    const lb = b.status === 'ok' ? (b.latencyMs || 1500) : 5000;
+    return la - lb;
   });
 
   const usableCount = healthyCount + unknownCount;
@@ -339,13 +402,17 @@ export function getGeminiKeyHealthSnapshot(explicitApiKey = '') {
   return {
     checkedAt: healthStore.checkedAt,
     isChecking: healthStore.isChecking,
+    isHealingQuarantine: healthStore.isHealingQuarantine,
     total: allKeys.length,
     usableCount,
     healthyCount,
+    quarantineCount: quarantineItems.length,
     quotaCount,
     unstableCount,
     invalidCount,
     unknownCount,
+    healthyItems,
+    quarantineItems,
     items
   };
 }
@@ -403,7 +470,7 @@ function findKeyDisplayIndex(key) {
 /**
  * Lightweight (~5-token) probe of a single Gemini key against `gemini-3-flash-preview`.
  */
-export async function pingSingleGeminiKey(key, { timeoutMs = 10000 } = {}) {
+export async function pingSingleGeminiKey(key, { timeoutMs = 8000 } = {}) {
   const t0 = Date.now();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -502,11 +569,12 @@ async function alertUnfixableKeysToAdmin(unfixableItems = []) {
   });
 
   const msg = [
-    '🚨 <b>[ជូនដំណឹងប្រព័ន្ធស្កេន OCR] API Key ជួសជុលស្វ័យប្រវត្តិមិនបាន</b>',
+    '🚨 <b>[ប្រព័ន្ធស្កេន OCR] API Key ជាប់គាំង / ជួសជុលមិនបាន (ដាក់ចូលបន្ទប់ដាច់)</b>',
     '',
     ...lines,
     '',
-    `🟢 <b>Key ល្អដែលនៅសល់៖</b> ${snapshot.usableCount} / ${snapshot.total} Key`,
+    `🟢 <b>Healthy Pool កំពុងប្រើ៖</b> ${snapshot.usableCount} / ${snapshot.total} Key`,
+    `🔴 <b>Quarantine (ដាក់ដាច់)៖</b> ${snapshot.quarantineCount} Key`,
     `🕒 <b>ម៉ោងពិនិត្យ៖</b> ${formatNowKhmerTime()}`
   ].join('\n');
 
@@ -532,11 +600,10 @@ function scheduleSingleKeyAutoHeal(key, delayMs) {
   const timer = setTimeout(async () => {
     scheduledHealTimers.delete(id);
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-    const probe = await pingSingleGeminiKey(key, { timeoutMs: 10000 });
+    const probe = await pingSingleGeminiKey(key, { timeoutMs: 8000 });
     if (probe.ok) {
       reportKeyRuntimeResult(key, { ok: true, latencyMs: probe.latencyMs });
     } else if (probe.kind !== 'network') {
-      // Auto-heal failed -> escalate to Admin Telegram alert
       reportKeyRuntimeResult(key, {
         ok: false,
         kind: probe.kind,
@@ -552,8 +619,9 @@ function scheduleSingleKeyAutoHeal(key, delayMs) {
 
 /**
  * Record live runtime result from OCR calls (`ocrCore.js`) or background probes.
- * Automatically updates Healthy Pool, triggers Auto-Heal on transient errors,
- * and alerts Admin Telegram (1379643928) when a key cannot be auto-healed.
+ * - `ok: true`  -> Moves key into Pool 1 (🟢 Healthy Pool) with live latency.
+ * - `ok: false` -> Immediately locks key into Pool 2 (🔴/🟡 Quarantine Pool), schedules Auto-Heal,
+ *                  and alerts Admin Telegram (1379643928) if unfixable!
  */
 export function reportKeyRuntimeResult(key, outcome = {}) {
   const id = getKeyHealthId(key);
@@ -575,7 +643,7 @@ export function reportKeyRuntimeResult(key, outcome = {}) {
       errorDetail: '',
       statusCode: 200,
       isDailyQuota: false,
-      cooldownUntil: 0,
+      nextHealProbeAt: 0,
       consecutiveFailures: 0,
       lastCheckedAt: now,
       lastAlertedAt: prev.lastAlertedAt || 0,
@@ -589,9 +657,9 @@ export function reportKeyRuntimeResult(key, outcome = {}) {
       const keyIdx = findKeyDisplayIndex(key);
       const snap = getGeminiKeyHealthSnapshot();
       sendAdminTelegramHealthAlert(
-        `✅ <b>[ប្រព័ន្ធស្កេន OCR] Key ត្រឡប់មកដំណើរការវិញហើយ</b>\n` +
-        `• <b>Key #${keyIdx || '?'}</b> (<code>${masked}</code>) ដំណើរការធម្មតាវិញ\n` +
-        `🟢 <b>Key ល្អសរុប៖</b> ${snap.usableCount} / ${snap.total} Key`
+        `✅ <b>[ប្រព័ន្ធស្កេន OCR] Key ជួសជុលបាន និងត្រឡប់ចូល Healthy Pool វិញហើយ</b>\n` +
+        `• <b>Key #${keyIdx || '?'}</b> (<code>${masked}</code>) ដំណើរការធម្មតា (${((Number(outcome.latencyMs) || 1000) / 1000).toFixed(1)}s)\n` +
+        `🟢 <b>Healthy Pool សរុប៖</b> ${snap.usableCount} / ${snap.total} Key`
       );
     }
     return;
@@ -599,44 +667,44 @@ export function reportKeyRuntimeResult(key, outcome = {}) {
 
   const kind = outcome.kind || 'server_error';
   if (kind === 'network') {
-    // Device internet drop — do NOT blame or poison the API key!
+    // Device internet drop — do NOT blame or quarantine the API key!
     return;
   }
 
   const failures = (Number(prev.consecutiveFailures) || 0) + 1;
   let status = 'unstable';
   let isDailyQuota = false;
-  let cooldownUntil = now + TRANSIENT_COOLDOWN_MS;
+  let nextHealProbeAt = now + (failures >= 2 ? TRANSIENT_REPEAT_HEAL_WAIT_MS : TRANSIENT_FIRST_HEAL_WAIT_MS);
   let errorDetail = outcome.errorDetail || 'មានបញ្ហាបណ្ដោះអាសន្ន';
 
   if (kind === 'invalid') {
     status = 'invalid';
-    cooldownUntil = 0;
+    nextHealProbeAt = 0; // Permanent invalid — no automatic probe
     errorDetail = outcome.errorDetail || `Key ខូច / ផុតកំណត់ (HTTP ${outcome.statusCode || 403})`;
   } else if (kind === 'daily_quota') {
     status = 'quota';
     isDailyQuota = true;
-    cooldownUntil = now + DAILY_QUOTA_COOLDOWN_MS;
+    nextHealProbeAt = now + DAILY_QUOTA_HEAL_WAIT_MS;
     errorDetail = outcome.errorDetail || 'អស់កូតាប្រចាំថ្ងៃ (HTTP 429 Daily)';
   } else if (kind === 'quota') {
     status = 'quota';
     isDailyQuota = false;
-    cooldownUntil = now + RPM_COOLDOWN_MS;
+    nextHealProbeAt = now + RPM_HEAL_WAIT_MS;
     errorDetail = outcome.errorDetail || 'អស់កូតាបណ្ដោះអាសន្ន (HTTP 429 RPM)';
   } else {
     status = 'unstable';
-    cooldownUntil = now + TRANSIENT_COOLDOWN_MS;
+    nextHealProbeAt = now + (failures >= 2 ? TRANSIENT_REPEAT_HEAL_WAIT_MS : TRANSIENT_FIRST_HEAL_WAIT_MS);
     errorDetail = outcome.errorDetail || (kind === 'timeout' ? 'គាំងផុតម៉ោង (Timeout)' : `Gemini រអាក់រអួល (HTTP ${outcome.statusCode || 503})`);
   }
 
   healthStore.keys[id] = {
     masked,
     status,
-    latencyMs: Number(outcome.latencyMs) || 0,
+    latencyMs: 0,
     errorDetail,
     statusCode: Number(outcome.statusCode) || 0,
     isDailyQuota,
-    cooldownUntil,
+    nextHealProbeAt,
     consecutiveFailures: failures,
     lastCheckedAt: now,
     lastAlertedAt: prev.lastAlertedAt || 0,
@@ -646,7 +714,7 @@ export function reportKeyRuntimeResult(key, outcome = {}) {
   scheduleCloudHealthSync();
   notifyListeners();
 
-  // Decide: Auto-Heal first vs immediate Admin Telegram Alert
+  // Decide: quick first auto-heal vs immediate Admin Telegram Alert
   const isUnfixableNow =
     kind === 'invalid' ||
     kind === 'daily_quota' ||
@@ -662,18 +730,66 @@ export function reportKeyRuntimeResult(key, outcome = {}) {
         reason: errorDetail
       }
     ]);
-  } else if (!outcome.fromAutoHeal && !outcome.skipAutoHeal) {
-    const healDelay = kind === 'quota' ? AUTO_HEAL_DELAY_RPM_MS : AUTO_HEAL_DELAY_TRANSIENT_MS;
+  } else if (!outcome.fromAutoHeal && !outcome.skipAutoHeal && kind !== 'invalid') {
+    const healDelay = kind === 'quota' ? RPM_HEAL_WAIT_MS : TRANSIENT_FIRST_HEAL_WAIT_MS;
     scheduleSingleKeyAutoHeal(key, healDelay);
   }
 }
 
 /**
- * Cloud-Shared Periodic / Manual Health Check of ALL Gemini Keys.
- * - When `force === false`: checks Supabase first; if another device already checked within 20 min,
- *   hydrates the shared Healthy Pool with ZERO Gemini API calls!
- * - When probing: runs small batches (concurrency 4), automatically retries any transient failure
- *   once to Auto-Heal, syncs to Supabase, and alerts Admin Telegram (1379643928) if unfixable.
+ * Dedicated Quarantine Auto-Heal Cycle (runs every 2 minutes ONLY on quarantined keys!).
+ * Unlocks a quarantined key back into Healthy Pool ONLY when a real probe returns HTTP 200 OK.
+ */
+export async function runQuarantineAutoHealCycle({ explicitApiKey = '' } = {}) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+  if (inflightQuarantineHeal || inflightFullCheck) return;
+
+  inflightQuarantineHeal = (async () => {
+    try {
+      const allKeys = getAllConfiguredKeys(explicitApiKey);
+      const now = Date.now();
+      const dueKeys = allKeys.filter(key => {
+        const entry = healthStore.keys[getKeyHealthId(key)];
+        const st = resolveStrictStatus(entry);
+        if (st !== 'unstable' && st !== 'quota') return false;
+        const nextAt = Number(entry?.nextHealProbeAt) || 0;
+        return nextAt <= now;
+      });
+      if (dueKeys.length === 0) return;
+
+      healthStore.isHealingQuarantine = true;
+      notifyListeners();
+
+      for (const key of dueKeys) {
+        const probe = await pingSingleGeminiKey(key, { timeoutMs: 8000 });
+        if (probe.ok) {
+          reportKeyRuntimeResult(key, { ok: true, latencyMs: probe.latencyMs });
+        } else if (probe.kind !== 'network') {
+          reportKeyRuntimeResult(key, {
+            ok: false,
+            kind: probe.kind,
+            statusCode: probe.statusCode,
+            errorDetail: probe.errorDetail,
+            fromAutoHeal: true
+          });
+        }
+      }
+    } finally {
+      healthStore.isHealingQuarantine = false;
+      inflightQuarantineHeal = null;
+      notifyListeners();
+    }
+  })();
+
+  return inflightQuarantineHeal;
+}
+
+/**
+ * Cloud-Shared Periodic / Manual Health Check of ALL 13 Gemini Keys (every 5 minutes shared via Supabase).
+ * - When `force === false`: checks Supabase first; if another device checked within 5 min, hydrates
+ *   both Healthy Pool and Quarantine Pool with ZERO Gemini API calls!
+ * - When probing: checks all keys in batches of 4, runs 1 instant Auto-Heal retry on transient failures,
+ *   strictly separates Healthy Pool vs Quarantine Pool, syncs to Supabase, and alerts Admin if unfixable.
  */
 export async function runFullKeyPoolHealthCheck({
   explicitApiKey = '',
@@ -695,7 +811,6 @@ export async function runFullKeyPoolHealthCheck({
         return getGeminiKeyHealthSnapshot(explicitApiKey);
       }
 
-      // 1. Always consult shared cloud registry first when not forced (Option ក — zero duplicate quota burn!)
       if (!force) {
         const cloud = await fetchCloudKeyHealth();
         if (cloud) {
@@ -722,12 +837,12 @@ export async function runFullKeyPoolHealthCheck({
             const keyIdx = i + bIdx + 1;
             const id = getKeyHealthId(key);
             const masked = maskApiKey(key);
-            let probe = await pingSingleGeminiKey(key, { timeoutMs: 10000 });
+            let probe = await pingSingleGeminiKey(key, { timeoutMs: 8000 });
 
-            // Instant Auto-Heal retry on transient timeout/503 before declaring broken
+            // Instant Auto-Heal retry on transient timeout/503 before locking in Quarantine
             if (!probe.ok && (probe.kind === 'timeout' || probe.kind === 'server_error')) {
-              await new Promise(r => setTimeout(r, 800));
-              probe = await pingSingleGeminiKey(key, { timeoutMs: 10000 });
+              await new Promise(r => setTimeout(r, 700));
+              probe = await pingSingleGeminiKey(key, { timeoutMs: 8000 });
             }
 
             if (probe.ok) {
@@ -741,7 +856,6 @@ export async function runFullKeyPoolHealthCheck({
                 skipAutoHeal: true,
                 suppressAlert: true
               });
-              // Unfixable in full check: invalid, daily quota, or failed 2x auto-heal retry
               if (probe.kind === 'invalid' || probe.kind === 'daily_quota' || probe.kind === 'timeout' || probe.kind === 'server_error') {
                 unfixableToAlert.push({
                   id,
@@ -750,8 +864,7 @@ export async function runFullKeyPoolHealthCheck({
                   reason: probe.errorDetail
                 });
               } else if (probe.kind === 'quota') {
-                // Schedule auto-heal check after 65s RPM cooldown
-                scheduleSingleKeyAutoHeal(key, AUTO_HEAL_DELAY_RPM_MS);
+                scheduleSingleKeyAutoHeal(key, RPM_HEAL_WAIT_MS);
               }
             }
           })
@@ -780,18 +893,26 @@ export async function runFullKeyPoolHealthCheck({
 }
 
 /**
- * Start the shared periodic background health monitor (runs only if cloud status is older than 20 min).
+ * Start BOTH background monitors:
+ *  1) Full 13-key Healthy Pool monitor every 5 minutes (Cloud-shared across all devices)
+ *  2) Quarantine-only Auto-Heal monitor every 2 minutes (tests ONLY broken keys to unlock them when 200 OK!)
  */
 export function ensurePeriodicKeyHealthMonitor(explicitApiKey = '') {
   if (typeof window === 'undefined') return;
-  // Immediate non-blocking check (will hit cloud cache if fresh < 20 min -> 0 Gemini calls!)
+
   runFullKeyPoolHealthCheck({ explicitApiKey, force: false, notifyAdmin: true }).catch(() => {});
 
-  if (!periodicTimerId) {
-    periodicTimerId = setInterval(() => {
+  if (!healthyTimerId) {
+    healthyTimerId = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       runFullKeyPoolHealthCheck({ explicitApiKey, force: false, notifyAdmin: true }).catch(() => {});
     }, HEALTH_CHECK_TTL_MS);
   }
-}
 
+  if (!quarantineTimerId) {
+    quarantineTimerId = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      runQuarantineAutoHealCycle({ explicitApiKey }).catch(() => {});
+    }, QUARANTINE_PROBE_INTERVAL_MS);
+  }
+}

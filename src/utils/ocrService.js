@@ -100,8 +100,8 @@ export async function classifyAndOrientDocument(dataUrl, apiKey = '') {
     parts,
     apiKey,
     thinkingBudget: 0,
-    timeoutMs: 12000,
-    maxTimeoutAttempts: 2,
+    timeoutMs: 10000,
+    maxTimeoutAttempts: 4,
     models: GEMINI_ROUTER_MODELS
   });
 
@@ -153,8 +153,8 @@ export async function detectUprightRotationWithAI(dataUrl, apiKey = '') {
       parts,
       apiKey,
       thinkingBudget: 0,
-      timeoutMs: 18000,
-      maxTimeoutAttempts: 1,
+      timeoutMs: 10000,
+      maxTimeoutAttempts: 2,
       models: GEMINI_ROUTER_MODELS
     });
     const parsedObj = Array.isArray(parsed) ? (parsed[0] || {}) : (parsed || {});

@@ -587,23 +587,17 @@ export default function ApiKeyModal({
                 {/* Summary Pills */}
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11, fontWeight: 700 }}>
                   <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 12, padding: '2px 8px' }}>
-                    🟢 ល្អ: {keyHealth.usableCount}
+                    🟢 Healthy Pool: {keyHealth.usableCount}
                   </span>
-                  {keyHealth.quotaCount > 0 && (
-                    <span style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', borderRadius: 12, padding: '2px 8px' }}>
-                      🟠 អស់កូតា: {keyHealth.quotaCount}
-                    </span>
-                  )}
-                  {keyHealth.unstableCount > 0 && (
-                    <span style={{ background: '#fefce8', color: '#854d0e', border: '1px solid #fef08a', borderRadius: 12, padding: '2px 8px' }}>
-                      🟡 គាំង/កំពុងជួសជុល: {keyHealth.unstableCount}
-                    </span>
-                  )}
-                  {keyHealth.invalidCount > 0 && (
-                    <span style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 12, padding: '2px 8px' }}>
-                      🔴 ខូច: {keyHealth.invalidCount}
-                    </span>
-                  )}
+                  <span style={{
+                    background: keyHealth.quarantineCount > 0 ? '#fef2f2' : '#f8fafc',
+                    color: keyHealth.quarantineCount > 0 ? '#b91c1c' : '#64748b',
+                    border: `1px solid ${keyHealth.quarantineCount > 0 ? '#fecaca' : '#e2e8f0'}`,
+                    borderRadius: 12,
+                    padding: '2px 8px'
+                  }}>
+                    🔒 Quarantine (ដាក់ដាច់): {keyHealth.quarantineCount}
+                  </span>
                   {keyHealth.checkedAt > 0 && (
                     <span style={{ color: '#64748b', fontWeight: 600, padding: '2px 4px' }}>
                       ពិនិត្យចុងក្រោយ៖ {new Date(keyHealth.checkedAt).toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit' })}
@@ -611,56 +605,106 @@ export default function ApiKeyModal({
                   )}
                 </div>
 
-                {/* Per-Key Status Rows */}
+                {/* Strict 2-Pool Display: Pool 1 (Healthy) vs Pool 2 (Locked Quarantine) */}
                 <div style={{
-                  maxHeight: 180,
+                  maxHeight: 220,
                   overflowY: 'auto',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 4,
+                  gap: 8,
                   paddingRight: 2
                 }}>
-                  {keyHealth.items.map(it => {
-                    const badgeStyle =
-                      it.status === 'ok'
-                        ? { bg: '#f0fdf4', color: '#166534', border: '#bbf7d0', dot: '#16a34a' }
-                        : it.status === 'quota'
-                          ? { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa', dot: '#ea580c' }
-                          : it.status === 'unstable'
-                            ? { bg: '#fefce8', color: '#854d0e', border: '#fef08a', dot: '#eab308' }
-                            : it.status === 'invalid'
-                              ? { bg: '#fef2f2', color: '#b91c1c', border: '#fecaca', dot: '#dc2626' }
-                              : { bg: '#f8fafc', color: '#475569', border: '#e2e8f0', dot: '#94a3b8' };
-                    return (
-                      <div
-                        key={it.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                          padding: '5px 8px',
-                          borderRadius: 7,
-                          background: badgeStyle.bg,
-                          border: `1px solid ${badgeStyle.border}`,
-                          fontSize: 11.5
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: badgeStyle.dot, flexShrink: 0 }} />
-                          <strong style={{ color: '#0f172a', flexShrink: 0 }}>Key #{it.index}</strong>
-                          <code style={{ fontSize: 11, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.masked}</code>
-                        </div>
-                        <span style={{ fontWeight: 700, color: badgeStyle.color, whiteSpace: 'nowrap', fontSize: 11 }}>
-                          {it.statusLabel}
-                        </span>
+                  {/* Pool 1: Healthy Pool (Fastest-First) */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#166534', marginBottom: 4 }}>
+                      🟢 បន្ទប់ទី ១៖ Key ល្អកំពុងប្រើសម្រាប់ស្កេន ({keyHealth.healthyItems.length})
+                    </div>
+                    {keyHealth.healthyItems.length === 0 ? (
+                      <div style={{ fontSize: 11, color: '#b91c1c', background: '#fef2f2', padding: '6px 8px', borderRadius: 6, border: '1px solid #fecaca' }}>
+                        ⚠️ មិនមាន Key ល្អក្នុង Healthy Pool ទេ! សូមចុច «ពិនិត្យ Key ទាំងអស់»
                       </div>
-                    );
-                  })}
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {keyHealth.healthyItems.map(it => (
+                          <div
+                            key={it.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              padding: '5px 8px',
+                              borderRadius: 7,
+                              background: it.isSlow ? '#fffbeb' : '#f0fdf4',
+                              border: `1px solid ${it.isSlow ? '#fde68a' : '#bbf7d0'}`,
+                              fontSize: 11.5
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: it.isSlow ? '#d97706' : '#16a34a', flexShrink: 0 }} />
+                              <strong style={{ color: '#0f172a', flexShrink: 0 }}>Key #{it.index}</strong>
+                              <code style={{ fontSize: 11, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.masked}</code>
+                            </div>
+                            <span style={{ fontWeight: 700, color: it.isSlow ? '#92400e' : '#166534', whiteSpace: 'nowrap', fontSize: 11 }}>
+                              {it.statusLabel}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pool 2: Locked Quarantine Pool (Never handed to user scan until 200 OK!) */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: keyHealth.quarantineItems.length > 0 ? '#b91c1c' : '#64748b', marginBottom: 4 }}>
+                      🔒 បន្ទប់ទី ២៖ Key គាំង / ដាក់ដាច់មិនឱ្យ User ប្រើ ({keyHealth.quarantineItems.length})
+                    </div>
+                    {keyHealth.quarantineItems.length === 0 ? (
+                      <div style={{ fontSize: 11, color: '#166534', background: '#f8fafc', padding: '5px 8px', borderRadius: 6, border: '1px dashed #cbd5e1' }}>
+                        ✅ គ្មាន Key ជាប់គាំង ឬអស់កូតាក្នុងបន្ទប់ដាក់ដាច់ទេ
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {keyHealth.quarantineItems.map(it => {
+                          const qStyle =
+                            it.status === 'invalid'
+                              ? { bg: '#fef2f2', color: '#b91c1c', border: '#fecaca', dot: '#dc2626' }
+                              : it.status === 'quota'
+                                ? { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa', dot: '#ea580c' }
+                                : { bg: '#fefce8', color: '#854d0e', border: '#fef08a', dot: '#eab308' };
+                          return (
+                            <div
+                              key={it.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                                padding: '5px 8px',
+                                borderRadius: 7,
+                                background: qStyle.bg,
+                                border: `1px solid ${qStyle.border}`,
+                                fontSize: 11.5
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: qStyle.dot, flexShrink: 0 }} />
+                                <strong style={{ color: '#0f172a', flexShrink: 0 }}>Key #{it.index}</strong>
+                                <code style={{ fontSize: 11, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.masked}</code>
+                              </div>
+                              <span style={{ fontWeight: 700, color: qStyle.color, whiteSpace: 'nowrap', fontSize: 10.5 }}>
+                                {it.statusLabel}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.45, background: '#f8fafc', padding: '6px 8px', borderRadius: 6 }}>
-                  🛡️ ប្រព័ន្ធពិនិត្យស្វ័យប្រវត្តិរៀងរាល់ ២០ នាទី (រួមគ្នាគ្រប់ឧបករណ៍) • បើ Key ណាគាំង នឹងដកចេញ និងជួសជុលស្វ័យប្រវត្តិ — បើជួសជុលមិនបាន នឹងបាញ់សារជូនដំណឹងទៅ Telegram Admin (<code>{ADMIN_ALERT_CHAT_ID}</code>) ភ្លាមៗ។
+                  🛡️ Check Healthy Pool រៀងរាល់ <strong>៥ នាទី</strong> (រួមគ្នាលើ Cloud) • តេស្តជួសជុលបន្ទប់ដាក់ដាច់រៀងរាល់ <strong>២ នាទី</strong> (ទាល់តែចេញ 200 OK ទើបអនុញ្ញាតឱ្យប្រើវិញ) • បើជួសជុលមិនបាន បាញ់សារទៅ Telegram Admin (<code>{ADMIN_ALERT_CHAT_ID}</code>)។
                 </div>
               </div>
             )}

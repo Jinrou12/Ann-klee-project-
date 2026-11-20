@@ -209,8 +209,8 @@ export async function callGeminiJsonWithResilience({
   apiKey = '',
   thinkingBudget = 0,
   thinkingLevel = '',
-  timeoutMs = 26000,
-  maxTimeoutAttempts = 2,
+  timeoutMs = 15000,
+  maxTimeoutAttempts = 4,
   models = GEMINI_VISION_MODELS
 }) {
   const modelList = Array.isArray(models) && models.length > 0 ? models : GEMINI_VISION_MODELS;

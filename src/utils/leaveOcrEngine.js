@@ -273,8 +273,8 @@ export async function extractLeaveSlipWithGemini({
     parts,
     apiKey,
     thinkingBudget: 512,
-    timeoutMs: 28000,
-    maxTimeoutAttempts: 2
+    timeoutMs: 15000,
+    maxTimeoutAttempts: 4
   });
 }
 
