@@ -1265,6 +1265,32 @@ export default function App() {
     }));
   };
 
+  const handleSetAllQueueLeaveDates = (targetDateStr) => {
+    if (!targetDateStr) return;
+    updateQueueSafe(prev => prev.map(qItem => {
+      if (qItem.status !== 'processed') return qItem;
+      const res = qItem.processedData?.result || qItem.processedData || {};
+      const rawType = qItem.processedData?.detectedType || res.detectedType || qItem.docTypeHint || 'leave';
+      const resolvedType = rawType === 'auto' ? 'leave' : rawType;
+      if (resolvedType !== 'leave') return qItem;
+      const baseLeave = qItem.processedData?.leaveItems?.[0] || res.leaveItems?.[0] || {
+        name: '',
+        grade: '៣',
+        reason: 'ការងារផ្ទាល់ខ្លួន',
+        duration: '១ថ្ងៃ',
+        note: ''
+      };
+      return {
+        ...qItem,
+        processedData: {
+          ...qItem.processedData,
+          detectedType: 'leave',
+          leaveItems: [{ ...baseLeave, date: targetDateStr }]
+        }
+      };
+    }));
+  };
+
   const handleProcessQueue = useCallback(() => {
     processQueueWorker();
   }, [processQueueWorker]);
@@ -1730,6 +1756,7 @@ export default function App() {
             {activeTab === 'upload' && canUploadOcr && (
               <UploadSection
                 queue={queue}
+                currentMonthKey={currentMonthKey}
                 studentMaster={appState.studentMaster}
                 allLeaves={appState.leaves}
                 onAddToQueue={handleAddToQueue}
@@ -1737,6 +1764,7 @@ export default function App() {
                 onClearQueue={handleClearQueue}
                 onProcessQueue={handleProcessQueue}
                 onUpdateQueueItem={handleUpdateQueueItem}
+                onSetAllLeaveDates={handleSetAllQueueLeaveDates}
                 onRotateQueueItem={handleRotateQueueItem}
                 onRetakeQueueItem={handleRetakeQueueItem}
                 onApproveItem={handleApproveSingleItem}

@@ -445,3 +445,108 @@ export function sortRecordsByDateAsc(records = []) {
     .map(entry => entry.item);
 }
 
+const KHMER_MONTH_NAMES_12 = [
+  'មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា',
+  'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'
+];
+
+/**
+ * Analyze a scanned leave date against:
+ *  1) Today's real calendar day (`nowDate.getDate()`) -> `isDayMismatch` (highlights date box RED)
+ *  2) Active selected month (`currentMonthKey`, e.g. "2026-11") -> `isMonthMismatch` (highlights date box RED + requires Double-Click/2-Tap to insert)
+ * Supports Khmer & Arabic numerals, DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, DD/MM, and range strings ("... ដល់ ...").
+ */
+export function analyzeScannedLeaveDate(rawDate, currentMonthKey = '', nowDate = new Date()) {
+  const emptyResult = {
+    isValid: false,
+    day: null,
+    month: null,
+    year: null,
+    todayDay: nowDate.getDate(),
+    targetMonth: null,
+    scannedMonthName: '',
+    targetMonthName: '',
+    isDayMismatch: false,
+    isMonthMismatch: false,
+    isAnyMismatch: false,
+    requiresDoubleClick: false
+  };
+
+  if (rawDate === null || rawDate === undefined) return emptyResult;
+  let clean = String(rawDate).replace(/\u200B/g, '').trim();
+  if (!clean) return emptyResult;
+
+  clean = clean.replace(/2024/g, '2026').replace(/២០២៤/g, '២០២៦');
+  if (clean.includes('ដល់') || (clean.includes('-') && clean.includes('/')) || /to/i.test(clean)) {
+    const parts = clean.split(/ដល់|-|\/to\//i);
+    if (parts[0] && parts[0].trim().length >= 3) {
+      clean = parts[0].trim();
+    }
+  }
+
+  const arabic = toArabicDigits(clean);
+  let day = null;
+  let month = null;
+  let year = null;
+
+  const dmy = arabic.match(/^(\d{1,2})\s*[\/.-]\s*(\d{1,2})(?:\s*[\/.-]\s*(\d{2,4}))?$/);
+  const ymd = !dmy ? arabic.match(/^(\d{4})\s*[\/.-]\s*(\d{1,2})\s*[\/.-]\s*(\d{1,2})$/) : null;
+
+  if (dmy) {
+    day = parseInt(dmy[1], 10);
+    month = parseInt(dmy[2], 10);
+    if (dmy[3]) {
+      year = parseInt(dmy[3], 10);
+      if (year < 100) year += 2000;
+    }
+  } else if (ymd) {
+    year = parseInt(ymd[1], 10);
+    month = parseInt(ymd[2], 10);
+    day = parseInt(ymd[3], 10);
+  }
+
+  if (!Number.isInteger(day) || !Number.isInteger(month) || day < 1 || day > 31 || month < 1 || month > 12) {
+    return emptyResult;
+  }
+
+  let targetMonth = nowDate.getMonth() + 1;
+  const mkMatch = String(currentMonthKey || '').trim().match(/^(\d{4})-(\d{1,2})$/);
+  if (mkMatch) {
+    const parsedTargetMonth = parseInt(mkMatch[2], 10);
+    if (parsedTargetMonth >= 1 && parsedTargetMonth <= 12) {
+      targetMonth = parsedTargetMonth;
+    }
+  }
+
+  const todayDay = nowDate.getDate();
+  const isDayMismatch = day !== todayDay;
+  const isMonthMismatch = month !== targetMonth;
+
+  return {
+    isValid: true,
+    day,
+    month,
+    year,
+    todayDay,
+    targetMonth,
+    scannedMonthName: KHMER_MONTH_NAMES_12[month - 1] || String(month),
+    targetMonthName: KHMER_MONTH_NAMES_12[targetMonth - 1] || String(targetMonth),
+    isDayMismatch,
+    isMonthMismatch,
+    isAnyMismatch: isDayMismatch || isMonthMismatch,
+    requiresDoubleClick: isMonthMismatch
+  };
+}
+
+/**
+ * Return today's date formatted in Khmer numerals DD/MM/YYYY (e.g. "២០/១១/២០២៦").
+ * @param {Date} nowDate
+ * @returns {string}
+ */
+export function getTodayKhmerDateStr(nowDate = new Date()) {
+  const dd = String(nowDate.getDate()).padStart(2, '0');
+  const mm = String(nowDate.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(nowDate.getFullYear());
+  return toKhmerDigits(`${dd}/${mm}/${yyyy}`);
+}
+

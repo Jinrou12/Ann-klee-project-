@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, RotateCw, CheckCircle2, AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, Trash2, Sparkles } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, RotateCw, RefreshCw, CheckCircle2, AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, Trash2, Sparkles } from 'lucide-react';
 import { matchStudentName, getPhoneticStudentSuggestions, getRealReasonSuggestions } from '../utils/studentMaster';
-import { parseDurationShorthand, getDurationSuggestions, normalizeCurrency, getCurrencySymbol, sumByCurrency, formatCurrencyTotals } from '../utils/khmerNumerals';
+import { parseDurationShorthand, getDurationSuggestions, normalizeCurrency, getCurrencySymbol, sumByCurrency, formatCurrencyTotals, toKhmerDigits, analyzeScannedLeaveDate, getTodayKhmerDateStr } from '../utils/khmerNumerals';
 import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
 import CurrencyToggle from './CurrencyToggle';
 import OcrNameReviewHint from './OcrNameReviewHint';
@@ -10,6 +10,7 @@ import MobileCustomSelect from './mobile/MobileCustomSelect';
 export default function ReviewModal({
   isOpen,
   isMobile = false,
+  currentMonthKey = '',
   onClose,
   queueItem,
   studentMaster,
@@ -27,7 +28,21 @@ export default function ReviewModal({
 }) {
   const [focusedField, setFocusedField] = useState(null); // 'name' | 'reason' | 'duration' | null
   const [isImageExpanded, setIsImageExpanded] = useState(false);
+  const [armedConfirm, setArmedConfirm] = useState(false);
+  const armConfirmTimerRef = useRef(null);
   const touchStartRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (armConfirmTimerRef.current) clearTimeout(armConfirmTimerRef.current);
+    };
+  }, []);
+
+  const clearArmedConfirm = () => {
+    if (armConfirmTimerRef.current) clearTimeout(armConfirmTimerRef.current);
+    armConfirmTimerRef.current = null;
+    setArmedConfirm(false);
+  };
   const queueItemId = queueItem?.id || '';
   const trainingDataset = useMemo(() => {
     void queueItemId;
@@ -123,7 +138,20 @@ export default function ReviewModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, queueItem, hasPrev, hasNext, onNavigatePrev, onNavigateNext, onClose]);
 
+  useEffect(() => {
+    clearArmedConfirm();
+  }, [queueItemId, leaveItem.date, docType]);
+
   if (!isOpen || !queueItem) return null;
+
+  const isPending = queueItem.status === 'pending' || queueItem.status === 'processing';
+  const pendingStageLabel = queueItem.status === 'processing'
+    ? (queueItem.scanStage === 'orient'
+      ? 'កំពុងរៀបចំរូបភាព (1/3)...'
+      : queueItem.scanStage === 'match'
+        ? 'កំពុងផ្ទៀងឈ្មោះសិស្ស (3/3)...'
+        : 'កំពុងអានអក្សរដោយ AI (2/3)...')
+    : 'កំពុងរង់ចាំស្កេន...';
 
   const studentMatch = matchStudentName(leaveItem.name, studentMaster);
 
@@ -222,7 +250,23 @@ export default function ReviewModal({
     }
   };
 
+  const leaveDateCheck = docType === 'leave'
+    ? analyzeScannedLeaveDate(leaveItem.date, currentMonthKey)
+    : { isValid: false, isDayMismatch: false, isMonthMismatch: false, isAnyMismatch: false, requiresDoubleClick: false };
+
   const handleConfirm = () => {
+    if (docType === 'leave' && leaveDateCheck.requiresDoubleClick) {
+      if (!armedConfirm) {
+        if (armConfirmTimerRef.current) clearTimeout(armConfirmTimerRef.current);
+        setArmedConfirm(true);
+        armConfirmTimerRef.current = setTimeout(() => {
+          setArmedConfirm(false);
+          armConfirmTimerRef.current = null;
+        }, 3000);
+        return;
+      }
+      clearArmedConfirm();
+    }
     if (docType === 'leave') {
       onConfirmApprove({
         type: 'leave',
@@ -336,7 +380,6 @@ export default function ReviewModal({
       ? getRealReasonSuggestions(reasonQuery, { allLeaves, trainingDataset, queue })
       : [];
 
-    const isPending = queueItem.status === 'processing';
     const isLearnedMemory = initialExtracted.scanSource === 'learned-memory' || queueItem.processedData?.scanSource === 'learned-memory';
     const isCloudScan = initialExtracted.scanSource === 'gemini-cloud' || isLearnedMemory;
 
@@ -458,50 +501,52 @@ export default function ReviewModal({
             </div>
           </div>
 
-          {/* Document Type Segmented Switcher (Matches Image 3) */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            background: '#f1f5f9',
-            padding: 3,
-            borderRadius: 8,
-            gap: 4
-          }}>
-            <button
-              type="button"
-              onClick={() => switchDocType('leave')}
-              style={{
-                background: isLeave ? '#b45309' : 'transparent',
-                color: isLeave ? '#ffffff' : '#64748b',
-                border: 'none',
-                padding: '7px 8px',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                textAlign: 'center'
-              }}
-            >
-              ក្រដាសសុំច្បាប់ (PDF 2)
-            </button>
-            <button
-              type="button"
-              onClick={() => switchDocType('finance')}
-              style={{
-                background: !isLeave ? '#0f766e' : 'transparent',
-                color: !isLeave ? '#ffffff' : '#64748b',
-                border: 'none',
-                padding: '7px 8px',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                textAlign: 'center'
-              }}
-            >
-              ប៉ុងចំណាយ/ចំណូល (PDF 1)
-            </button>
-          </div>
+          {/* Document Type Segmented Switcher (Hide until AI confirms type) */}
+          {!isPending && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              background: '#f1f5f9',
+              padding: 3,
+              borderRadius: 8,
+              gap: 4
+            }}>
+              <button
+                type="button"
+                onClick={() => switchDocType('leave')}
+                style={{
+                  background: isLeave ? '#b45309' : 'transparent',
+                  color: isLeave ? '#ffffff' : '#64748b',
+                  border: 'none',
+                  padding: '7px 8px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  textAlign: 'center'
+                }}
+              >
+                ក្រដាសសុំច្បាប់ (PDF 2)
+              </button>
+              <button
+                type="button"
+                onClick={() => switchDocType('finance')}
+                style={{
+                  background: !isLeave ? '#0f766e' : 'transparent',
+                  color: !isLeave ? '#ffffff' : '#64748b',
+                  border: 'none',
+                  padding: '7px 8px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  textAlign: 'center'
+                }}
+              >
+                ប៉ុងចំណាយ/ចំណូល (PDF 1)
+              </button>
+            </div>
+          )}
 
           {/* Expanded Full-Width Image Viewer (when user taps ពង្រីកមើល inside modal) */}
           {isImageExpanded && (
@@ -701,10 +746,14 @@ export default function ReviewModal({
                       gap: 3,
                       fontWeight: 600
                     }}>
-                      <Sparkles size={11} color={isPending ? '#2563eb' : (isCloudScan ? '#059669' : '#d97706')} />
+                      {queueItem.status === 'processing' ? (
+                        <RefreshCw size={11} color="#2563eb" className="spin" />
+                      ) : (
+                        <Sparkles size={11} color={isPending ? '#64748b' : (isCloudScan ? '#059669' : '#d97706')} />
+                      )}
                       <span>
                         {isPending
-                          ? 'កំពុងស្កេន...'
+                          ? pendingStageLabel
                           : isLearnedMemory
                             ? 'AI (ចងចាំ ១០០%)'
                             : 'AI Vision'}
@@ -739,59 +788,128 @@ export default function ReviewModal({
                 )}
               </div>
 
-              {isLeave ? (
+              {isPending ? (
+                <div style={{
+                  background: queueItem.status === 'processing' ? '#eff6ff' : '#f8fafc',
+                  border: `1px dashed ${queueItem.status === 'processing' ? '#93c5fd' : '#cbd5e1'}`,
+                  borderRadius: 8,
+                  padding: '14px 10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textAlign: 'center',
+                  gap: 6,
+                  minHeight: 112
+                }}>
+                  <div style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    background: queueItem.status === 'processing' ? '#dbeafe' : '#e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {queueItem.status === 'processing' ? (
+                      <RefreshCw size={15} color="#2563eb" className="spin" />
+                    ) : (
+                      <Sparkles size={15} color="#64748b" />
+                    )}
+                  </div>
+                  <div style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: queueItem.status === 'processing' ? '#1d4ed8' : '#475569',
+                    lineHeight: 1.35
+                  }}>
+                    {pendingStageLabel}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#64748b', lineHeight: 1.4 }}>
+                    កំពុងបញ្ជាក់ប្រភេទឯកសារ (ច្បាប់ ឬ ប៉ុង) និងអានអក្សរដោយ AI...
+                  </div>
+                </div>
+              ) : isLeave ? (
                 <>
-                  {/* Row 2: Student Name */}
+                  {/* Row 2: Student Name + Grade side-by-side on Mobile */}
                   <div>
-                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
-                      👤 គោត្តនាម-នាម៖
-                    </label>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <input
-                        type="text"
-                        value={leaveItem.name || ''}
-                        onFocus={() => setFocusedField('name')}
-                        onBlur={() => setTimeout(() => setFocusedField(prev => prev === 'name' ? null : prev), 180)}
-                        onChange={e => applyLeavePatch({ name: e.target.value, needsReview: false, reviewSuggestions: [] })}
-                        placeholder="វាយឈ្មោះសិស្ស..."
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 74px', gap: 5, marginBottom: 2 }}>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b' }}>
+                        👤 នាម៖
+                      </label>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b' }}>
+                        ថ្នាក់៖
+                      </label>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 74px', gap: 5, alignItems: 'center' }}>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                        <input
+                          type="text"
+                          value={leaveItem.name || ''}
+                          onFocus={() => setFocusedField('name')}
+                          onBlur={() => setTimeout(() => setFocusedField(prev => prev === 'name' ? null : prev), 180)}
+                          onChange={e => applyLeavePatch({ name: e.target.value, needsReview: false, reviewSuggestions: [] })}
+                          placeholder="វាយឈ្មោះសិស្ស..."
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            boxSizing: 'border-box',
+                            fontSize: 13.5,
+                            fontWeight: 700,
+                            padding: '6px 24px 6px 8px',
+                            border: isNameFocused ? '1.5px solid #b45309' : '1px solid #cbd5e1',
+                            borderRadius: 6,
+                            background: '#ffffff',
+                            outline: 'none'
+                          }}
+                        />
+                        {leaveItem.name && (
+                          <button
+                            type="button"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => {
+                              applyLeavePatch({ name: '' });
+                              setFocusedField('name');
+                            }}
+                            style={{
+                              position: 'absolute',
+                              right: 4,
+                              background: '#f1f5f9',
+                              color: '#64748b',
+                              border: 'none',
+                              width: 18,
+                              height: 18,
+                              borderRadius: '50%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              padding: 0
+                            }}
+                          >
+                            <X size={11} />
+                          </button>
+                        )}
+                      </div>
+                      <MobileCustomSelect
+                        value={leaveItem.grade || '៣'}
+                        onChange={e => applyLeavePatch({ grade: e.target.value })}
                         style={{
                           width: '100%',
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: 700,
-                          padding: '6px 28px 6px 8px',
-                          border: isNameFocused ? '1.5px solid #b45309' : '1px solid #cbd5e1',
+                          padding: '6px 5px',
+                          border: '1px solid #cbd5e1',
                           borderRadius: 6,
                           background: '#ffffff',
-                          outline: 'none'
+                          color: '#0f172a'
                         }}
-                      />
-                      {leaveItem.name && (
-                        <button
-                          type="button"
-                          onMouseDown={e => e.preventDefault()}
-                          onClick={() => {
-                            applyLeavePatch({ name: '' });
-                            setFocusedField('name');
-                          }}
-                          style={{
-                            position: 'absolute',
-                            right: 5,
-                            background: '#f1f5f9',
-                            color: '#64748b',
-                            border: 'none',
-                            width: 20,
-                            height: 20,
-                            borderRadius: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            padding: 0
-                          }}
-                        >
-                          <X size={12} />
-                        </button>
-                      )}
+                      >
+                        <option value="មត្តេយ្យ">មត្តេយ្យ</option>
+                        <option value="១">ទី ១</option>
+                        <option value="២">ទី ២</option>
+                        <option value="៣">ទី ៣</option>
+                      </MobileCustomSelect>
                     </div>
                     <OcrNameReviewHint
                       leaveItem={leaveItem}
@@ -883,13 +1001,42 @@ export default function ReviewModal({
                       style={{
                         width: '100%',
                         fontSize: 13,
-                        fontWeight: 600,
+                        fontWeight: leaveDateCheck.isAnyMismatch ? 700 : 600,
                         padding: '5px 8px',
-                        border: '1px solid #cbd5e1',
+                        border: leaveDateCheck.isAnyMismatch ? '1.5px solid #dc2626' : '1px solid #cbd5e1',
                         borderRadius: 6,
-                        background: '#ffffff'
+                        background: leaveDateCheck.isAnyMismatch ? '#fef2f2' : '#ffffff',
+                        color: leaveDateCheck.isAnyMismatch ? '#b91c1c' : '#0f172a'
                       }}
                     />
+                    {leaveDateCheck.isAnyMismatch && (
+                      <button
+                        type="button"
+                        onClick={() => applyLeavePatch({ date: getTodayKhmerDateStr() })}
+                        title="ចុចដើម្បីប្ដូរទៅកាលបរិច្ឆេទថ្ងៃនេះ"
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          textAlign: 'left',
+                          fontFamily: 'inherit',
+                          marginTop: 4,
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          color: '#b91c1c',
+                          background: '#fef2f2',
+                          border: '1px solid #fecaca',
+                          borderRadius: 6,
+                          padding: '3px 7px',
+                          lineHeight: 1.35,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {leaveDateCheck.isMonthMismatch
+                          ? '🚫 ខុសខែ'
+                          : `⚠️ ខុសពីថ្ងៃនេះ (ថ្ងៃនេះទី ${toKhmerDigits(String(leaveDateCheck.todayDay).padStart(2, '0'))})`}
+                      </button>
+                    )}
                   </div>
                 </>
               ) : (
@@ -981,7 +1128,9 @@ export default function ReviewModal({
             </div>
           </div>
 
-          {/* Bottom Full-Width Section (Matches Image 3) */}
+          {/* Bottom Full-Width Section (Wait for AI confirmation) */}
+          {!isPending && (
+          <>
           <div style={{
             background: '#f8fafc',
             padding: 10,
@@ -1408,23 +1557,38 @@ export default function ReviewModal({
             onClick={handleConfirm}
             style={{
               width: '100%',
-              background: '#0f766e',
+              background: armedConfirm
+                ? '#dc2626'
+                : leaveDateCheck.requiresDoubleClick
+                  ? '#c2410c'
+                  : '#0f766e',
               color: '#ffffff',
-              border: 'none',
+              border: leaveDateCheck.requiresDoubleClick ? '1.5px solid #dc2626' : 'none',
               padding: '11px 16px',
               borderRadius: 8,
-              fontSize: 14,
+              fontSize: 13.5,
               fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: 6,
               cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(15,118,110,0.25)'
+              touchAction: 'manipulation',
+              boxShadow: armedConfirm
+                ? '0 2px 10px rgba(220, 38, 38, 0.4)'
+                : '0 2px 6px rgba(15,118,110,0.25)'
             }}
           >
-            <span>✓ បញ្ចូលក្នុងតារាង</span>
+            <span>
+              {armedConfirm
+                ? '⚠️ ខុសខែ! ចុចម្ដងទៀតដើម្បីបញ្ចូល'
+                : leaveDateCheck.requiresDoubleClick
+                  ? '⚠️ បញ្ចូលក្នុងតារាង (ខុសខែ • ចុច ២ ដង)'
+                  : '✓ បញ្ចូលក្នុងតារាង'}
+            </span>
           </button>
+          </>
+          )}
         </div>
       </div>
     );
@@ -1718,6 +1882,59 @@ export default function ReviewModal({
             flexDirection: 'column',
             justifyContent: 'space-between'
           }}>
+            {isPending ? (
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <div style={{
+                  width: '100%',
+                  background: queueItem.status === 'processing' ? '#eff6ff' : '#f8fafc',
+                  border: `1.5px dashed ${queueItem.status === 'processing' ? '#93c5fd' : '#cbd5e1'}`,
+                  borderRadius: 12,
+                  padding: '36px 24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textAlign: 'center',
+                  gap: 10
+                }}>
+                  <div style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: '50%',
+                    background: queueItem.status === 'processing' ? '#dbeafe' : '#e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {queueItem.status === 'processing' ? (
+                      <RefreshCw size={22} color="#2563eb" className="spin" />
+                    ) : (
+                      <Sparkles size={22} color="#64748b" />
+                    )}
+                  </div>
+                  <div style={{
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: queueItem.status === 'processing' ? '#1d4ed8' : '#475569'
+                  }}>
+                    ⏳ {pendingStageLabel}
+                  </div>
+                  <div style={{
+                    fontSize: 12.5,
+                    color: '#64748b',
+                    maxWidth: 420,
+                    lineHeight: 1.55
+                  }}>
+                    ប្រព័ន្ធកំពុងបញ្ជាក់ប្រភេទឯកសារ (<strong>ក្រដាសសុំច្បាប់</strong> ឬ <strong>ប៉ុងចំណាយ/ចំណូល</strong>) និងអានអក្សរដោយ AI — ប៊ូតុងជ្រើសរើសប្រភេទ និងទិន្នន័យនឹងបង្ហាញភ្លាមៗពេលស្កេនចប់។
+                  </div>
+                </div>
+              </div>
+            ) : (
             <div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -1837,70 +2054,72 @@ export default function ReviewModal({
 
                     return (
                       <>
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 10 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 10, alignItems: 'start' }}>
                           <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
-                              គោត្តនាម-និងនាម (ឈ្មោះសិស្ស)៖
-                            </label>
-                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                              <input
-                                type="text"
-                                value={leaveItem.name}
-                                onFocus={() => setFocusedField('name')}
-                                onBlur={() => setTimeout(() => setFocusedField(prev => prev === 'name' ? null : prev), 180)}
-                                onChange={e => applyLeavePatch({ name: e.target.value, needsReview: false, reviewSuggestions: [] })}
-                                placeholder="វាយអក្សរផ្ដើម ឧ. ច, ឆ, គ, ណ..."
-                                style={{
-                                  width: '100%',
-                                  fontSize: 14,
-                                  fontWeight: 600,
-                                  padding: '8px 32px 8px 10px',
-                                  borderColor: '#b45309'
-                                }}
-                              />
-                              {leaveItem.name && (
-                                <button
-                                  type="button"
-                                  onMouseDown={e => e.preventDefault()}
-                                  onClick={() => {
-                                    applyLeavePatch({ name: '' });
-                                    setFocusedField('name');
-                                  }}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                នាម៖
+                              </label>
+                              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                                <input
+                                  type="text"
+                                  value={leaveItem.name}
+                                  onFocus={() => setFocusedField('name')}
+                                  onBlur={() => setTimeout(() => setFocusedField(prev => prev === 'name' ? null : prev), 180)}
+                                  onChange={e => applyLeavePatch({ name: e.target.value, needsReview: false, reviewSuggestions: [] })}
+                                  placeholder="វាយអក្សរផ្ដើម ឧ. ច, ឆ, គ, ណ..."
                                   style={{
-                                    position: 'absolute',
-                                    right: 6,
-                                    background: '#f1f5f9',
-                                    color: '#64748b',
-                                    border: 'none',
-                                    width: 20,
-                                    height: 20,
-                                    borderRadius: '50%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    padding: 0
+                                    width: '100%',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    padding: '8px 32px 8px 10px',
+                                    borderColor: '#b45309'
                                   }}
-                                  title="លុបឈ្មោះ"
-                                >
-                                  <X size={12} />
-                                </button>
-                              )}
+                                />
+                                {leaveItem.name && (
+                                  <button
+                                    type="button"
+                                    onMouseDown={e => e.preventDefault()}
+                                    onClick={() => {
+                                      applyLeavePatch({ name: '' });
+                                      setFocusedField('name');
+                                    }}
+                                    style={{
+                                      position: 'absolute',
+                                      right: 6,
+                                      background: '#f1f5f9',
+                                      color: '#64748b',
+                                      border: 'none',
+                                      width: 20,
+                                      height: 20,
+                                      borderRadius: '50%',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: 'pointer',
+                                      padding: 0
+                                    }}
+                                    title="លុបឈ្មោះ"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <OcrNameReviewHint
                               leaveItem={leaveItem}
                               onPick={(pickedName) => applyLeavePatch({ name: pickedName, needsReview: false, reviewSuggestions: [] })}
                             />
                           </div>
-                          <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
-                              ថ្នាក់ទី៖
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <label style={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                              ថ្នាក់៖
                             </label>
                             <MobileCustomSelect
                               mobileOnly
                               value={leaveItem.grade}
                               onChange={e => applyLeavePatch({ grade: e.target.value })}
-                              style={{ width: '100%', fontSize: 14, fontWeight: 600, padding: '8px 10px' }}
+                              style={{ flex: 1, minWidth: 0, width: '100%', fontSize: 14, fontWeight: 600, padding: '8px 10px' }}
                             >
                               <option value="មត្តេយ្យ">មត្តេយ្យ</option>
                               <option value="១">ថ្នាក់ទី ១</option>
@@ -2002,28 +2221,6 @@ export default function ReviewModal({
                             )}
                           </div>
                         )}
-
-                        <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 11, color: '#64748b', alignSelf: 'center' }}>រើសថ្នាក់រហ័ស៖</span>
-                          {['មត្តេយ្យ', '១', '២', '៣'].map(g => (
-                            <button
-                              key={g}
-                              type="button"
-                              onClick={() => applyLeavePatch({ grade: g })}
-                              style={{
-                                fontSize: 11,
-                                padding: '2px 8px',
-                                borderRadius: 12,
-                                background: leaveItem.grade === g ? '#b45309' : '#f1f5f9',
-                                color: leaveItem.grade === g ? '#ffffff' : '#475569',
-                                border: 'none',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              {g === 'មត្តេយ្យ' ? 'មត្តេយ្យ' : `ថ្នាក់ទី ${g}`}
-                            </button>
-                          ))}
-                        </div>
 
                         <div style={{ marginBottom: 12 }}>
                           <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
@@ -2172,7 +2369,13 @@ export default function ReviewModal({
                       );
                     })()}
                     <div>
-                      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
+                      <label style={{
+                        display: 'block',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: leaveDateCheck.isAnyMismatch ? '#b91c1c' : '#1e293b',
+                        marginBottom: 4
+                      }}>
                         កាលបរិច្ឆេទ (ថ្ងៃខែចាប់ផ្ដើម)៖
                       </label>
                       <input
@@ -2181,8 +2384,45 @@ export default function ReviewModal({
                         onChange={e => applyLeavePatch({ date: e.target.value })}
                         onBlur={e => applyLeavePatch({ date: sanitizeLeaveDate(e.target.value) })}
                         placeholder="DD/MM/YYYY"
-                        style={{ width: '100%', fontSize: 13, padding: '8px 10px' }}
+                        style={{
+                          width: '100%',
+                          fontSize: 13,
+                          fontWeight: leaveDateCheck.isAnyMismatch ? 700 : 500,
+                          padding: '8px 10px',
+                          border: leaveDateCheck.isAnyMismatch ? '1.5px solid #dc2626' : '1px solid #cbd5e1',
+                          borderRadius: 6,
+                          background: leaveDateCheck.isAnyMismatch ? '#fef2f2' : '#ffffff',
+                          color: leaveDateCheck.isAnyMismatch ? '#b91c1c' : '#0f172a'
+                        }}
                       />
+                      {leaveDateCheck.isAnyMismatch && (
+                        <button
+                          type="button"
+                          onClick={() => applyLeavePatch({ date: getTodayKhmerDateStr() })}
+                          title="ចុចដើម្បីប្ដូរទៅកាលបរិច្ឆេទថ្ងៃនេះ"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            textAlign: 'left',
+                            fontFamily: 'inherit',
+                            marginTop: 4,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: '#b91c1c',
+                            background: '#fef2f2',
+                            border: '1px solid #fecaca',
+                            borderRadius: 6,
+                            padding: '4px 8px',
+                            lineHeight: 1.4,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {leaveDateCheck.isMonthMismatch
+                            ? `🚫 ខុសខែ! (ស្កេនខែ${leaveDateCheck.scannedMonthName} ≠ ខែ${leaveDateCheck.targetMonthName}) • ចុចប៊ូតុង ២ ដងដើម្បីបញ្ចូល`
+                            : `⚠️ ខុសពីថ្ងៃនេះ (ថ្ងៃនេះទី ${toKhmerDigits(String(leaveDateCheck.todayDay).padStart(2, '0'))})`}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2454,6 +2694,7 @@ export default function ReviewModal({
                 </div>
               )}
             </div>
+            )}
 
             <div style={{
               display: 'flex',
@@ -2478,25 +2719,42 @@ export default function ReviewModal({
                 បោះបង់
               </button>
 
-              <button
-                type="button"
-                onClick={handleConfirm}
-                style={{
-                  background: '#0f766e',
-                  color: '#ffffff',
-                  padding: '9px 20px',
-                  borderRadius: 6,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  boxShadow: '0 2px 6px rgba(15,118,110,0.3)'
-                }}
-              >
-                <span>យល់ព្រមបញ្ចូលក្នុងតារាង</span>
-                <ArrowRight size={16} />
-              </button>
+              {!isPending && (
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  style={{
+                    background: armedConfirm
+                      ? '#dc2626'
+                      : leaveDateCheck.requiresDoubleClick
+                        ? '#c2410c'
+                        : '#0f766e',
+                    color: '#ffffff',
+                    border: leaveDateCheck.requiresDoubleClick ? '1.5px solid #dc2626' : 'none',
+                    padding: '9px 20px',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    touchAction: 'manipulation',
+                    boxShadow: armedConfirm
+                      ? '0 2px 10px rgba(220, 38, 38, 0.4)'
+                      : '0 2px 6px rgba(15,118,110,0.3)'
+                  }}
+                >
+                  <span>
+                    {armedConfirm
+                      ? '⚠️ ខុសខែ! ចុចម្ដងទៀតដើម្បីបញ្ចូល'
+                      : leaveDateCheck.requiresDoubleClick
+                        ? '⚠️ បញ្ចូលក្នុងតារាង (ខុសខែ • ចុច ២ ដង)'
+                        : 'យល់ព្រមបញ្ចូលក្នុងតារាង'}
+                  </span>
+                  <ArrowRight size={16} />
+                </button>
+              )}
             </div>
           </div>
         </div>

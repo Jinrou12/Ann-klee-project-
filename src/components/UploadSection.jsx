@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Camera, Upload, Trash2, CheckCircle2, Sparkles, RefreshCw, ZoomIn, X, RotateCw, ArrowRight, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Camera, Upload, Trash2, CheckCircle2, Sparkles, RefreshCw, ZoomIn, X, RotateCw, ArrowRight, AlertTriangle, Calendar } from 'lucide-react';
 import { matchStudentName, getPhoneticStudentSuggestions, getRealReasonSuggestions } from '../utils/studentMaster';
-import { parseDurationShorthand, getDurationSuggestions, toArabicDigits, sumByCurrency, formatCurrencyTotals, getCurrencySymbol, normalizeCurrency } from '../utils/khmerNumerals';
+import { parseDurationShorthand, getDurationSuggestions, toArabicDigits, toKhmerDigits, sumByCurrency, formatCurrencyTotals, getCurrencySymbol, normalizeCurrency, analyzeScannedLeaveDate, getTodayKhmerDateStr } from '../utils/khmerNumerals';
 import { getStoredTrainingDataset, INITIAL_LEAVE_DATA } from '../utils/storage';
 import ReviewModal from './ReviewModal';
 import CurrencyToggle from './CurrencyToggle';
@@ -13,6 +13,7 @@ const sanitizeAmountInput = (raw) => toArabicDigits(String(raw ?? '')).replace(/
 
 export default function UploadSection({
   queue = [],
+  currentMonthKey = '',
   studentMaster = [],
   allLeaves = INITIAL_LEAVE_DATA,
   onAddToQueue,
@@ -20,6 +21,7 @@ export default function UploadSection({
   onClearQueue,
   onProcessQueue,
   onUpdateQueueItem,
+  onSetAllLeaveDates,
   onRotateQueueItem,
   onRetakeQueueItem,
   onApproveItem,
@@ -30,6 +32,48 @@ export default function UploadSection({
   const docTypeHint = 'auto';
   const [selectedReviewIndex, setSelectedReviewIndex] = useState(null);
   const [focusedField, setFocusedField] = useState(null); // { itemId, field: 'name' | 'reason' }
+  const [armedItemId, setArmedItemId] = useState(null);
+  const [armedApproveAll, setArmedApproveAll] = useState(false);
+  const armItemTimerRef = useRef(null);
+  const armAllTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (armItemTimerRef.current) clearTimeout(armItemTimerRef.current);
+      if (armAllTimerRef.current) clearTimeout(armAllTimerRef.current);
+    };
+  }, []);
+
+  const clearArmedItem = () => {
+    if (armItemTimerRef.current) clearTimeout(armItemTimerRef.current);
+    armItemTimerRef.current = null;
+    setArmedItemId(null);
+  };
+
+  const clearArmedAll = () => {
+    if (armAllTimerRef.current) clearTimeout(armAllTimerRef.current);
+    armAllTimerRef.current = null;
+    setArmedApproveAll(false);
+  };
+
+  const handleGuardedApproveItem = (item, requiresDoubleClick) => {
+    if (requiresDoubleClick) {
+      if (armedItemId === item.id) {
+        clearArmedItem();
+        onApproveItem(item);
+      } else {
+        if (armItemTimerRef.current) clearTimeout(armItemTimerRef.current);
+        setArmedItemId(item.id);
+        armItemTimerRef.current = setTimeout(() => {
+          setArmedItemId(null);
+          armItemTimerRef.current = null;
+        }, 3000);
+      }
+      return;
+    }
+    clearArmedItem();
+    onApproveItem(item);
+  };
   const trainingDataset = useMemo(() => getStoredTrainingDataset(), [queue.length]);
   const selectedReviewItem = selectedReviewIndex !== null ? queue[selectedReviewIndex] : null;
   const hasPrev = selectedReviewIndex !== null && selectedReviewIndex > 0;
@@ -90,6 +134,69 @@ export default function UploadSection({
 
   const processedItems = queue.filter(q => q.status === 'processed');
   const hasActiveScanning = queue.some(q => q.status === 'pending' || q.status === 'processing');
+
+  // Count processed leave items & date/month mismatches against active selected month (currentMonthKey)
+  const { processedLeaveCount, anyDateMismatchCount, monthMismatchCount } = processedItems.reduce((acc, qItem) => {
+    const res = qItem.processedData?.result || qItem.processedData || {};
+    const rawType = qItem.processedData?.detectedType || res.detectedType || qItem.docTypeHint || 'leave';
+    const resolvedType = rawType === 'auto' ? 'leave' : rawType;
+    if (resolvedType !== 'leave') return acc;
+    acc.processedLeaveCount += 1;
+    const lDate = qItem.processedData?.leaveItems?.[0]?.date || res.leaveItems?.[0]?.date || '';
+    const check = analyzeScannedLeaveDate(lDate, currentMonthKey);
+    if (check.isAnyMismatch) acc.anyDateMismatchCount += 1;
+    if (check.requiresDoubleClick) acc.monthMismatchCount += 1;
+    return acc;
+  }, { processedLeaveCount: 0, anyDateMismatchCount: 0, monthMismatchCount: 0 });
+
+  const handleApplyTodayToAllLeaves = () => {
+    const todayStr = getTodayKhmerDateStr();
+    clearArmedItem();
+    clearArmedAll();
+    if (onSetAllLeaveDates) {
+      onSetAllLeaveDates(todayStr);
+      return;
+    }
+    processedItems.forEach(qItem => {
+      const res = qItem.processedData?.result || qItem.processedData || {};
+      const rawType = qItem.processedData?.detectedType || res.detectedType || qItem.docTypeHint || 'leave';
+      const resolvedType = rawType === 'auto' ? 'leave' : rawType;
+      if (resolvedType !== 'leave') return;
+      const baseLeave = qItem.processedData?.leaveItems?.[0] || res.leaveItems?.[0] || {
+        name: '',
+        grade: '៣',
+        reason: 'ការងារផ្ទាល់ខ្លួន',
+        duration: '១ថ្ងៃ',
+        note: ''
+      };
+      onUpdateQueueItem(qItem.id, {
+        processedData: {
+          ...qItem.processedData,
+          detectedType: 'leave',
+          leaveItems: [{ ...baseLeave, date: todayStr }]
+        }
+      });
+    });
+  };
+
+  const handleGuardedApproveAll = () => {
+    if (monthMismatchCount > 0) {
+      if (armedApproveAll) {
+        clearArmedAll();
+        onApproveAll();
+      } else {
+        if (armAllTimerRef.current) clearTimeout(armAllTimerRef.current);
+        setArmedApproveAll(true);
+        armAllTimerRef.current = setTimeout(() => {
+          setArmedApproveAll(false);
+          armAllTimerRef.current = null;
+        }, 3000);
+      }
+      return;
+    }
+    clearArmedAll();
+    onApproveAll();
+  };
 
   const getScanCountdownInfo = (item) => {
     if (item.scanStage === 'orient') {
@@ -272,30 +379,74 @@ export default function UploadSection({
                 </button>
               </div>
 
-              {processedItems.length > 0 && (
-                <button
-                  type="button"
-                  onClick={onApproveAll}
-                  style={{
-                    width: '100%',
-                    background: '#15803d',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '10px 16px',
-                    borderRadius: 8,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 6px rgba(21, 128, 61, 0.25)'
-                  }}
-                >
-                  <CheckCircle2 size={16} />
-                  <span>✓ យល់ព្រមបញ្ចូលទាំងអស់ ({processedItems.length})</span>
-                </button>
+              {processedItems.length >= 2 && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: processedLeaveCount > 0 ? '1fr 1fr' : '1fr',
+                  gap: 8,
+                  width: '100%'
+                }}>
+                  {processedLeaveCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleApplyTodayToAllLeaves}
+                      title="តម្រូវកាលបរិច្ឆេទបច្ចុប្បន្ន (ថ្ងៃនេះ) លើក្រដាសសុំច្បាប់ទាំងអស់"
+                      style={{
+                        width: '100%',
+                        background: anyDateMismatchCount > 0 ? '#0284c7' : '#eff6ff',
+                        color: anyDateMismatchCount > 0 ? '#ffffff' : '#0369a1',
+                        border: anyDateMismatchCount > 0 ? 'none' : '1px solid #bae6fd',
+                        padding: '10px 10px',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        boxShadow: anyDateMismatchCount > 0 ? '0 2px 6px rgba(2, 132, 199, 0.25)' : 'none'
+                      }}
+                    >
+                      <Calendar size={15} />
+                      <span>កាលបរិច្ឆេទ</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleGuardedApproveAll}
+                    title={monthMismatchCount > 0 ? 'មានសន្លឹកខុសខែ — ចុច ២ ដងដើម្បីបញ្ចូលទាំងអស់' : 'បញ្ចូលឯកសារទាំងអស់ក្នុងតារាង'}
+                    style={{
+                      width: '100%',
+                      background: armedApproveAll ? '#dc2626' : (monthMismatchCount > 0 ? '#c2410c' : '#15803d'),
+                      color: '#ffffff',
+                      border: monthMismatchCount > 0 ? '1.5px solid #dc2626' : 'none',
+                      padding: '10px 10px',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 5,
+                      cursor: 'pointer',
+                      touchAction: 'manipulation',
+                      whiteSpace: 'nowrap',
+                      boxShadow: armedApproveAll
+                        ? '0 2px 10px rgba(220, 38, 38, 0.4)'
+                        : '0 2px 6px rgba(21, 128, 61, 0.25)'
+                    }}
+                  >
+                    {monthMismatchCount > 0 ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
+                    <span>
+                      {armedApproveAll
+                        ? `ចុចម្ដងទៀត (${processedItems.length})`
+                        : `បញ្ចូលទាំងអស់ (${processedItems.length})`}
+                    </span>
+                  </button>
+                </div>
               )}
             </div>
           ) : (
@@ -352,27 +503,65 @@ export default function UploadSection({
                   សម្អាតទាំងអស់
                 </button>
 
-                {processedItems.length > 0 && (
-                  <button
-                    onClick={onApproveAll}
-                    style={{
-                      background: '#15803d',
-                      color: '#ffffff',
-                      border: 'none',
-                      padding: '8px 18px',
-                      borderRadius: 6,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                      boxShadow: '0 2px 6px rgba(21, 128, 61, 0.3)'
-                    }}
-                  >
-                    <CheckCircle2 size={16} />
-                    <span>✓ យល់ព្រមបញ្ចូលទាំងអស់ ({processedItems.length})</span>
-                  </button>
+                {processedItems.length >= 2 && (
+                  <>
+                    {processedLeaveCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleApplyTodayToAllLeaves}
+                        title="តម្រូវកាលបរិច្ឆេទបច្ចុប្បន្ន (ថ្ងៃនេះ) លើក្រដាសសុំច្បាប់ទាំងអស់"
+                        style={{
+                          background: anyDateMismatchCount > 0 ? '#0284c7' : '#eff6ff',
+                          color: anyDateMismatchCount > 0 ? '#ffffff' : '#0369a1',
+                          border: anyDateMismatchCount > 0 ? 'none' : '1px solid #bae6fd',
+                          padding: '8px 14px',
+                          borderRadius: 6,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          boxShadow: anyDateMismatchCount > 0 ? '0 2px 6px rgba(2, 132, 199, 0.25)' : 'none'
+                        }}
+                      >
+                        <Calendar size={15} />
+                        <span>កាលបរិច្ឆេទ</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleGuardedApproveAll}
+                      title={monthMismatchCount > 0 ? 'មានសន្លឹកខុសខែ — ចុច ២ ដងដើម្បីបញ្ចូលទាំងអស់' : 'បញ្ចូលឯកសារទាំងអស់ក្នុងតារាង'}
+                      style={{
+                        background: armedApproveAll ? '#dc2626' : (monthMismatchCount > 0 ? '#c2410c' : '#15803d'),
+                        color: '#ffffff',
+                        border: monthMismatchCount > 0 ? '1.5px solid #dc2626' : 'none',
+                        padding: '8px 16px',
+                        borderRadius: 6,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        touchAction: 'manipulation',
+                        whiteSpace: 'nowrap',
+                        boxShadow: armedApproveAll
+                          ? '0 2px 10px rgba(220, 38, 38, 0.4)'
+                          : '0 2px 6px rgba(21, 128, 61, 0.3)'
+                      }}
+                    >
+                      {monthMismatchCount > 0 ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
+                      <span>
+                        {armedApproveAll
+                          ? `ចុចម្ដងទៀត (${processedItems.length})`
+                          : `បញ្ចូលទាំងអស់ (${processedItems.length})`}
+                      </span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -450,10 +639,18 @@ export default function UploadSection({
                 onUpdateQueueItem(item.id, { processedData: updated });
               };
 
-              // Student match suggestion
+              // Student match suggestion & Leave date validation (Day != Today -> red; Month != active currentMonthKey -> red + Double-Click Guard)
               const studentMatch = isLeave ? matchStudentName(leaveItem.name, studentMaster) : null;
+              const leaveDateCheck = isLeave
+                ? analyzeScannedLeaveDate(leaveItem.date, currentMonthKey)
+                : { isValid: false, isDayMismatch: false, isMonthMismatch: false, isAnyMismatch: false, requiresDoubleClick: false };
+              const isItemArmed = armedItemId === item.id && leaveDateCheck.requiresDoubleClick;
 
               const updateLeaveField = (field, val) => {
+                if (field === 'date') {
+                  if (armedItemId === item.id) clearArmedItem();
+                  if (armedApproveAll) clearArmedAll();
+                }
                 const updated = {
                   ...item.processedData,
                   detectedType: 'leave',
@@ -556,50 +753,52 @@ export default function UploadSection({
                       gap: 10
                     }}
                   >
-                    {/* Top Row: Document Type Segmented Switcher */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      background: '#f1f5f9',
-                      padding: 3,
-                      borderRadius: 8,
-                      gap: 4
-                    }}>
-                      <button
-                        type="button"
-                        onClick={() => switchType('leave')}
-                        style={{
-                          background: isLeave ? '#b45309' : 'transparent',
-                          color: isLeave ? '#ffffff' : '#64748b',
-                          border: 'none',
-                          padding: '7px 8px',
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          textAlign: 'center'
-                        }}
-                      >
-                        ក្រដាសសុំច្បាប់ (PDF 2)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => switchType('finance')}
-                        style={{
-                          background: !isLeave ? '#0f766e' : 'transparent',
-                          color: !isLeave ? '#ffffff' : '#64748b',
-                          border: 'none',
-                          padding: '7px 8px',
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          textAlign: 'center'
-                        }}
-                      >
-                        ប៉ុងចំណាយ/ចំណូល (PDF 1)
-                      </button>
-                    </div>
+                    {/* Top Row: Document Type Segmented Switcher (Wait for AI confirmation before showing) */}
+                    {!isPending && (
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        background: '#f1f5f9',
+                        padding: 3,
+                        borderRadius: 8,
+                        gap: 4
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => switchType('leave')}
+                          style={{
+                            background: isLeave ? '#b45309' : 'transparent',
+                            color: isLeave ? '#ffffff' : '#64748b',
+                            border: 'none',
+                            padding: '7px 8px',
+                            borderRadius: 6,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            textAlign: 'center'
+                          }}
+                        >
+                          ក្រដាសសុំច្បាប់ (PDF 2)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => switchType('finance')}
+                          style={{
+                            background: !isLeave ? '#0f766e' : 'transparent',
+                            color: !isLeave ? '#ffffff' : '#64748b',
+                            border: 'none',
+                            padding: '7px 8px',
+                            borderRadius: 6,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            textAlign: 'center'
+                          }}
+                        >
+                          ប៉ុងចំណាយ/ចំណូល (PDF 1)
+                        </button>
+                      </div>
+                    )}
 
                     {/* Middle Split Section: Left Portrait A4 Image (115px) + Right Primary Fields (1fr) */}
                     <div style={{
@@ -808,10 +1007,10 @@ export default function UploadSection({
                                     ? '#64748b'
                                     : (isCloudScan ? '#065f46' : '#b45309'),
                                 border: `1px solid ${item.status === 'processing'
-                                    ? '#bfdbfe'
-                                    : item.status === 'pending'
-                                      ? '#cbd5e1'
-                                      : (isCloudScan ? '#a7f3d0' : '#fde68a')
+                                  ? '#bfdbfe'
+                                  : item.status === 'pending'
+                                    ? '#cbd5e1'
+                                    : (isCloudScan ? '#a7f3d0' : '#fde68a')
                                   }`,
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -952,60 +1151,135 @@ export default function UploadSection({
                           </div>
                         )}
 
-                        {isLeave ? (
+                        {isPending ? (
+                          <div style={{
+                            background: item.status === 'processing' ? '#eff6ff' : '#f8fafc',
+                            border: `1px dashed ${item.status === 'processing' ? '#93c5fd' : '#cbd5e1'}`,
+                            borderRadius: 8,
+                            padding: '14px 10px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            textAlign: 'center',
+                            gap: 6,
+                            minHeight: 112
+                          }}>
+                            <div style={{
+                              width: 30,
+                              height: 30,
+                              borderRadius: '50%',
+                              background: item.status === 'processing' ? '#dbeafe' : '#e2e8f0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              {item.status === 'processing' ? (
+                                <RefreshCw size={15} color="#2563eb" className="spin" />
+                              ) : (
+                                <Sparkles size={15} color="#64748b" />
+                              )}
+                            </div>
+                            <div style={{
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: item.status === 'processing' ? '#1d4ed8' : '#475569',
+                              lineHeight: 1.35
+                            }}>
+                              {item.status === 'processing'
+                                ? (scanCountdown ? scanCountdown.mobileText : 'កំពុងវិភាគឯកសារ...')
+                                : 'កំពុងរង់ចាំស្កេន...'}
+                            </div>
+                            <div style={{
+                              fontSize: 10.5,
+                              color: '#64748b',
+                              lineHeight: 1.4
+                            }}>
+                              កំពុងបញ្ជាក់ប្រភេទឯកសារ (ច្បាប់ ឬ ប៉ុង) និងអានអក្សរដោយ AI...
+                            </div>
+                          </div>
+                        ) : isLeave ? (
                           <>
-                            {/* Row 2: Student Name */}
+                            {/* Row 2: Student Name + Grade side-by-side on Mobile */}
                             <div>
-                              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b', marginBottom: 2 }}>
-                                👤 គោត្តនាម-នាម៖
-                              </label>
-                              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                <input
-                                  type="text"
-                                  value={leaveItem.name || ''}
-                                  onFocus={() => setFocusedField({ itemId: item.id, field: 'name' })}
-                                  onBlur={() => setTimeout(() => setFocusedField(prev => (prev?.itemId === item.id && prev?.field === 'name') ? null : prev), 180)}
-                                  onChange={e => updateLeaveFields({ name: e.target.value, needsReview: false })}
-                                  placeholder="វាយឈ្មោះសិស្ស..."
+                              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 74px', gap: 5, marginBottom: 2 }}>
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b' }}>
+                                  👤 នាម៖
+                                </label>
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#1e293b' }}>
+                                  ថ្នាក់៖
+                                </label>
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 74px', gap: 5, alignItems: 'center' }}>
+                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                                  <input
+                                    type="text"
+                                    value={leaveItem.name || ''}
+                                    onFocus={() => setFocusedField({ itemId: item.id, field: 'name' })}
+                                    onBlur={() => setTimeout(() => setFocusedField(prev => (prev?.itemId === item.id && prev?.field === 'name') ? null : prev), 180)}
+                                    onChange={e => updateLeaveFields({ name: e.target.value, needsReview: false })}
+                                    placeholder="វាយឈ្មោះសិស្ស..."
+                                    style={{
+                                      width: '100%',
+                                      minWidth: 0,
+                                      boxSizing: 'border-box',
+                                      fontSize: 13.5,
+                                      fontWeight: 700,
+                                      padding: '6px 24px 6px 8px',
+                                      border: isNameFocused ? '1.5px solid #b45309' : '1px solid #cbd5e1',
+                                      borderRadius: 6,
+                                      background: '#ffffff',
+                                      outline: 'none'
+                                    }}
+                                  />
+                                  {leaveItem.name && (
+                                    <button
+                                      type="button"
+                                      onMouseDown={e => e.preventDefault()}
+                                      onClick={() => {
+                                        updateLeaveField('name', '');
+                                        setFocusedField({ itemId: item.id, field: 'name' });
+                                      }}
+                                      style={{
+                                        position: 'absolute',
+                                        right: 4,
+                                        background: '#f1f5f9',
+                                        color: '#64748b',
+                                        border: 'none',
+                                        width: 18,
+                                        height: 18,
+                                        borderRadius: '50%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        padding: 0
+                                      }}
+                                      title="លុបឈ្មោះ"
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  )}
+                                </div>
+                                <MobileCustomSelect
+                                  value={leaveItem.grade || '៣'}
+                                  onChange={e => updateLeaveField('grade', e.target.value)}
                                   style={{
                                     width: '100%',
-                                    fontSize: 14,
+                                    fontSize: 12,
                                     fontWeight: 700,
-                                    padding: '6px 28px 6px 8px',
-                                    border: isNameFocused ? '1.5px solid #b45309' : '1px solid #cbd5e1',
+                                    padding: '6px 5px',
+                                    border: '1px solid #cbd5e1',
                                     borderRadius: 6,
                                     background: '#ffffff',
-                                    outline: 'none'
+                                    color: '#0f172a'
                                   }}
-                                />
-                                {leaveItem.name && (
-                                  <button
-                                    type="button"
-                                    onMouseDown={e => e.preventDefault()}
-                                    onClick={() => {
-                                      updateLeaveField('name', '');
-                                      setFocusedField({ itemId: item.id, field: 'name' });
-                                    }}
-                                    style={{
-                                      position: 'absolute',
-                                      right: 5,
-                                      background: '#f1f5f9',
-                                      color: '#64748b',
-                                      border: 'none',
-                                      width: 20,
-                                      height: 20,
-                                      borderRadius: '50%',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      cursor: 'pointer',
-                                      padding: 0
-                                    }}
-                                    title="លុបឈ្មោះ"
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                )}
+                                >
+                                  <option value="មត្តេយ្យ">មត្តេយ្យ</option>
+                                  <option value="១">ទី ១</option>
+                                  <option value="២">ទី ២</option>
+                                  <option value="៣">ទី ៣</option>
+                                </MobileCustomSelect>
                               </div>
                               <OcrNameReviewHint
                                 leaveItem={leaveItem}
@@ -1089,27 +1363,8 @@ export default function UploadSection({
                               </div>
                             </div>
 
-                            {/* Row 4: Grade (ថ្នាក់ទី) + Date (DD/MM/YYYY) side-by-side on Mobile */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '0.92fr 1.08fr', gap: 6, alignItems: 'center' }}>
-                              <MobileCustomSelect
-                                value={leaveItem.grade || '៣'}
-                                onChange={e => updateLeaveField('grade', e.target.value)}
-                                style={{
-                                  width: '100%',
-                                  fontSize: 12.5,
-                                  fontWeight: 700,
-                                  padding: '5px 8px',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: 6,
-                                  background: '#ffffff',
-                                  color: '#0f172a'
-                                }}
-                              >
-                                <option value="មត្តេយ្យ">មត្តេយ្យ</option>
-                                <option value="១">ថ្នាក់ទី ១</option>
-                                <option value="២">ថ្នាក់ទី ២</option>
-                                <option value="៣">ថ្នាក់ទី ៣</option>
-                              </MobileCustomSelect>
+                            {/* Row 4: Full-Width Date (DD/MM/YYYY) on Mobile */}
+                            <div>
                               <input
                                 type="text"
                                 value={leaveItem.date || ''}
@@ -1120,14 +1375,42 @@ export default function UploadSection({
                                   minWidth: 0,
                                   boxSizing: 'border-box',
                                   fontSize: 13,
-                                  fontWeight: 600,
+                                  fontWeight: leaveDateCheck.isAnyMismatch ? 700 : 600,
                                   padding: '5px 8px',
-                                  border: '1px solid #cbd5e1',
+                                  border: leaveDateCheck.isAnyMismatch ? '1.5px solid #dc2626' : '1px solid #cbd5e1',
                                   borderRadius: 6,
-                                  background: '#ffffff'
+                                  background: leaveDateCheck.isAnyMismatch ? '#fef2f2' : '#ffffff',
+                                  color: leaveDateCheck.isAnyMismatch ? '#b91c1c' : '#0f172a'
                                 }}
                               />
                             </div>
+                            {leaveDateCheck.isAnyMismatch && (
+                              <button
+                                type="button"
+                                onClick={() => updateLeaveField('date', getTodayKhmerDateStr())}
+                                title="ចុចដើម្បីប្ដូរទៅកាលបរិច្ឆេទថ្ងៃនេះ"
+                                style={{
+                                  display: 'block',
+                                  width: '100%',
+                                  boxSizing: 'border-box',
+                                  textAlign: 'left',
+                                  fontFamily: 'inherit',
+                                  fontSize: 10.5,
+                                  fontWeight: 700,
+                                  color: '#b91c1c',
+                                  background: '#fef2f2',
+                                  border: '1px solid #fecaca',
+                                  borderRadius: 6,
+                                  padding: '4px 7px',
+                                  lineHeight: 1.4,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {leaveDateCheck.isMonthMismatch
+                                  ? '🚫 ខុសខែ'
+                                  : `⚠️ ខុសពីថ្ងៃនេះ (ថ្ងៃនេះទី ${toKhmerDigits(String(leaveDateCheck.todayDay).padStart(2, '0'))})`}
+                              </button>
+                            )}
                           </>
                         ) : (
                           /* Right Column when Finance Receipt is selected */
@@ -1266,419 +1549,436 @@ export default function UploadSection({
                       </div>
                     </div>
 
-                    {/* Bottom Full-Width Section: Suggestions, Reason, Note */}
-                    <div style={{
-                      background: '#f8fafc',
-                      padding: 10,
-                      borderRadius: 8,
-                      border: '1px solid #e2e8f0',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8
-                    }}>
-                      {isLeave ? (
-                        <>
-                          {/* Student Master Match Badge (if matched) */}
-                          {studentMatch && (
-                            <div style={{
-                              fontSize: 11,
-                              padding: '5px 8px',
-                              borderRadius: 6,
-                              background: studentMatch.isExact ? '#ecfdf5' : '#fefce8',
-                              color: studentMatch.isExact ? '#065f46' : '#92400e',
-                              border: `1px solid ${studentMatch.isExact ? '#a7f3d0' : '#fef08a'}`,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 6
-                            }}>
-                              <span>បញ្ជីសិស្ស៖ <strong>{studentMatch.student.name} ({studentMatch.student.grade})</strong></span>
-                              {!studentMatch.isExact && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    updateLeaveFields({
-                                      name: studentMatch.student.name,
-                                      grade: studentMatch.student.grade
-                                    });
-                                  }}
-                                  style={{
-                                    background: '#ca8a04',
-                                    color: '#ffffff',
-                                    border: 'none',
-                                    padding: '2px 7px',
-                                    borderRadius: 4,
-                                    fontSize: 10,
-                                    cursor: 'pointer',
-                                    fontWeight: 700,
-                                    flexShrink: 0
-                                  }}
-                                >
-                                  យកឈ្មោះនេះ
-                                </button>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Smart Student Suggestions Box (Full-Width when Name Input Focused or Unmatched) */}
-                          {showStudentSuggestBox && (
-                            <div style={{
-                              padding: '8px 10px',
-                              background: '#ffffff',
-                              border: '1px solid #fed7aa',
-                              borderRadius: 8,
-                              boxShadow: '0 2px 6px rgba(180, 83, 9, 0.08)',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 8
-                            }}>
-                              {nameQuery.length === 0 ? (
-                                <div style={{ fontSize: 11, color: '#92400e', fontWeight: 600 }}>
-                                  💡 វាយតួអក្សរដំបូង (ឧ. <strong>ច</strong>, <strong>គ</strong>, <strong>ណ</strong>...) ប្រព័ន្ធនឹង Suggest ឈ្មោះផ្ដើម និងសម្លេងស្រដៀងភ្លាមៗ
-                                </div>
-                              ) : (
-                                <>
-                                  {studentSuggestions.exactMatches.length > 0 && (
-                                    <div>
-                                      <div style={{ fontSize: 11, fontWeight: 700, color: '#065f46', marginBottom: 4 }}>
-                                        🎯 ឈ្មោះផ្ដើម/ត្រូវនឹង «{nameQuery}»៖
-                                      </div>
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                                        {studentSuggestions.exactMatches.map(s => {
-                                          const isSelected = leaveItem.name === s.name;
-                                          return (
-                                            <button
-                                              key={s.id || s.name}
-                                              type="button"
-                                              onMouseDown={e => e.preventDefault()}
-                                              onClick={() => {
-                                                updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false });
-                                                setFocusedField(null);
-                                              }}
-                                              style={{
-                                                fontSize: 12,
-                                                padding: '4px 9px',
-                                                borderRadius: 14,
-                                                background: isSelected ? '#059669' : '#ecfdf5',
-                                                color: isSelected ? '#ffffff' : '#065f46',
-                                                border: isSelected ? '1px solid #059669' : '1px solid #a7f3d0',
-                                                fontWeight: 700,
-                                                cursor: 'pointer'
-                                              }}
-                                            >
-                                              {s.name} ({s.grade === 'មត្តេយ្យ' ? 'ម' : s.grade})
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {studentSuggestions.phoneticMatches.length > 0 && (
-                                    <div>
-                                      <div style={{ fontSize: 11, fontWeight: 700, color: '#9a3412', marginBottom: 4 }}>
-                                        🔊 សម្លេងស្រដៀង ({studentSuggestions.similarConsonants.join(', ')})៖
-                                      </div>
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                                        {studentSuggestions.phoneticMatches.map(s => {
-                                          const isSelected = leaveItem.name === s.name;
-                                          return (
-                                            <button
-                                              key={s.id || s.name}
-                                              type="button"
-                                              onMouseDown={e => e.preventDefault()}
-                                              onClick={() => {
-                                                updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false });
-                                                setFocusedField(null);
-                                              }}
-                                              style={{
-                                                fontSize: 12,
-                                                padding: '4px 9px',
-                                                borderRadius: 14,
-                                                background: isSelected ? '#b45309' : '#fff7ed',
-                                                color: isSelected ? '#ffffff' : '#9a3412',
-                                                border: isSelected ? '1px solid #b45309' : '1px solid #fed7aa',
-                                                fontWeight: 600,
-                                                cursor: 'pointer'
-                                              }}
-                                            >
-                                              {s.name} ({s.grade === 'មត្តេយ្យ' ? 'ម' : s.grade})
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Reason (Full Width + Clear Button + 100% Real Data Suggestions) */}
-                          <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
-                              📝 មូលហេតុឈប់៖
-                            </label>
-                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                              <input
-                                type="text"
-                                value={leaveItem.reason || ''}
-                                onFocus={() => setFocusedField({ itemId: item.id, field: 'reason' })}
-                                onBlur={() => setTimeout(() => setFocusedField(prev => (prev?.itemId === item.id && prev?.field === 'reason') ? null : prev), 180)}
-                                onChange={e => updateLeaveField('reason', e.target.value)}
-                                placeholder="វាយមូលហេតុ ឧ. អាពាធ, ឈឺក្បាល, ទៅបុណ្យ..."
-                                style={{
-                                  width: '100%',
-                                  fontSize: 14,
-                                  padding: '8px 34px 8px 12px',
-                                  border: isReasonFocused ? '1.5px solid #0f766e' : '1px solid #cbd5e1',
+                    {/* Bottom Full-Width Section: Suggestions, Reason, Note (Wait for AI confirmation) */}
+                    {!isPending && (
+                      <>
+                        <div style={{
+                          background: '#f8fafc',
+                          padding: 10,
+                          borderRadius: 8,
+                          border: '1px solid #e2e8f0',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8
+                        }}>
+                          {isLeave ? (
+                            <>
+                              {/* Student Master Match Badge (if matched) */}
+                              {studentMatch && (
+                                <div style={{
+                                  fontSize: 11,
+                                  padding: '5px 8px',
                                   borderRadius: 6,
-                                  background: '#ffffff',
-                                  outline: 'none'
-                                }}
-                              />
-                              {leaveItem.reason && (
-                                <button
-                                  type="button"
-                                  onMouseDown={e => e.preventDefault()}
-                                  onClick={() => {
-                                    updateLeaveField('reason', '');
-                                    setFocusedField({ itemId: item.id, field: 'reason' });
-                                  }}
-                                  style={{
-                                    position: 'absolute',
-                                    right: 6,
-                                    background: '#f1f5f9',
-                                    color: '#64748b',
-                                    border: 'none',
-                                    width: 22,
-                                    height: 22,
-                                    borderRadius: '50%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    padding: 0
-                                  }}
-                                  title="លុបមូលហេតុ"
-                                >
-                                  <X size={13} />
-                                </button>
-                              )}
-                            </div>
-
-                            {isReasonFocused && realReasonSuggestions.length > 0 && (
-                              <div style={{ marginTop: 6 }}>
-                                <div style={{ fontSize: 11, color: '#475569', fontWeight: 600, marginBottom: 4 }}>
-                                  {reasonQuery
-                                    ? `💡 មូលហេតុពិតក្នុងប្រព័ន្ធដែលត្រូវនឹង «${reasonQuery}»៖`
-                                    : '💡 មូលហេតុធ្លាប់ប្រើពិតៗក្នុងប្រព័ន្ធ (ចុចជ្រើសរើស)៖'}
-                                </div>
-                                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                                  {realReasonSuggestions.slice(0, 10).map(r => (
+                                  background: studentMatch.isExact ? '#ecfdf5' : '#fefce8',
+                                  color: studentMatch.isExact ? '#065f46' : '#92400e',
+                                  border: `1px solid ${studentMatch.isExact ? '#a7f3d0' : '#fef08a'}`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 6
+                                }}>
+                                  <span>បញ្ជីសិស្ស៖ <strong>{studentMatch.student.name} ({studentMatch.student.grade})</strong></span>
+                                  {!studentMatch.isExact && (
                                     <button
-                                      key={r}
+                                      type="button"
+                                      onClick={() => {
+                                        updateLeaveFields({
+                                          name: studentMatch.student.name,
+                                          grade: studentMatch.student.grade
+                                        });
+                                      }}
+                                      style={{
+                                        background: '#ca8a04',
+                                        color: '#ffffff',
+                                        border: 'none',
+                                        padding: '2px 7px',
+                                        borderRadius: 4,
+                                        fontSize: 10,
+                                        cursor: 'pointer',
+                                        fontWeight: 700,
+                                        flexShrink: 0
+                                      }}
+                                    >
+                                      យកឈ្មោះនេះ
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Smart Student Suggestions Box (Full-Width when Name Input Focused or Unmatched) */}
+                              {showStudentSuggestBox && (
+                                <div style={{
+                                  padding: '8px 10px',
+                                  background: '#ffffff',
+                                  border: '1px solid #fed7aa',
+                                  borderRadius: 8,
+                                  boxShadow: '0 2px 6px rgba(180, 83, 9, 0.08)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 8
+                                }}>
+                                  {nameQuery.length === 0 ? (
+                                    <div style={{ fontSize: 11, color: '#92400e', fontWeight: 600 }}>
+                                      💡 វាយតួអក្សរដំបូង (ឧ. <strong>ច</strong>, <strong>គ</strong>, <strong>ណ</strong>...) ប្រព័ន្ធនឹង Suggest ឈ្មោះផ្ដើម និងសម្លេងស្រដៀងភ្លាមៗ
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {studentSuggestions.exactMatches.length > 0 && (
+                                        <div>
+                                          <div style={{ fontSize: 11, fontWeight: 700, color: '#065f46', marginBottom: 4 }}>
+                                            🎯 ឈ្មោះផ្ដើម/ត្រូវនឹង «{nameQuery}»៖
+                                          </div>
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                                            {studentSuggestions.exactMatches.map(s => {
+                                              const isSelected = leaveItem.name === s.name;
+                                              return (
+                                                <button
+                                                  key={s.id || s.name}
+                                                  type="button"
+                                                  onMouseDown={e => e.preventDefault()}
+                                                  onClick={() => {
+                                                    updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false });
+                                                    setFocusedField(null);
+                                                  }}
+                                                  style={{
+                                                    fontSize: 12,
+                                                    padding: '4px 9px',
+                                                    borderRadius: 14,
+                                                    background: isSelected ? '#059669' : '#ecfdf5',
+                                                    color: isSelected ? '#ffffff' : '#065f46',
+                                                    border: isSelected ? '1px solid #059669' : '1px solid #a7f3d0',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer'
+                                                  }}
+                                                >
+                                                  {s.name} ({s.grade === 'មត្តេយ្យ' ? 'ម' : s.grade})
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {studentSuggestions.phoneticMatches.length > 0 && (
+                                        <div>
+                                          <div style={{ fontSize: 11, fontWeight: 700, color: '#9a3412', marginBottom: 4 }}>
+                                            🔊 សម្លេងស្រដៀង ({studentSuggestions.similarConsonants.join(', ')})៖
+                                          </div>
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                                            {studentSuggestions.phoneticMatches.map(s => {
+                                              const isSelected = leaveItem.name === s.name;
+                                              return (
+                                                <button
+                                                  key={s.id || s.name}
+                                                  type="button"
+                                                  onMouseDown={e => e.preventDefault()}
+                                                  onClick={() => {
+                                                    updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false });
+                                                    setFocusedField(null);
+                                                  }}
+                                                  style={{
+                                                    fontSize: 12,
+                                                    padding: '4px 9px',
+                                                    borderRadius: 14,
+                                                    background: isSelected ? '#b45309' : '#fff7ed',
+                                                    color: isSelected ? '#ffffff' : '#9a3412',
+                                                    border: isSelected ? '1px solid #b45309' : '1px solid #fed7aa',
+                                                    fontWeight: 600,
+                                                    cursor: 'pointer'
+                                                  }}
+                                                >
+                                                  {s.name} ({s.grade === 'មត្តេយ្យ' ? 'ម' : s.grade})
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Reason (Full Width + Clear Button + 100% Real Data Suggestions) */}
+                              <div>
+                                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
+                                  📝 មូលហេតុឈប់៖
+                                </label>
+                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                  <input
+                                    type="text"
+                                    value={leaveItem.reason || ''}
+                                    onFocus={() => setFocusedField({ itemId: item.id, field: 'reason' })}
+                                    onBlur={() => setTimeout(() => setFocusedField(prev => (prev?.itemId === item.id && prev?.field === 'reason') ? null : prev), 180)}
+                                    onChange={e => updateLeaveField('reason', e.target.value)}
+                                    placeholder="វាយមូលហេតុ ឧ. អាពាធ, ឈឺក្បាល, ទៅបុណ្យ..."
+                                    style={{
+                                      width: '100%',
+                                      fontSize: 14,
+                                      padding: '8px 34px 8px 12px',
+                                      border: isReasonFocused ? '1.5px solid #0f766e' : '1px solid #cbd5e1',
+                                      borderRadius: 6,
+                                      background: '#ffffff',
+                                      outline: 'none'
+                                    }}
+                                  />
+                                  {leaveItem.reason && (
+                                    <button
                                       type="button"
                                       onMouseDown={e => e.preventDefault()}
                                       onClick={() => {
-                                        updateLeaveField('reason', r);
-                                        setFocusedField(null);
+                                        updateLeaveField('reason', '');
+                                        setFocusedField({ itemId: item.id, field: 'reason' });
                                       }}
                                       style={{
-                                        fontSize: 11,
-                                        padding: '4px 9px',
-                                        borderRadius: 12,
-                                        background: leaveItem.reason === r ? '#0f766e' : '#ffffff',
-                                        color: leaveItem.reason === r ? '#ffffff' : '#334155',
-                                        border: leaveItem.reason === r ? '1px solid #0f766e' : '1px solid #cbd5e1',
+                                        position: 'absolute',
+                                        right: 6,
+                                        background: '#f1f5f9',
+                                        color: '#64748b',
+                                        border: 'none',
+                                        width: 22,
+                                        height: 22,
+                                        borderRadius: '50%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
                                         cursor: 'pointer',
-                                        fontWeight: leaveItem.reason === r ? 700 : 500
+                                        padding: 0
                                       }}
+                                      title="លុបមូលហេតុ"
                                     >
-                                      {r}
+                                      <X size={13} />
                                     </button>
+                                  )}
+                                </div>
+
+                                {isReasonFocused && realReasonSuggestions.length > 0 && (
+                                  <div style={{ marginTop: 6 }}>
+                                    <div style={{ fontSize: 11, color: '#475569', fontWeight: 600, marginBottom: 4 }}>
+                                      {reasonQuery
+                                        ? `💡 មូលហេតុពិតក្នុងប្រព័ន្ធដែលត្រូវនឹង «${reasonQuery}»៖`
+                                        : '💡 មូលហេតុធ្លាប់ប្រើពិតៗក្នុងប្រព័ន្ធ (ចុចជ្រើសរើស)៖'}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                                      {realReasonSuggestions.slice(0, 10).map(r => (
+                                        <button
+                                          key={r}
+                                          type="button"
+                                          onMouseDown={e => e.preventDefault()}
+                                          onClick={() => {
+                                            updateLeaveField('reason', r);
+                                            setFocusedField(null);
+                                          }}
+                                          style={{
+                                            fontSize: 11,
+                                            padding: '4px 9px',
+                                            borderRadius: 12,
+                                            background: leaveItem.reason === r ? '#0f766e' : '#ffffff',
+                                            color: leaveItem.reason === r ? '#ffffff' : '#334155',
+                                            border: leaveItem.reason === r ? '1px solid #0f766e' : '1px solid #cbd5e1',
+                                            cursor: 'pointer',
+                                            fontWeight: leaveItem.reason === r ? 700 : 500
+                                          }}
+                                        >
+                                          {r}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Note */}
+                              <div>
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 3 }}>
+                                  ផ្សេងៗ (សម្គាល់បន្ថែម)៖
+                                </label>
+                                <input
+                                  type="text"
+                                  value={leaveItem.note || ''}
+                                  onChange={e => updateLeaveField('note', e.target.value)}
+                                  placeholder="សម្គាល់ផ្សេងៗ..."
+                                  style={{
+                                    width: '100%',
+                                    fontSize: 13,
+                                    padding: '7px 10px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    background: '#ffffff'
+                                  }}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            /* Bottom Full-Width Section when Finance Receipt is selected */
+                            hasMultipleFinances ? (
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                                  <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
+                                    📦 មុខទំនិញក្នុងប៉ុង ({rawFinances.length} មុខ)៖
+                                  </label>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: '#0f766e', background: '#f0fdfa', padding: '2px 8px', borderRadius: 6, border: '1px solid #ccfbf1' }}>
+                                    សរុប {grandFinanceTotalLabel}
+                                  </span>
+                                </div>
+
+                                {/* Dual Currency & Exchange Rate Bar */}
+                                {(detectedExchangeRate > 0 || detectedGrandTotalKhr > 0) && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 8px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
+                                      💱 {detectedExchangeRate > 0 ? `អត្រា 1$ = ${detectedExchangeRate.toLocaleString()}៛` : 'រូបិយប័ណ្ណពីរ'}៖
+                                    </span>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => convertAllFinanceCurrency('USD')}
+                                        style={{
+                                          padding: '2px 8px',
+                                          borderRadius: 4,
+                                          fontSize: 11,
+                                          fontWeight: 700,
+                                          background: grandFinanceTotals.USD > 0 ? '#0f766e' : '#ffffff',
+                                          color: grandFinanceTotals.USD > 0 ? '#ffffff' : '#334155',
+                                          border: '1px solid #0f766e',
+                                          cursor: 'pointer'
+                                        }}
+                                        title="បម្លែងទំនិញទាំងអស់ជា USD"
+                                      >
+                                        💵 USD {detectedGrandTotalUsd > 0 ? `($${detectedGrandTotalUsd})` : ''}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => convertAllFinanceCurrency('KHR')}
+                                        style={{
+                                          padding: '2px 8px',
+                                          borderRadius: 4,
+                                          fontSize: 11,
+                                          fontWeight: 700,
+                                          background: grandFinanceTotals.KHR > 0 ? '#0f766e' : '#ffffff',
+                                          color: grandFinanceTotals.KHR > 0 ? '#ffffff' : '#334155',
+                                          border: '1px solid #0f766e',
+                                          cursor: 'pointer'
+                                        }}
+                                        title="បម្លែងទំនិញទាំងអស់ជា KHR តាមអត្រាប្តូរប្រាក់"
+                                      >
+                                        ៛ KHR {detectedGrandTotalKhr > 0 ? `(${detectedGrandTotalKhr.toLocaleString()}៛)` : ''}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Seller & Invoice Metadata */}
+                                {(detectedSeller || detectedInvoiceNo) && (
+                                  <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap', fontSize: 11, color: '#475569' }}>
+                                    {detectedSeller && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>🏪 {detectedSeller}</span>}
+                                    {detectedInvoiceNo && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>📄 {detectedInvoiceNo}</span>}
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  {rawFinances.map((f, fIdx) => (
+                                    <div key={fIdx} style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 8px', minWidth: 0, boxSizing: 'border-box' }}>
+                                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, minWidth: 0 }}>
+                                        <span style={{ background: '#0f766e', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>
+                                          #{fIdx + 1}
+                                        </span>
+                                        <input
+                                          type="text"
+                                          value={f.desc || ''}
+                                          onChange={e => updateFinanceField('desc', e.target.value, fIdx)}
+                                          placeholder="ឈ្មោះទំនិញ..."
+                                          style={{ flex: 1, minWidth: 0, width: '100%', boxSizing: 'border-box', fontSize: 13, fontWeight: 600, padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                        />
+                                      </div>
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6 }}>
+                                        <input
+                                          type="text"
+                                          value={f.qty || ''}
+                                          onChange={e => updateFinanceField('qty', e.target.value, fIdx)}
+                                          placeholder="ចំនួន (ឧ. 5)"
+                                          style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                        />
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                                          <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={String(f.total ?? '')}
+                                            onChange={e => updateFinanceField('total', sanitizeAmountInput(e.target.value), fIdx)}
+                                            placeholder={`តម្លៃ (${getCurrencySymbol(f.currency)})`}
+                                            style={{ flex: 1, width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, fontWeight: 700, color: '#b45309', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
+                                          />
+                                          <CurrencyToggle
+                                            value={f.currency}
+                                            onChange={cur => updateFinanceField('currency', cur, fIdx)}
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
                                   ))}
                                 </div>
                               </div>
-                            )}
-                          </div>
-
-                          {/* Note */}
-                          <div>
-                            <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 3 }}>
-                              ផ្សេងៗ (សម្គាល់បន្ថែម)៖
-                            </label>
-                            <input
-                              type="text"
-                              value={leaveItem.note || ''}
-                              onChange={e => updateLeaveField('note', e.target.value)}
-                              placeholder="សម្គាល់ផ្សេងៗ..."
-                              style={{
-                                width: '100%',
-                                fontSize: 13,
-                                padding: '7px 10px',
-                                border: '1px solid #cbd5e1',
-                                borderRadius: 6,
-                                background: '#ffffff'
-                              }}
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        /* Bottom Full-Width Section when Finance Receipt is selected */
-                        hasMultipleFinances ? (
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-                              <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
-                                📦 មុខទំនិញក្នុងប៉ុង ({rawFinances.length} មុខ)៖
-                              </label>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: '#0f766e', background: '#f0fdfa', padding: '2px 8px', borderRadius: 6, border: '1px solid #ccfbf1' }}>
-                                សរុប {grandFinanceTotalLabel}
-                              </span>
-                            </div>
-
-                            {/* Dual Currency & Exchange Rate Bar */}
-                            {(detectedExchangeRate > 0 || detectedGrandTotalKhr > 0) && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 8px', background: '#f8fafc', borderRadius: 6, border: '1px dashed #cbd5e1', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
-                                  💱 {detectedExchangeRate > 0 ? `អត្រា 1$ = ${detectedExchangeRate.toLocaleString()}៛` : 'រូបិយប័ណ្ណពីរ'}៖
-                                </span>
-                                <div style={{ display: 'flex', gap: 4 }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => convertAllFinanceCurrency('USD')}
-                                    style={{
-                                      padding: '2px 8px',
-                                      borderRadius: 4,
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      background: grandFinanceTotals.USD > 0 ? '#0f766e' : '#ffffff',
-                                      color: grandFinanceTotals.USD > 0 ? '#ffffff' : '#334155',
-                                      border: '1px solid #0f766e',
-                                      cursor: 'pointer'
-                                    }}
-                                    title="បម្លែងទំនិញទាំងអស់ជា USD"
-                                  >
-                                    💵 USD {detectedGrandTotalUsd > 0 ? `($${detectedGrandTotalUsd})` : ''}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => convertAllFinanceCurrency('KHR')}
-                                    style={{
-                                      padding: '2px 8px',
-                                      borderRadius: 4,
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      background: grandFinanceTotals.KHR > 0 ? '#0f766e' : '#ffffff',
-                                      color: grandFinanceTotals.KHR > 0 ? '#ffffff' : '#334155',
-                                      border: '1px solid #0f766e',
-                                      cursor: 'pointer'
-                                    }}
-                                    title="បម្លែងទំនិញទាំងអស់ជា KHR តាមអត្រាប្តូរប្រាក់"
-                                  >
-                                    ៛ KHR {detectedGrandTotalKhr > 0 ? `(${detectedGrandTotalKhr.toLocaleString()}៛)` : ''}
-                                  </button>
-                                </div>
+                            ) : (
+                              <div>
+                                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
+                                  ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
+                                </label>
+                                <input
+                                  type="text"
+                                  value={financeItem.desc || ''}
+                                  onChange={e => updateFinanceField('desc', e.target.value)}
+                                  placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
+                                  style={{
+                                    width: '100%',
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    padding: '8px 12px',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: 6,
+                                    background: '#ffffff'
+                                  }}
+                                />
                               </div>
-                            )}
+                            )
+                          )}
+                        </div>
 
-                            {/* Seller & Invoice Metadata */}
-                            {(detectedSeller || detectedInvoiceNo) && (
-                              <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap', fontSize: 11, color: '#475569' }}>
-                                {detectedSeller && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>🏪 {detectedSeller}</span>}
-                                {detectedInvoiceNo && <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, border: '1px solid #e2e8f0' }}>📄 {detectedInvoiceNo}</span>}
-                              </div>
-                            )}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {rawFinances.map((f, fIdx) => (
-                                <div key={fIdx} style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 8px', minWidth: 0, boxSizing: 'border-box' }}>
-                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, minWidth: 0 }}>
-                                    <span style={{ background: '#0f766e', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>
-                                      #{fIdx + 1}
-                                    </span>
-                                    <input
-                                      type="text"
-                                      value={f.desc || ''}
-                                      onChange={e => updateFinanceField('desc', e.target.value, fIdx)}
-                                      placeholder="ឈ្មោះទំនិញ..."
-                                      style={{ flex: 1, minWidth: 0, width: '100%', boxSizing: 'border-box', fontSize: 13, fontWeight: 600, padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
-                                    />
-                                  </div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6 }}>
-                                    <input
-                                      type="text"
-                                      value={f.qty || ''}
-                                      onChange={e => updateFinanceField('qty', e.target.value, fIdx)}
-                                      placeholder="ចំនួន (ឧ. 5)"
-                                      style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
-                                    />
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={String(f.total ?? '')}
-                                        onChange={e => updateFinanceField('total', sanitizeAmountInput(e.target.value), fIdx)}
-                                        placeholder={`តម្លៃ (${getCurrencySymbol(f.currency)})`}
-                                        style={{ flex: 1, width: '100%', minWidth: 0, boxSizing: 'border-box', fontSize: 12, fontWeight: 700, color: '#b45309', padding: '4px 6px', border: '1px solid #cbd5e1', borderRadius: 4 }}
-                                      />
-                                      <CurrencyToggle
-                                        value={f.currency}
-                                        onChange={cur => updateFinanceField('currency', cur, fIdx)}
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
-                              ឈ្មោះឥវ៉ាន់ / បរិយាយ៖
-                            </label>
-                            <input
-                              type="text"
-                              value={financeItem.desc || ''}
-                              onChange={e => updateFinanceField('desc', e.target.value)}
-                              placeholder="ឧ. សាំង, ក្តារឈើ, សម្ភារៈ..."
-                              style={{
-                                width: '100%',
-                                fontSize: 14,
-                                fontWeight: 600,
-                                padding: '8px 12px',
-                                border: '1px solid #cbd5e1',
-                                borderRadius: 6,
-                                background: '#ffffff'
-                              }}
-                            />
-                          </div>
-                        )
-                      )}
-                    </div>
-
-                    {/* Bottom Action Button */}
-                    <button
-                      type="button"
-                      onClick={() => onApproveItem(item)}
-                      style={{
-                        width: '100%',
-                        background: '#0f766e',
-                        color: '#ffffff',
-                        border: 'none',
-                        padding: '11px 16px',
-                        borderRadius: 8,
-                        fontSize: 14,
-                        fontWeight: 700,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 6px rgba(15,118,110,0.25)'
-                      }}
-                    >
-                      <span>✓ បញ្ចូលក្នុងតារាង</span>
-                    </button>
+                        {/* Bottom Action Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleGuardedApproveItem(item, leaveDateCheck.requiresDoubleClick)}
+                          style={{
+                            width: '100%',
+                            background: isItemArmed
+                              ? '#dc2626'
+                              : leaveDateCheck.requiresDoubleClick
+                                ? '#c2410c'
+                                : '#0f766e',
+                            color: '#ffffff',
+                            border: leaveDateCheck.requiresDoubleClick ? '1.5px solid #dc2626' : 'none',
+                            padding: '11px 16px',
+                            borderRadius: 8,
+                            fontSize: 13.5,
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            cursor: 'pointer',
+                            touchAction: 'manipulation',
+                            boxShadow: isItemArmed
+                              ? '0 2px 10px rgba(220, 38, 38, 0.4)'
+                              : '0 2px 6px rgba(15,118,110,0.25)'
+                          }}
+                        >
+                          <span>
+                            {isItemArmed
+                              ? '⚠️ ខុសខែ! ចុចម្ដងទៀតដើម្បីបញ្ចូល'
+                              : leaveDateCheck.requiresDoubleClick
+                                ? '⚠️ បញ្ចូលក្នុងតារាង (ខុសខែ • ចុច ២ ដង)'
+                                : '✓ បញ្ចូលក្នុងតារាង'}
+                          </span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 );
               }
@@ -1792,42 +2092,44 @@ export default function UploadSection({
 
                   {/* Column 2: Direct Inline Editable Fields */}
                   <div style={{ background: '#ffffff', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                    {/* Top Row: Type Switcher & OCR status */}
+                    {/* Top Row: Type Switcher & OCR status (Hide switcher until AI confirms type) */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-                      <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: 3, borderRadius: 6, gap: 4 }}>
-                        <button
-                          type="button"
-                          onClick={() => switchType('leave')}
-                          style={{
-                            background: isLeave ? '#b45309' : 'transparent',
-                            color: isLeave ? '#ffffff' : '#64748b',
-                            border: 'none',
-                            padding: '4px 10px',
-                            borderRadius: 4,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          ក្រដាសសុំច្បាប់ (PDF 2)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => switchType('finance')}
-                          style={{
-                            background: !isLeave ? '#0f766e' : 'transparent',
-                            color: !isLeave ? '#ffffff' : '#64748b',
-                            border: 'none',
-                            padding: '4px 10px',
-                            borderRadius: 4,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          ប៉ុងចំណាយ/ចំណូល (PDF 1)
-                        </button>
-                      </div>
+                      {!isPending && (
+                        <div style={{ display: 'inline-flex', background: '#f1f5f9', padding: 3, borderRadius: 6, gap: 4 }}>
+                          <button
+                            type="button"
+                            onClick={() => switchType('leave')}
+                            style={{
+                              background: isLeave ? '#b45309' : 'transparent',
+                              color: isLeave ? '#ffffff' : '#64748b',
+                              border: 'none',
+                              padding: '4px 10px',
+                              borderRadius: 4,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            ក្រដាសសុំច្បាប់ (PDF 2)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => switchType('finance')}
+                            style={{
+                              background: !isLeave ? '#0f766e' : 'transparent',
+                              color: !isLeave ? '#ffffff' : '#64748b',
+                              border: 'none',
+                              padding: '4px 10px',
+                              borderRadius: 4,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            ប៉ុងចំណាយ/ចំណូល (PDF 1)
+                          </button>
+                        </div>
+                      )}
 
                       {/* AI Cloud vs Memory vs Offline Error Indicator */}
                       {resultData.isOfflineNoScan ? (
@@ -1882,10 +2184,10 @@ export default function UploadSection({
                               ? '#64748b'
                               : (isCloudScan ? '#065f46' : '#b45309'),
                           border: `1px solid ${item.status === 'processing'
-                              ? '#bfdbfe'
-                              : item.status === 'pending'
-                                ? '#cbd5e1'
-                                : (isCloudScan ? '#a7f3d0' : '#fde68a')
+                            ? '#bfdbfe'
+                            : item.status === 'pending'
+                              ? '#cbd5e1'
+                              : (isCloudScan ? '#a7f3d0' : '#fde68a')
                             }`,
                           display: 'inline-flex',
                           alignItems: 'center',
@@ -1909,14 +2211,18 @@ export default function UploadSection({
                                 : isLearnedMemory
                                   ? '✨ ស្កេនដោយ AI Vision (ចងចាំទិន្នន័យពិត ១០០%)'
                                   : '✨ ស្កេនដោយ Gemini Cloud AI'}
-                            {' • '}
-                            <strong>{isLeave ? 'ក្រដាសច្បាប់ (A4 បញ្ឈរ)' : 'ប៉ុងចំណាយ/ចំណូល'}</strong>
+                            {!isPending && (
+                              <>
+                                {' • '}
+                                <strong>{isLeave ? 'ក្រដាសច្បាប់ (A4 បញ្ឈរ)' : 'ប៉ុងចំណាយ/ចំណូល'}</strong>
+                              </>
+                            )}
                           </span>
                         </div>
                       )}
 
                       {/* Student Auto-match badge */}
-                      {isLeave && studentMatch && (
+                      {!isPending && isLeave && studentMatch && (
                         <div style={{
                           fontSize: 11,
                           padding: '3px 8px',
@@ -1956,8 +2262,55 @@ export default function UploadSection({
                       )}
                     </div>
 
-                    {/* Dynamic Fields for LEAVE SLIP */}
-                    {isLeave ? (() => {
+                    {/* Dynamic Fields for LEAVE SLIP / FINANCE (Wait for AI confirmation while pending/processing) */}
+                    {isPending ? (
+                      <div style={{
+                        background: item.status === 'processing' ? '#eff6ff' : '#f8fafc',
+                        border: `1.5px dashed ${item.status === 'processing' ? '#93c5fd' : '#cbd5e1'}`,
+                        borderRadius: 8,
+                        padding: '28px 18px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        textAlign: 'center',
+                        gap: 8,
+                        minHeight: 132
+                      }}>
+                        <div style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: '50%',
+                          background: item.status === 'processing' ? '#dbeafe' : '#e2e8f0',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          {item.status === 'processing' ? (
+                            <RefreshCw size={18} color="#2563eb" className="spin" />
+                          ) : (
+                            <Sparkles size={18} color="#64748b" />
+                          )}
+                        </div>
+                        <div style={{
+                          fontSize: 13.5,
+                          fontWeight: 700,
+                          color: item.status === 'processing' ? '#1d4ed8' : '#475569'
+                        }}>
+                          {item.status === 'processing'
+                            ? (scanCountdown ? scanCountdown.pcText : '⏳ កំពុងវិភាគប្រភេទឯកសារ និងអានអក្សរដោយ AI...')
+                            : '⏳ កំពុងរង់ចាំស្កេនដោយ AI...'}
+                        </div>
+                        <div style={{
+                          fontSize: 12,
+                          color: '#64748b',
+                          maxWidth: 460,
+                          lineHeight: 1.5
+                        }}>
+                          ប្រព័ន្ធកំពុងបញ្ជាក់ថាជា <strong>ក្រដាសសុំច្បាប់</strong> ឬ <strong>ប៉ុងចំណាយ/ចំណូល</strong> — ប៊ូតុងជ្រើសរើសប្រភេទ និងទិន្នន័យនឹងបង្ហាញភ្លាមៗពេល AI ស្កេនចប់។
+                        </div>
+                      </div>
+                    ) : isLeave ? (() => {
                       const isNameFocused = focusedField?.itemId === item.id && focusedField?.field === 'name';
                       const isReasonFocused = focusedField?.itemId === item.id && focusedField?.field === 'reason';
                       const nameQuery = String(leaveItem.name || '').trim();
@@ -1973,73 +2326,77 @@ export default function UploadSection({
 
                       return (
                         <div>
-                          {/* Row: ឈ្មោះ + ថ្នាក់ */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 8 }}>
+                          {/* Row: នាម + ថ្នាក់ (Compact Inline PC Row) */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 8, alignItems: 'start' }}>
                             <div>
-                              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
-                                គោត្តនាម-និងនាម (ឈ្មោះសិស្ស)៖
-                              </label>
-                              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                <input
-                                  type="text"
-                                  value={leaveItem.name || ''}
-                                  onFocus={() => setFocusedField({ itemId: item.id, field: 'name' })}
-                                  onBlur={() => setTimeout(() => setFocusedField(prev => (prev?.itemId === item.id && prev?.field === 'name') ? null : prev), 180)}
-                                  onChange={e => updateLeaveFields({ name: e.target.value, needsReview: false })}
-                                  placeholder="វាយអក្សរផ្ដើម ឧ. ច, ឆ, គ, ណ..."
-                                  style={{
-                                    width: '100%',
-                                    fontSize: 14,
-                                    fontWeight: 600,
-                                    padding: '7px 32px 7px 10px',
-                                    border: isNameFocused ? '1.5px solid #b45309' : '1px solid #cbd5e1',
-                                    borderRadius: 6,
-                                    outline: 'none'
-                                  }}
-                                />
-                                {leaveItem.name && (
-                                  <button
-                                    type="button"
-                                    onMouseDown={e => e.preventDefault()}
-                                    onClick={() => {
-                                      updateLeaveField('name', '');
-                                      setFocusedField({ itemId: item.id, field: 'name' });
-                                    }}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                  នាម៖
+                                </label>
+                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                                  <input
+                                    type="text"
+                                    value={leaveItem.name || ''}
+                                    onFocus={() => setFocusedField({ itemId: item.id, field: 'name' })}
+                                    onBlur={() => setTimeout(() => setFocusedField(prev => (prev?.itemId === item.id && prev?.field === 'name') ? null : prev), 180)}
+                                    onChange={e => updateLeaveFields({ name: e.target.value, needsReview: false })}
+                                    placeholder="វាយអក្សរផ្ដើម ឧ. ច, ឆ, គ, ណ..."
                                     style={{
-                                      position: 'absolute',
-                                      right: 6,
-                                      background: '#f1f5f9',
-                                      color: '#64748b',
-                                      border: 'none',
-                                      width: 20,
-                                      height: 20,
-                                      borderRadius: '50%',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      cursor: 'pointer',
-                                      padding: 0
+                                      width: '100%',
+                                      fontSize: 14,
+                                      fontWeight: 600,
+                                      padding: '7px 32px 7px 10px',
+                                      border: isNameFocused ? '1.5px solid #b45309' : '1px solid #cbd5e1',
+                                      borderRadius: 6,
+                                      outline: 'none'
                                     }}
-                                    title="លុបឈ្មោះ"
-                                  >
-                                    <X size={12} />
-                                  </button>
-                                )}
+                                  />
+                                  {leaveItem.name && (
+                                    <button
+                                      type="button"
+                                      onMouseDown={e => e.preventDefault()}
+                                      onClick={() => {
+                                        updateLeaveField('name', '');
+                                        setFocusedField({ itemId: item.id, field: 'name' });
+                                      }}
+                                      style={{
+                                        position: 'absolute',
+                                        right: 6,
+                                        background: '#f1f5f9',
+                                        color: '#64748b',
+                                        border: 'none',
+                                        width: 20,
+                                        height: 20,
+                                        borderRadius: '50%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        padding: 0
+                                      }}
+                                      title="លុបឈ្មោះ"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                               <OcrNameReviewHint
                                 leaveItem={leaveItem}
                                 onPick={(s) => updateLeaveFields({ name: s.name, grade: s.grade, needsReview: false })}
                               />
                             </div>
-                            <div>
-                              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
-                                ថ្នាក់ទី៖
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                ថ្នាក់៖
                               </label>
                               <MobileCustomSelect
                                 mobileOnly
                                 value={leaveItem.grade || '៣'}
                                 onChange={e => updateLeaveField('grade', e.target.value)}
                                 style={{
+                                  flex: 1,
+                                  minWidth: 0,
                                   width: '100%',
                                   fontSize: 13,
                                   fontWeight: 600,
@@ -2149,30 +2506,6 @@ export default function UploadSection({
                               )}
                             </div>
                           )}
-
-                          {/* Quick Grade Pills */}
-                          <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 11, color: '#64748b', alignSelf: 'center' }}>រើសថ្នាក់៖</span>
-                            {['មត្តេយ្យ', '១', '២', '៣'].map(g => (
-                              <button
-                                key={g}
-                                type="button"
-                                onClick={() => updateLeaveField('grade', g)}
-                                style={{
-                                  fontSize: 11,
-                                  padding: '2px 8px',
-                                  borderRadius: 10,
-                                  background: leaveItem.grade === g ? '#b45309' : '#f1f5f9',
-                                  color: leaveItem.grade === g ? '#ffffff' : '#475569',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  fontWeight: 600
-                                }}
-                              >
-                                {g === 'មត្តេយ្យ' ? 'មត្តេយ្យ' : `ថ្នាក់ទី ${g}`}
-                              </button>
-                            ))}
-                          </div>
 
                           {/* Row: មូលហេតុ */}
                           <div style={{ marginBottom: 8 }}>
@@ -2334,35 +2667,6 @@ export default function UploadSection({
                                     )}
                                   </div>
 
-                                  {durationInfo.isShorthand && (
-                                    <button
-                                      type="button"
-                                      onMouseDown={e => e.preventDefault()}
-                                      onClick={() => {
-                                        updateLeaveField('duration', durationInfo.resolved);
-                                        setFocusedField(null);
-                                      }}
-                                      style={{
-                                        marginTop: 4,
-                                        width: '100%',
-                                        background: '#ecfdf5',
-                                        color: '#065f46',
-                                        border: '1px solid #a7f3d0',
-                                        borderRadius: 6,
-                                        padding: '3px 8px',
-                                        fontSize: 11,
-                                        fontWeight: 700,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'space-between',
-                                        cursor: 'pointer'
-                                      }}
-                                    >
-                                      <span>⚡ បម្លែងជា៖ <strong>«{durationInfo.resolved}»</strong></span>
-                                      <span style={{ fontSize: 10, color: '#059669' }}>ចុចយក</span>
-                                    </button>
-                                  )}
-
                                   <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
                                     {durationInfo.options.map(d => (
                                       <button
@@ -2390,7 +2694,13 @@ export default function UploadSection({
                                   </div>
                                 </div>
                                 <div>
-                                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#1e293b', marginBottom: 3 }}>
+                                  <label style={{
+                                    display: 'block',
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    color: leaveDateCheck.isAnyMismatch ? '#b91c1c' : '#1e293b',
+                                    marginBottom: 3
+                                  }}>
                                     កាលបរិច្ឆេទ (ថ្ងៃខែ)៖
                                   </label>
                                   <input
@@ -2401,11 +2711,43 @@ export default function UploadSection({
                                     style={{
                                       width: '100%',
                                       fontSize: 13,
+                                      fontWeight: leaveDateCheck.isAnyMismatch ? 700 : 500,
                                       padding: '6px 10px',
-                                      border: '1px solid #cbd5e1',
-                                      borderRadius: 6
+                                      border: leaveDateCheck.isAnyMismatch ? '1.5px solid #dc2626' : '1px solid #cbd5e1',
+                                      borderRadius: 6,
+                                      background: leaveDateCheck.isAnyMismatch ? '#fef2f2' : '#ffffff',
+                                      color: leaveDateCheck.isAnyMismatch ? '#b91c1c' : '#0f172a',
+                                      outline: 'none'
                                     }}
                                   />
+                                  {leaveDateCheck.isAnyMismatch && (
+                                    <button
+                                      type="button"
+                                      onClick={() => updateLeaveField('date', getTodayKhmerDateStr())}
+                                      title="ចុចដើម្បីប្ដូរទៅកាលបរិច្ឆេទថ្ងៃនេះ"
+                                      style={{
+                                        display: 'block',
+                                        width: '100%',
+                                        boxSizing: 'border-box',
+                                        textAlign: 'left',
+                                        fontFamily: 'inherit',
+                                        marginTop: 4,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        color: '#b91c1c',
+                                        background: '#fef2f2',
+                                        border: '1px solid #fecaca',
+                                        borderRadius: 6,
+                                        padding: '4px 8px',
+                                        lineHeight: 1.4,
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      {leaveDateCheck.isMonthMismatch
+                                        ? `🚫 ខុសខែ! (ស្កេនខែ${leaveDateCheck.scannedMonthName} ≠ ខែ${leaveDateCheck.targetMonthName}) • ចុចប៊ូតុង ២ ដងដើម្បីបញ្ចូល`
+                                        : `⚠️ ខុសពីថ្ងៃនេះ (ថ្ងៃនេះទី ${toKhmerDigits(String(leaveDateCheck.todayDay).padStart(2, '0'))})`}
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -2690,27 +3032,43 @@ export default function UploadSection({
 
                   {/* Column 3: Actions (Approve & Delete) */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%', justifyContent: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={() => onApproveItem(item)}
-                      style={{
-                        background: '#0f766e',
-                        color: '#ffffff',
-                        border: 'none',
-                        padding: '10px 16px',
-                        borderRadius: 8,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 6px rgba(15,118,110,0.3)',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      <span>✓ បញ្ចូលក្នុងតារាង</span>
-                    </button>
+                    {!isPending && (
+                      <button
+                        type="button"
+                        onClick={() => handleGuardedApproveItem(item, leaveDateCheck.requiresDoubleClick)}
+                        style={{
+                          background: isItemArmed
+                            ? '#dc2626'
+                            : leaveDateCheck.requiresDoubleClick
+                              ? '#c2410c'
+                              : '#0f766e',
+                          color: '#ffffff',
+                          border: leaveDateCheck.requiresDoubleClick ? '1.5px solid #dc2626' : 'none',
+                          padding: '10px 14px',
+                          borderRadius: 8,
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          cursor: 'pointer',
+                          touchAction: 'manipulation',
+                          boxShadow: isItemArmed
+                            ? '0 2px 10px rgba(220, 38, 38, 0.4)'
+                            : '0 2px 6px rgba(15,118,110,0.3)',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        <span>
+                          {isItemArmed
+                            ? '⚠️ ខុសខែ! ចុចម្ដងទៀត'
+                            : leaveDateCheck.requiresDoubleClick
+                              ? '⚠️ បញ្ចូល (ចុច ២ ដង)'
+                              : '✓ បញ្ចូលក្នុងតារាង'}
+                        </span>
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -2747,6 +3105,7 @@ export default function UploadSection({
         <ReviewModal
           isOpen={!!selectedReviewItem}
           isMobile={isMobile}
+          currentMonthKey={currentMonthKey}
           onClose={() => setSelectedReviewIndex(null)}
           queueItem={selectedReviewItem}
           studentMaster={studentMaster}
@@ -2775,8 +3134,8 @@ export default function UploadSection({
             const existingFinances = selectedReviewItem.processedData?.financeItems;
             const updatedFinances = type === 'finance'
               ? (Array.isArray(existingFinances) && existingFinances.length > 1
-                  ? existingFinances.map((f, i) => (i === 0 ? { ...f, ...item } : f))
-                  : [item])
+                ? existingFinances.map((f, i) => (i === 0 ? { ...f, ...item } : f))
+                : [item])
               : [];
             const updatedItem = {
               ...selectedReviewItem,
