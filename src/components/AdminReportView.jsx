@@ -4,8 +4,6 @@ import {
   FileSpreadsheet,
   Upload,
   Edit3,
-  Check,
-  X,
   RotateCcw,
   BookOpen,
   Award,
@@ -18,11 +16,23 @@ import OfficialAdminReportDocument from './OfficialAdminReportDocument';
 import OfficialMinistryReportDocument from './OfficialMinistryReportDocument';
 import OfficialMinistrySummaryDocument from './OfficialMinistrySummaryDocument';
 import OfficialSchoolHistoryDocument from './OfficialSchoolHistoryDocument';
-import SchoolHistoryEditorFields from './SchoolHistoryEditorFields';
+import KhmerJustifiedText from './KhmerJustifiedText';
 import A4SheetScaler from './A4SheetScaler';
 import TelegramSendMenu from './TelegramSendMenu';
+import ReportEditableZone from './ReportEditableZone';
+import ReportSectionDrawer, { ReportEditModeBar } from './ReportSectionDrawer';
 import {
+  AdminSectionEditorContent,
+  HistorySectionEditorContent,
+  MinistrySectionEditorContent
+} from './ReportSectionEditors';
+import {
+  DEFAULT_STAFF_STATS,
+  DEFAULT_MANAGEMENT_ROLES,
+  DEFAULT_SECTION1_INTRO,
   buildAdminReportDisplayModel,
+  buildAutoStudentStatLines,
+  buildAutoAdminDocLines,
   synthesizeMultiMonthAdminReport,
   importAdminReportFile,
   syncMonthlyDropoutChallengeLine
@@ -50,201 +60,6 @@ import {
   exportSchoolHistoryToExcel
 } from '../utils/excelExporter';
 import { toKhmerDigits } from '../utils/khmerNumerals';
-
-/**
- * HangingBulletEditor: Renders each bullet item (❖ or -) with a true hanging indent
- * matching the A4 document layout so wrapped 2nd/3rd lines align cleanly under the text,
- * never flush-left under the bullet symbol.
- */
-function HangingBulletEditor({ value = '', onChange, bullet = '-', rows = 5 }) {
-  const rowRefs = useRef([]);
-  const [isFocused, setIsFocused] = useState(false);
-
-  const items = useMemo(() => {
-    const raw = String(value ?? '');
-    if (!raw.trim()) return [''];
-    return raw
-      .split('\n')
-      .map(line => line.replace(/^[-•❖▪◦]+\s*/, ''));
-  }, [value]);
-
-  const commitItems = (nextItems) => {
-    const safeItems = nextItems.length > 0 ? nextItems : [''];
-    const serialized = safeItems.map(line => `${bullet} ${line}`).join('\n');
-    if (onChange) onChange(serialized);
-  };
-
-  useEffect(() => {
-    rowRefs.current.forEach(el => {
-      if (el) {
-        el.style.height = 'auto';
-        el.style.height = `${Math.max(23, el.scrollHeight)}px`;
-      }
-    });
-  }, [items]);
-
-  const focusRowAt = (targetIdx, cursorPos = null) => {
-    requestAnimationFrame(() => {
-      const el = rowRefs.current[targetIdx];
-      if (el) {
-        el.focus();
-        const pos = cursorPos !== null ? cursorPos : el.value.length;
-        try {
-          el.setSelectionRange(pos, pos);
-        } catch {
-          // ignore
-        }
-      }
-    });
-  };
-
-  const handleRowChange = (idx, rawText, targetEl) => {
-    if (targetEl) {
-      targetEl.style.height = 'auto';
-      targetEl.style.height = `${Math.max(23, targetEl.scrollHeight)}px`;
-    }
-    if (rawText.includes('\n')) {
-      const pastedLines = rawText
-        .split('\n')
-        .map(l => l.replace(/^[-•❖▪◦]+\s*/, ''));
-      const next = [...items];
-      next.splice(idx, 1, ...pastedLines);
-      commitItems(next);
-      focusRowAt(idx + pastedLines.length - 1);
-      return;
-    }
-    const next = [...items];
-    next[idx] = rawText;
-    commitItems(next);
-  };
-
-  const handleRowKeyDown = (e, idx) => {
-    if (e.nativeEvent?.isComposing) return;
-    const el = e.currentTarget;
-    const start = el.selectionStart ?? 0;
-    const end = el.selectionEnd ?? start;
-    const curText = items[idx] ?? '';
-
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      const before = curText.slice(0, start);
-      const after = curText.slice(end).replace(/^[-•❖▪◦]+\s*/, '');
-      const next = [...items];
-      next.splice(idx, 1, before, after);
-      commitItems(next);
-      focusRowAt(idx + 1, 0);
-      return;
-    }
-
-    if (e.key === 'Backspace' && start === 0 && end === 0) {
-      if (idx > 0) {
-        e.preventDefault();
-        const prevText = items[idx - 1] ?? '';
-        const joinPos = prevText.length;
-        const merged = prevText + curText;
-        const next = [...items];
-        next.splice(idx - 1, 2, merged);
-        commitItems(next);
-        focusRowAt(idx - 1, joinPos);
-      } else if (idx === 0 && items.length > 1 && !curText.trim()) {
-        e.preventDefault();
-        const next = items.slice(1);
-        commitItems(next);
-        focusRowAt(0, 0);
-      }
-      return;
-    }
-
-    if (e.key === 'ArrowUp' && idx > 0 && start === 0) {
-      e.preventDefault();
-      focusRowAt(idx - 1);
-      return;
-    }
-
-    if (e.key === 'ArrowDown' && idx < items.length - 1 && start === curText.length) {
-      e.preventDefault();
-      focusRowAt(idx + 1, 0);
-    }
-  };
-
-  const minHeightPx = Math.max(115, rows * 25 + 16);
-
-  return (
-    <div
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          focusRowAt(items.length - 1);
-        }
-      }}
-      style={{
-        width: '100%',
-        minHeight: minHeightPx,
-        maxHeight: 280,
-        overflowY: 'auto',
-        padding: '8px 10px',
-        borderRadius: 8,
-        border: isFocused ? '1.5px solid #d97706' : '1px solid #cbd5e1',
-        background: '#ffffff',
-        boxSizing: 'border-box',
-        cursor: 'text',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4
-      }}
-    >
-      {items.map((lineText, idx) => (
-        <div
-          key={idx}
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 6,
-            width: '100%'
-          }}
-        >
-          <span
-            style={{
-              width: bullet === '❖' ? 16 : 12,
-              flexShrink: 0,
-              fontSize: 13,
-              lineHeight: '23px',
-              color: '#0f172a',
-              userSelect: 'none'
-            }}
-          >
-            {bullet}
-          </span>
-          <textarea
-            ref={el => {
-              rowRefs.current[idx] = el;
-            }}
-            rows={1}
-            value={lineText}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            onChange={e => handleRowChange(idx, e.target.value, e.currentTarget)}
-            onKeyDown={e => handleRowKeyDown(e, idx)}
-            style={{
-              flex: 1,
-              width: '100%',
-              border: 'none',
-              outline: 'none',
-              resize: 'none',
-              padding: 0,
-              margin: 0,
-              background: 'transparent',
-              fontSize: 13,
-              lineHeight: '23px',
-              color: '#0f172a',
-              fontFamily: 'inherit',
-              overflow: 'hidden'
-            }}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function AdminReportView({
   currentMonthKey = '2026-07',
@@ -274,14 +89,33 @@ export default function AdminReportView({
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [activeEditSection, setActiveEditSection] = useState(null);
+  const [savedToastText, setSavedToastText] = useState('');
   const [editDraft, setEditDraft] = useState(null);
   const [ministryEditDraft, setMinistryEditDraft] = useState(null);
   const [historyEditDraft, setHistoryEditDraft] = useState(null);
   const fileInputRef = useRef(null);
+  const savedToastTimerRef = useRef(null);
 
-  // Close inline editor automatically whenever user switches month or year in top bar
+  const showSavedToast = (msg = 'បានរក្សាទុក!') => {
+    setSavedToastText(msg);
+    if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
+    savedToastTimerRef.current = setTimeout(() => setSavedToastText(''), 2400);
+  };
+
+  useEffect(() => () => {
+    if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
+  }, []);
+
+  const handleCloseEditMode = () => {
+    setIsEditing(false);
+    setActiveEditSection(null);
+  };
+
+  // Close edit mode automatically whenever user switches month or year in top bar
   useEffect(() => {
     setIsEditing(false);
+    setActiveEditSection(null);
   }, [currentMonthKey, activeYear]);
 
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
@@ -375,9 +209,19 @@ export default function AdminReportView({
     });
   }, [isEditing, periodType, currentMonthKey, displayModel.prevMonthTotalStudents, useKhmerNumerals]);
 
+  const normalizeParagraphArrayPreserveBlanks = (rawText) => {
+    const lines = String(rawText || '')
+      .replace(/\u200B/g, '')
+      .split(/\r?\n/)
+      .map(s => s.replace(/[ \t]+/g, ' ').trim());
+    while (lines.length > 0 && lines[0] === '') lines.shift();
+    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    return lines;
+  };
+
   const makeHistoryDraftFromModel = (hModel) => ({
     title: hModel.title || '',
-    backgroundText: (hModel.backgroundParagraphs || []).join('\n\n'),
+    backgroundText: (hModel.backgroundParagraphs || []).join('\n'),
     tableIntro: hModel.tableIntro || '',
     rows: (hModel.rows || []).map(r => ({
       academicYear: r.academicYear,
@@ -392,105 +236,45 @@ export default function AdminReportView({
     signerTitle: hModel.signerTitle || 'នាយកសាលា'
   });
 
-  const serializeHistoryDraft = (draft) => ({
-    ...(schoolHistoryModel.rawSaved || {}),
-    id: `admin-${SCHOOL_HISTORY_STORAGE_KEY}`,
-    title: String(draft.title || '').trim(),
-    backgroundParagraphs: String(draft.backgroundText || '')
-      .split(/\n+/)
-      .map(s => s.trim())
-      .filter(Boolean),
-    tableIntro: String(draft.tableIntro || '').trim(),
-    rows: (draft.rows || []).map(r => ({
-      academicYear: String(r.academicYear || '').trim(),
-      gradeKindergarten: Math.max(0, Number(r.gradeKindergarten) || 0),
-      grade1: Math.max(0, Number(r.grade1) || 0),
-      grade2: Math.max(0, Number(r.grade2) || 0),
-      grade3: Math.max(0, Number(r.grade3) || 0),
-      note: String(r.note || '').trim()
-    })),
-    lunarDateLine: String(draft.lunarDateLine || '').trim(),
-    solarDateLine: String(draft.solarDateLine || '').trim(),
-    signerTitle: String(draft.signerTitle || 'នាយកសាលា').trim()
-  });
+  const serializeHistoryDraft = (draft) => {
+    const cleanedTableIntro = normalizeParagraphArrayPreserveBlanks(draft.tableIntro).join('\n');
 
-  const handleOpenEditor = () => {
-    if (isHistoryOnly) {
-      setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
-      setIsEditing(true);
-      return;
-    }
+    return {
+      ...(schoolHistoryModel.rawSaved || {}),
+      id: `admin-${SCHOOL_HISTORY_STORAGE_KEY}`,
+      title: String(draft.title || '').trim(),
+      backgroundParagraphs: normalizeParagraphArrayPreserveBlanks(draft.backgroundText),
+      tableIntro: cleanedTableIntro,
+      rows: (draft.rows || []).map(r => ({
+        academicYear: String(r.academicYear || '').trim(),
+        gradeKindergarten: Math.max(0, Number(r.gradeKindergarten) || 0),
+        grade1: Math.max(0, Number(r.grade1) || 0),
+        grade2: Math.max(0, Number(r.grade2) || 0),
+        grade3: Math.max(0, Number(r.grade3) || 0),
+        note: String(r.note || '').trim()
+      })),
+      lunarDateLine: String(draft.lunarDateLine || '').trim(),
+      solarDateLine: String(draft.solarDateLine || '').trim(),
+      signerTitle: String(draft.signerTitle || 'នាយកសាលា').trim()
+    };
+  };
 
-    if (isMinistryActive) {
-      const st = ministryModel.stats || {};
-      const hourlyMap = {};
-      [...MINISTRY_SEM1_MONTHS, ...MINISTRY_SEM2_MONTHS].forEach(m => {
-        const raw = st.hourlyIncomeByMonth?.[m.num];
-        hourlyMap[m.num] = raw !== undefined && raw !== null ? String(raw) : '';
-      });
-      setMinistryEditDraft({
-        docNumber: ministryModel.docNumber || '.....................................',
-        lunarDateLine: ministryModel.lunarDateLine || '',
-        solarDateLine: ministryModel.solarDateLine || '',
-        signerTitle: ministryModel.signerTitle || 'ព្រះនាយក',
-        reporterTitle: ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍',
-        appliedStudents: st.appliedStudents ?? 101,
-        permanentStudents: st.permanentStudents ?? 101,
-        oldStudents: st.oldStudents ?? 66,
-        newStudents: st.newStudents ?? 35,
-        dropoutStudents: st.dropoutStudents ?? 20,
-        remainingStudents: st.remainingStudents ?? 81,
-        remainingGrade3: st.remainingGrade3 ?? 21,
-        offCampusStudents: st.offCampusStudents ?? 8,
-        teacherTotal: st.teacherTotal ?? 10,
-        teacherFramework: st.teacherFramework ?? 2,
-        teacherContract: st.teacherContract ?? 2,
-        teacherHourly: st.teacherHourly ?? 6,
-        paliExamTotal: st.paliExamTotal ?? 21,
-        paliExamPassed: st.paliExamPassed ?? 21,
-        paliExamFailed: st.paliExamFailed ?? 0,
-        dhammaExamTotal: st.dhammaExamTotal ?? 66,
-        dhammaExamTri: st.dhammaExamTri ?? 15,
-        dhammaExamTo: st.dhammaExamTo ?? 30,
-        dhammaExamEk: st.dhammaExamEk ?? 21,
-        dhammaExamNote: st.dhammaExamNote ?? 'មិនទាន់ប្រឡង',
-        computerCountText: st.computerCountText ?? '១០គ្រឿង',
-        computerNoteText: st.computerNoteText ?? 'ប្រើប្រាស់បាន៨គ្រឿងខូច២គ្រឿង',
-        awardCeremonyIncome1: st.awardCeremonyIncome1 ?? 0,
-        awardCeremonyIncome2: st.awardCeremonyIncome2 ?? 0,
-        awardCeremonyExpense: st.awardCeremonyExpense ?? 0,
-        hourlyIncomeByMonth: hourlyMap,
-        teacherActivitiesText: formatLinesWithBullet(ministryModel.teacherActivities, '-'),
-        studentActivitiesText: formatLinesWithBullet(ministryModel.studentActivities, '-'),
-        outsideActivitiesText: formatLinesWithBullet(ministryModel.outsideActivities, '-'),
-        abbotResponsibilitiesText: formatLinesWithBullet(ministryModel.abbotResponsibilities, '-'),
-        managementActivitiesText: formatLinesWithBullet(ministryModel.managementActivities, '-'),
-        libraryLinesText: formatLinesWithBullet(ministryModel.libraryLines, '-'),
-        donationLinesText: formatLinesWithBullet(ministryModel.donationLines, '-'),
-        teacherRelationsText: formatLinesWithBullet(ministryModel.teacherRelations, '-'),
-        challengesText: formatLinesWithBullet(ministryModel.challenges, '-'),
-        solutionsText: formatLinesWithBullet(ministryModel.solutions, '-'),
-        conclusionParasText: (ministryModel.conclusionParas || []).join('\n\n'),
-        requestsText: formatLinesWithBullet(ministryModel.requests, '-'),
-        ccListText: formatLinesWithBullet(ministryModel.ccList, '-')
-      });
-      setIsEditing(true);
-      return;
-    }
-
+  const buildFreshAdminDraft = () => {
     const raw = displayModel.rawReport || {};
     const st = displayModel.studentStats || {};
     const ad = displayModel.adminDocs || {};
-    setEditDraft({
+    return {
       docNumber: displayModel.docNumber || '......................',
       recipientTitle: displayModel.recipientTitle || '',
-      subjectIntroText: [
+      subjectText:
         displayModel.subjectText || raw.customSubjectText || displayModel.defaultAutoSubject || '',
-        displayModel.introParagraph || displayModel.defaultAutoIntroParagraph || ''
-      ]
-        .map(s => String(s).trim())
-        .filter(Boolean)
-        .join('\n'),
+      introParagraph:
+        displayModel.introParagraph || displayModel.defaultAutoIntroParagraph || '',
+      section1Intro: displayModel.section1Intro || DEFAULT_SECTION1_INTRO,
+      managementRoles: (displayModel.managementRoles || DEFAULT_MANAGEMENT_ROLES).map(m => ({
+        name: m?.name || '',
+        role: m?.role || ''
+      })),
       totalStudents: st.totalStudents ?? 81,
       gradeKindergarten: st.gradeKindergarten ?? 15,
       grade1: st.grade1 ?? 15,
@@ -501,6 +285,9 @@ export default function AdminReportView({
       schoolMinutes: ad.schoolMinutes ?? 1,
       schoolReportsToMinistry: ad.schoolReportsToMinistry ?? 0,
       ministryMeetings: ad.ministryMeetings ?? 0,
+      staffStatsText: formatLinesWithBullet(displayModel.staffStats, '-'),
+      studentStatLinesText: formatLinesWithBullet(displayModel.studentStatLines, '-'),
+      adminDocLinesText: formatLinesWithBullet(displayModel.adminDocLines, '-'),
       activitiesText: formatLinesWithBullet(displayModel.activities, '❖'),
       appendixText: formatLinesWithBullet(displayModel.appendixItems, '-'),
       challengesText: formatLinesWithBullet(displayModel.challenges, '-'),
@@ -511,132 +298,196 @@ export default function AdminReportView({
       lunarDateLine: displayModel.lunarDateLine || '',
       solarDateLine: displayModel.solarDateLine || '',
       signerTitle: displayModel.signerTitle || 'ព្រះនាយក'
+    };
+  };
+
+  const buildFreshMinistryDraft = () => {
+    const st = ministryModel.stats || {};
+    const hourlyMap = {};
+    [...MINISTRY_SEM1_MONTHS, ...MINISTRY_SEM2_MONTHS].forEach(m => {
+      const raw = st.hourlyIncomeByMonth?.[m.num];
+      hourlyMap[m.num] = raw !== undefined && raw !== null ? String(raw) : '';
     });
+    return {
+      docNumber: ministryModel.docNumber || '.....................................',
+      lunarDateLine: ministryModel.lunarDateLine || '',
+      solarDateLine: ministryModel.solarDateLine || '',
+      signerTitle: ministryModel.signerTitle || 'ព្រះនាយក',
+      reporterTitle: ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍',
+      appliedStudents: st.appliedStudents ?? 101,
+      permanentStudents: st.permanentStudents ?? 101,
+      oldStudents: st.oldStudents ?? 66,
+      newStudents: st.newStudents ?? 35,
+      dropoutStudents: st.dropoutStudents ?? 20,
+      remainingStudents: st.remainingStudents ?? 81,
+      remainingGrade3: st.remainingGrade3 ?? 21,
+      offCampusStudents: st.offCampusStudents ?? 8,
+      teacherTotal: st.teacherTotal ?? 10,
+      teacherFramework: st.teacherFramework ?? 2,
+      teacherContract: st.teacherContract ?? 2,
+      teacherHourly: st.teacherHourly ?? 6,
+      paliExamTotal: st.paliExamTotal ?? 21,
+      paliExamPassed: st.paliExamPassed ?? 21,
+      paliExamFailed: st.paliExamFailed ?? 0,
+      dhammaExamTotal: st.dhammaExamTotal ?? 66,
+      dhammaExamTri: st.dhammaExamTri ?? 15,
+      dhammaExamTo: st.dhammaExamTo ?? 30,
+      dhammaExamEk: st.dhammaExamEk ?? 21,
+      dhammaExamNote: st.dhammaExamNote ?? 'មិនទាន់ប្រឡង',
+      computerCountText: st.computerCountText ?? '១០គ្រឿង',
+      computerNoteText: st.computerNoteText ?? 'ប្រើប្រាស់បាន៨គ្រឿងខូច២គ្រឿង',
+      awardCeremonyIncome1: st.awardCeremonyIncome1 ?? 0,
+      awardCeremonyIncome2: st.awardCeremonyIncome2 ?? 0,
+      awardCeremonyExpense: st.awardCeremonyExpense ?? 0,
+      hourlyIncomeByMonth: hourlyMap,
+      teacherActivitiesText: formatLinesWithBullet(ministryModel.teacherActivities, '-'),
+      studentActivitiesText: formatLinesWithBullet(ministryModel.studentActivities, '-'),
+      outsideActivitiesText: formatLinesWithBullet(ministryModel.outsideActivities, '-'),
+      abbotResponsibilitiesText: formatLinesWithBullet(ministryModel.abbotResponsibilities, '-'),
+      managementActivitiesText: formatLinesWithBullet(ministryModel.managementActivities, '-'),
+      libraryLinesText: formatLinesWithBullet(ministryModel.libraryLines, '-'),
+      donationLinesText: formatLinesWithBullet(ministryModel.donationLines, '-'),
+      teacherRelationsText: formatLinesWithBullet(ministryModel.teacherRelations, '-'),
+      challengesText: formatLinesWithBullet(ministryModel.challenges, '-'),
+      solutionsText: formatLinesWithBullet(ministryModel.solutions, '-'),
+      conclusionParasText: (ministryModel.conclusionParas || []).join('\n'),
+      requestsText: formatLinesWithBullet(ministryModel.requests, '-'),
+      ccListText: formatLinesWithBullet(ministryModel.ccList, '-')
+    };
+  };
+
+  const initDraftsForCurrentMode = () => {
+    if (isHistoryOnly) {
+      setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
+      return;
+    }
+    if (isMinistryActive) {
+      setMinistryEditDraft(buildFreshMinistryDraft());
+      return;
+    }
+    setEditDraft(buildFreshAdminDraft());
     if (isSem1Combined) {
       setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
     }
+  };
+
+  const handleOpenEditor = () => {
+    initDraftsForCurrentMode();
+    setActiveEditSection(null);
     setIsEditing(true);
   };
 
-  const handleBulletFocus = (fieldKey, bullet = '❖') => {
-    setEditDraft(prev => {
-      if (!prev) return prev;
-      const currentVal = String(prev[fieldKey] ?? '');
-      if (!currentVal.trim()) {
-        return { ...prev, [fieldKey]: `${bullet} ` };
+  const handleSelectEditSection = (sectionId) => {
+    if (!sectionId) return;
+    if (isHistoryOnly && !historyEditDraft) {
+      setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
+    } else if (isMinistryActive && !ministryEditDraft) {
+      setMinistryEditDraft(buildFreshMinistryDraft());
+    } else if (!isHistoryOnly && !isMinistryActive) {
+      if (!editDraft) setEditDraft(buildFreshAdminDraft());
+      if (isSem1Combined && !historyEditDraft) {
+        setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
       }
-      return prev;
-    });
-  };
-
-  const handleBulletChange = (e, fieldKey, bullet = '❖') => {
-    let nextVal = e.target.value;
-    const prevVal = String(editDraft?.[fieldKey] ?? '');
-    if (prevVal === '' && nextVal.length > 0 && !/^[-•❖▪◦]/.test(nextVal.trim())) {
-      nextVal = `${bullet} ${nextVal}`;
     }
-    setEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
+    setActiveEditSection(sectionId);
   };
 
-  const handleBulletKeyDown = (e, fieldKey, bullet = '❖') => {
-    if (e.key !== 'Enter' || e.nativeEvent?.isComposing) return;
-    e.preventDefault();
-    const el = e.currentTarget;
-    const start = el.selectionStart ?? 0;
-    const end = el.selectionEnd ?? start;
-    const val = String(editDraft?.[fieldKey] ?? '');
+  const handleCancelActiveDrawer = () => {
+    initDraftsForCurrentMode();
+    setActiveEditSection(null);
+  };
 
-    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-    const lineEndIdx = val.indexOf('\n', end);
-    const lineEnd = lineEndIdx === -1 ? val.length : lineEndIdx;
-    const currentLine = val.slice(lineStart, lineEnd);
-
-    const strippedCurrentLine = currentLine.replace(/^[-•❖▪◦\s]+/, '').trim();
-    if (!strippedCurrentLine && currentLine.trim().length > 0) {
-      const beforeLine = val.slice(0, lineStart);
-      const afterLine = val.slice(lineEnd);
-      const nextVal = beforeLine + afterLine.replace(/^\n/, '');
-      const nextCursor = beforeLine.length;
-      setEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(nextCursor, nextCursor);
-      });
-      return;
+  const activeEditSections = useMemo(() => {
+    if (isHistoryOnly) {
+      return [
+        { id: 'hist_title', shortLabel: 'ចំណងជើង', label: 'ចំណងជើងរបាយការណ៍ប្រវត្តិសាលា' },
+        { id: 'hist_bg', shortLabel: '១.១. សាវតារ', label: '១.១. សាវតារ' },
+        { id: 'hist_table', shortLabel: 'តារាង ១៦ ឆ្នាំ', label: 'អត្ថបទណែនាំ & តារាងធនធានមនុស្ស ១៦ ឆ្នាំ', wide: true },
+        { id: 'hist_signature', shortLabel: 'កាលបរិច្ឆេទ & ហត្ថលេខា', label: 'កាលបរិច្ឆេទ & ហត្ថលេខា' }
+      ];
     }
-
-    const insertStr = `\n${bullet} `;
-    const nextVal = val.slice(0, start) + insertStr + val.slice(end);
-    const nextCursor = start + insertStr.length;
-    setEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(nextCursor, nextCursor);
-    });
-  };
-
-  const handleMinistryBulletFocus = (fieldKey, bullet = '-') => {
-    setMinistryEditDraft(prev => {
-      if (!prev) return prev;
-      const currentVal = String(prev[fieldKey] ?? '');
-      if (!currentVal.trim()) {
-        return { ...prev, [fieldKey]: `${bullet} ` };
+    if (isMinistryActive) {
+      if (ministryDocType === 'summary') {
+        return [
+          { id: 'min_stats', shortLabel: 'តារាងសង្ខេប ១០ ជួរ', label: 'តារាងសង្ខេប ១០ ជួរ (ស្ថិតិសិស្ស គ្រូ ប្រឡង)', wide: true },
+          { id: 'min_signature', shortLabel: 'លេខលិខិត & ហត្ថលេខា', label: 'លេខលិខិត កាលបរិច្ឆេទ & ហត្ថលេខា' }
+        ];
       }
-      return prev;
-    });
-  };
-
-  const handleMinistryBulletChange = (e, fieldKey, bullet = '-') => {
-    let nextVal = e.target.value;
-    const prevVal = String(ministryEditDraft?.[fieldKey] ?? '');
-    if (prevVal === '' && nextVal.length > 0 && !/^[-•❖▪◦]/.test(nextVal.trim())) {
-      nextVal = `${bullet} ${nextVal}`;
-    }
-    setMinistryEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
-  };
-
-  const handleMinistryBulletKeyDown = (e, fieldKey, bullet = '-') => {
-    if (e.key !== 'Enter' || e.nativeEvent?.isComposing) return;
-    e.preventDefault();
-    const el = e.currentTarget;
-    const start = el.selectionStart ?? 0;
-    const end = el.selectionEnd ?? start;
-    const val = String(ministryEditDraft?.[fieldKey] ?? '');
-
-    const lineStart = val.lastIndexOf('\n', start - 1) + 1;
-    const lineEndIdx = val.indexOf('\n', end);
-    const lineEnd = lineEndIdx === -1 ? val.length : lineEndIdx;
-    const currentLine = val.slice(lineStart, lineEnd);
-
-    const strippedCurrentLine = currentLine.replace(/^[-•❖▪◦\s]+/, '').trim();
-    if (!strippedCurrentLine && currentLine.trim().length > 0) {
-      const beforeLine = val.slice(0, lineStart);
-      const afterLine = val.slice(lineEnd);
-      const nextVal = beforeLine + afterLine.replace(/^\n/, '');
-      const nextCursor = beforeLine.length;
-      setMinistryEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
-      requestAnimationFrame(() => {
-        el.focus();
-        el.setSelectionRange(nextCursor, nextCursor);
-      });
-      return;
+      return [
+        { id: 'min_stats', shortLabel: 'ក. ព័ត៌មានទូទៅ', label: 'ក. ព័ត៌មានទូទៅ & ស្ថិតិសិស្ស/គ្រូ/ប្រឡង', wide: true },
+        { id: 'min_in_school', shortLabel: 'ខ. ក្នុងសាលា', label: 'ខ. សកម្មភាពក្នុងសាលា (ខ.១ គ្រូ & ខ.២ សមណសិស្ស)' },
+        { id: 'min_outside', shortLabel: 'គ. ក្រៅសាលា', label: 'គ. សកម្មភាពនៅក្រៅសាលា' },
+        { id: 'min_abbot', shortLabel: 'ឃ. ព្រះចៅអធិការ', label: 'ឃ.១. ការទទួលខុសត្រូវរបស់ព្រះគ្រូចៅអធិការ' },
+        { id: 'min_management', shortLabel: 'ង. គណៈគ្រប់គ្រង', label: 'ង. គណៈគ្រប់គ្រង ង.១ បណ្ណាល័យ & ង.២ ជំនួយ' },
+        { id: 'min_finance', shortLabel: 'ច. ហិរញ្ញវត្ថុ', label: 'ច. ចំណូលប្រាក់ម៉ោង & កម្មវិធីចែកបណ្ណសរសើរ', wide: true },
+        { id: 'min_relations', shortLabel: 'ឆ. គ្រូ & សិស្ស', label: 'ឆ. សកម្មភាពគ្រូបង្រៀនជាមួយសមណសិស្ស' },
+        { id: 'min_challenges', shortLabel: 'ជ-ឈ. បញ្ហា & ដំណោះស្រាយ', label: 'ជ. បញ្ហាប្រឈម & ឈ. ដំណោះស្រាយ' },
+        { id: 'min_conclusion', shortLabel: 'ញ-ដ. សន្និដ្ឋាន & សំណូមពរ', label: 'ញ. សេចក្ដីសន្និដ្ឋាន & ដ. សំណូមពរ' },
+        { id: 'min_signature', shortLabel: 'ហត្ថលេខា & CC', label: 'លេខលិខិត កាលបរិច្ឆេទ ហត្ថលេខា & ចម្លងប្រគេនជូន' }
+      ];
     }
 
-    const insertStr = `\n${bullet} `;
-    const nextVal = val.slice(0, start) + insertStr + val.slice(end);
-    const nextCursor = start + insertStr.length;
-    setMinistryEditDraft(prev => ({ ...prev, [fieldKey]: nextVal }));
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(nextCursor, nextCursor);
-    });
-  };
+    const sn = displayModel.sectionNumbers || {
+      management: 'I',
+      stats: 'II',
+      progress: 'III',
+      challenges: 'IV',
+      directions: 'V',
+      conclusion: 'VI'
+    };
+    return [
+      { id: 'header', shortLabel: 'លេខ/អ្នកទទួល', label: 'លេខលិខិត & ព្រះនាមអ្នកទទួល' },
+      { id: 'subject_intro', shortLabel: 'កម្មវត្ថុ/ផ្ដើម', label: 'កម្មវត្ថុ & សេចក្ដីផ្ដើម' },
+      ...(isSem1Combined ? [{ id: 'history_bg', shortLabel: 'I. សាវតារ', label: 'I. សាវតារ' }] : []),
+      { id: 'management', shortLabel: `${sn.management}. តួនាទី`, label: `${sn.management}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា` },
+      { id: 'stats', shortLabel: `${sn.stats}. ស្ថិតិ`, label: `${sn.stats}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស` },
+      { id: 'activities', shortLabel: `${sn.progress}. ក. សកម្មភាព`, label: `${sn.progress}. ក. សកម្មភាពការងារ` },
+      { id: 'admin_docs', shortLabel: `${sn.progress}. ខ. រដ្ឋបាល`, label: `${sn.progress}. ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល` },
+      ...(isSem1Combined
+        ? [{ id: 'history_table', shortLabel: 'គ. តារាង ១៦ ឆ្នាំ', label: 'គ. អត្ថបទណែនាំ & តារាងធនធានមនុស្ស ១៦ ឆ្នាំ', wide: true }]
+        : []),
+      { id: 'appendix', shortLabel: 'ឧបសម្ព័ន្ធ', label: displayModel.section3SubDHeading || 'ឧបសម្ព័ន្ធ (ចំណាយ)' },
+      { id: 'challenges', shortLabel: `${sn.challenges}. ១-បញ្ហា`, label: `${sn.challenges}. ១-បញ្ហាប្រឈម` },
+      { id: 'solutions', shortLabel: '២-ដំណោះស្រាយ', label: `${sn.challenges}. ២-ដំណោះស្រាយ` },
+      { id: 'requests', shortLabel: '៣-សំណូមពរ', label: `${sn.challenges}. ៣-សំណូមពរ` },
+      { id: 'directions', shortLabel: `${sn.directions}. ទិសដៅ`, label: `${sn.directions}. ទិសដៅបន្ត` },
+      { id: 'conclusion', shortLabel: `${sn.conclusion}. សន្និដ្ឋាន`, label: `${sn.conclusion}. សេចក្ដីសន្និដ្ឋាន` },
+      { id: 'signature', shortLabel: 'ហត្ថលេខា', label: 'កាលបរិច្ឆេទ & ហត្ថលេខា' }
+    ];
+  }, [isHistoryOnly, isMinistryActive, ministryDocType, isSem1Combined, displayModel.sectionNumbers, displayModel.section3SubDHeading]);
+
+  const buildDraftStudentStatsObj = (draft) => ({
+    ...(displayModel.studentStats || {}),
+    classCount: displayModel.studentStats?.classCount || 4,
+    totalStudents: Number(draft.totalStudents) || 0,
+    gradeKindergarten: Number(draft.gradeKindergarten) || 0,
+    grade1: Number(draft.grade1) || 0,
+    grade2: Number(draft.grade2) || 0,
+    grade3: Number(draft.grade3) || 0
+  });
+
+  const buildDraftAdminDocsObj = (draft) => ({
+    outgoingLetters: Number(draft.outgoingLetters) || 0,
+    incomingLetters: Number(draft.incomingLetters) || 0,
+    schoolMinutes: Number(draft.schoolMinutes) || 0,
+    schoolReportsToMinistry: Number(draft.schoolReportsToMinistry) || 0,
+    ministryMeetings: Number(draft.ministryMeetings) || 0
+  });
 
   const handleTotalStudentsChange = (rawVal) => {
     setEditDraft(prev => {
       if (!prev) return prev;
+      const nextDraft = { ...prev, totalStudents: rawVal };
+      nextDraft.studentStatLinesText = formatLinesWithBullet(
+        buildAutoStudentStatLines({
+          periodType,
+          studentStats: buildDraftStudentStatsObj(nextDraft),
+          useKhmerNumerals
+        }),
+        '-'
+      );
       if (periodType !== 'month') {
-        return { ...prev, totalStudents: rawVal };
+        return nextDraft;
       }
       const currentChallengeLines = String(prev.challengesText || '')
         .split('\n')
@@ -649,11 +500,8 @@ export default function AdminReportView({
         challenges: currentChallengeLines,
         useKhmerNumerals
       });
-      return {
-        ...prev,
-        totalStudents: rawVal,
-        challengesText: formatLinesWithBullet(nextChallenges, '-')
-      };
+      nextDraft.challengesText = formatLinesWithBullet(nextChallenges, '-');
+      return nextDraft;
     });
   };
 
@@ -667,6 +515,14 @@ export default function AdminReportView({
         (Number(nextDraft.grade2) || 0) +
         (Number(nextDraft.grade3) || 0);
       nextDraft.totalStudents = sumTotal;
+      nextDraft.studentStatLinesText = formatLinesWithBullet(
+        buildAutoStudentStatLines({
+          periodType,
+          studentStats: buildDraftStudentStatsObj(nextDraft),
+          useKhmerNumerals
+        }),
+        '-'
+      );
       if (periodType === 'month') {
         const currentChallengeLines = String(prev.challengesText || '')
           .split('\n')
@@ -685,8 +541,23 @@ export default function AdminReportView({
     });
   };
 
+  const handleAdminDocCountChange = (docField, rawVal) => {
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      const nextDraft = { ...prev, [docField]: rawVal };
+      nextDraft.adminDocLinesText = formatLinesWithBullet(
+        buildAutoAdminDocLines({
+          adminDocs: buildDraftAdminDocsObj(nextDraft),
+          useKhmerNumerals
+        }),
+        '-'
+      );
+      return nextDraft;
+    });
+  };
+
   const handleSaveEditor = (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     if (!editDraft || !onUpdateAdminReport) return;
 
     const splitClean = (txt) =>
@@ -716,19 +587,60 @@ export default function AdminReportView({
     const didUserCustomEditChallengeText =
       JSON.stringify(cleanedChallenges) !== JSON.stringify(autoSyncedChallenges);
 
-    // Combined box: line 1 = កម្មវត្ថុ, following line(s) = សេចក្ដីដូចមានចែង... (intro paragraph)
-    const subjectIntroLines = String(editDraft.subjectIntroText || '')
-      .split(/\r?\n/)
-      .map(s => s.replace(/[ \t]+/g, ' ').trim())
-      .filter(Boolean);
-    const trimmedSubject = (subjectIntroLines[0] || '').replace(/^កម្មវត្ថុ[៖:]\s*/, '').trim();
-    const trimmedIntro = subjectIntroLines.slice(1).join(' ').trim();
+    // Preserve explicit Enter (\n) line breaks inside BOTH កម្មវត្ថុ and សេចក្ដីផ្ដើម (and សន្និដ្ឋាន)
+    const normalizeMultilinePreserveBreaks = (val) => {
+      const rawLines = String(val || '')
+        .replace(/\u200B/g, '')
+        .split(/\r?\n/)
+        .map(line => line.replace(/[ \t]+/g, ' ').trim());
+      while (rawLines.length > 0 && rawLines[0] === '') rawLines.shift();
+      while (rawLines.length > 0 && rawLines[rawLines.length - 1] === '') rawLines.pop();
+      return rawLines.join('\n');
+    };
+
+    const trimmedSubject = normalizeMultilinePreserveBreaks(editDraft.subjectText)
+      .replace(/^កម្មវត្ថុ[៖:]\s*/, '')
+      .trim();
+    const trimmedIntro = normalizeMultilinePreserveBreaks(editDraft.introParagraph);
+    const trimmedConclusion = normalizeMultilinePreserveBreaks(editDraft.conclusionText);
     const isCustomSubjectEdited = Boolean(
       trimmedSubject && trimmedSubject !== String(displayModel.defaultAutoSubject || '').trim()
     );
     const isCustomIntroEdited = Boolean(
       trimmedIntro && trimmedIntro !== String(displayModel.defaultAutoIntroParagraph || '').trim()
     );
+
+    const nextStudentStats = buildDraftStudentStatsObj(editDraft);
+    const nextAdminDocs = buildDraftAdminDocsObj(editDraft);
+
+    const cleanedStaffStats = splitClean(editDraft.staffStatsText);
+    const cleanedStudentLines = splitClean(editDraft.studentStatLinesText);
+    const autoStudentLinesForDraft = buildAutoStudentStatLines({
+      periodType,
+      studentStats: nextStudentStats,
+      useKhmerNumerals
+    });
+    const isCustomStudentLines =
+      cleanedStudentLines.length > 0 &&
+      JSON.stringify(cleanedStudentLines) !== JSON.stringify(autoStudentLinesForDraft);
+
+    const cleanedAdminDocLines = splitClean(editDraft.adminDocLinesText);
+    const autoAdminDocLinesForDraft = buildAutoAdminDocLines({
+      adminDocs: nextAdminDocs,
+      useKhmerNumerals
+    });
+    const isCustomAdminDocLines =
+      cleanedAdminDocLines.length > 0 &&
+      JSON.stringify(cleanedAdminDocLines) !== JSON.stringify(autoAdminDocLinesForDraft);
+
+    const cleanedSection1Intro =
+      normalizeMultilinePreserveBreaks(editDraft.section1Intro) || DEFAULT_SECTION1_INTRO;
+    const cleanedManagementRoles = (editDraft.managementRoles || [])
+      .map(m => ({
+        name: String(m?.name || '').trim(),
+        role: String(m?.role || '').trim()
+      }))
+      .filter(m => m.name || m.role);
 
     const updatedReport = {
       ...displayModel.rawReport,
@@ -741,33 +653,25 @@ export default function AdminReportView({
       customSubjectText: isCustomSubjectEdited ? trimmedSubject : '',
       manualSubjectOverride: isCustomSubjectEdited,
       customIntroParagraph: isCustomIntroEdited ? trimmedIntro : '',
-      manualStudentStatsOverride: didManuallyChangeStudentStats
+      section1Intro: cleanedSection1Intro,
+      managementRoles:
+        cleanedManagementRoles.length > 0 ? cleanedManagementRoles : DEFAULT_MANAGEMENT_ROLES,
+      manualStudentStatsOverride: (didManuallyChangeStudentStats || isCustomStudentLines)
         ? true
         : Boolean(displayModel.rawReport?.manualStudentStatsOverride),
       manualChallengesOverride: didUserCustomEditChallengeText,
-      studentStats: {
-        ...(displayModel.studentStats || {}),
-        classCount: 4,
-        totalStudents: Number(editDraft.totalStudents) || 0,
-        gradeKindergarten: Number(editDraft.gradeKindergarten) || 0,
-        grade1: Number(editDraft.grade1) || 0,
-        grade2: Number(editDraft.grade2) || 0,
-        grade3: Number(editDraft.grade3) || 0
-      },
-      adminDocs: {
-        outgoingLetters: Number(editDraft.outgoingLetters) || 0,
-        incomingLetters: Number(editDraft.incomingLetters) || 0,
-        schoolMinutes: Number(editDraft.schoolMinutes) || 0,
-        schoolReportsToMinistry: Number(editDraft.schoolReportsToMinistry) || 0,
-        ministryMeetings: Number(editDraft.ministryMeetings) || 0
-      },
+      staffStats: cleanedStaffStats.length > 0 ? cleanedStaffStats : DEFAULT_STAFF_STATS,
+      studentStats: nextStudentStats,
+      customStudentLines: isCustomStudentLines ? cleanedStudentLines : [],
+      adminDocs: nextAdminDocs,
+      customAdminDocLines: isCustomAdminDocLines ? cleanedAdminDocLines : [],
       activities: splitClean(editDraft.activitiesText),
       appendixItems: splitClean(editDraft.appendixText),
       challenges: cleanedChallenges,
       solutions: splitClean(editDraft.solutionsText),
       requests: splitClean(editDraft.requestsText),
       directions: splitClean(editDraft.directionsText),
-      conclusionText: String(editDraft.conclusionText || '').trim(),
+      conclusionText: trimmedConclusion,
       lunarDateLine: String(editDraft.lunarDateLine || '').trim(),
       solarDateLine: String(editDraft.solarDateLine || '').trim(),
       signerTitle: String(editDraft.signerTitle || 'ព្រះនាយក').trim()
@@ -777,18 +681,20 @@ export default function AdminReportView({
     if (isSem1Combined && historyEditDraft) {
       onUpdateAdminReport(SCHOOL_HISTORY_STORAGE_KEY, serializeHistoryDraft(historyEditDraft));
     }
-    setIsEditing(false);
+    setActiveEditSection(null);
+    showSavedToast('បានរក្សាទុក!');
   };
 
   const handleSaveHistoryEditor = (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     if (!historyEditDraft || !onUpdateAdminReport) return;
     onUpdateAdminReport(SCHOOL_HISTORY_STORAGE_KEY, serializeHistoryDraft(historyEditDraft));
-    setIsEditing(false);
+    setActiveEditSection(null);
+    showSavedToast('បានរក្សាទុក!');
   };
 
   const handleSaveMinistryEditor = (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     if (!ministryEditDraft || !onUpdateAdminReport) return;
 
     const splitClean = (txt) =>
@@ -850,16 +756,14 @@ export default function AdminReportView({
       teacherRelations: splitClean(ministryEditDraft.teacherRelationsText),
       challenges: splitClean(ministryEditDraft.challengesText),
       solutions: splitClean(ministryEditDraft.solutionsText),
-      conclusionParas: String(ministryEditDraft.conclusionParasText || '')
-        .split(/\n+/)
-        .map(s => s.trim())
-        .filter(Boolean),
+      conclusionParas: normalizeParagraphArrayPreserveBlanks(ministryEditDraft.conclusionParasText),
       requests: splitClean(ministryEditDraft.requestsText),
       ccList: splitClean(ministryEditDraft.ccListText)
     };
 
     onUpdateAdminReport(ministryModel.storageKey, updatedMinistry);
-    setIsEditing(false);
+    setActiveEditSection(null);
+    showSavedToast('បានរក្សាទុក!');
   };
 
   const handleDownloadPdf = async () => {
@@ -1031,7 +935,7 @@ export default function AdminReportView({
                 type="button"
                 onClick={() => {
                   setPeriodType(tab.id);
-                  setIsEditing(false);
+                  handleCloseEditMode();
                 }}
                 style={{
                   display: 'flex',
@@ -1104,7 +1008,7 @@ export default function AdminReportView({
                   type="button"
                   onClick={() => {
                     setSem1Mode(opt.id);
-                    setIsEditing(false);
+                    handleCloseEditMode();
                   }}
                   style={{
                     display: 'flex',
@@ -1243,14 +1147,14 @@ export default function AdminReportView({
               {canEdit && (
                 <button
                   type="button"
-                  onClick={() => (isEditing ? setIsEditing(false) : handleOpenEditor())}
+                  onClick={() => (isEditing ? handleCloseEditMode() : handleOpenEditor())}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: 5,
-                    background: isEditing ? '#0f172a' : '#f1f5f9',
-                    border: '1px solid #cbd5e1',
+                    background: isEditing ? '#b45309' : '#f1f5f9',
+                    border: isEditing ? '1px solid #92400e' : '1px solid #cbd5e1',
                     color: isEditing ? '#ffffff' : '#1e293b',
                     padding: '9px 6px',
                     borderRadius: 8,
@@ -1262,7 +1166,7 @@ export default function AdminReportView({
                   }}
                 >
                   <Edit3 size={14} />
-                  <span>{isEditing ? 'បិទកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
+                  <span>{isEditing ? 'បិទ Edit Mode' : 'កែប្រែអត្ថបទ'}</span>
                 </button>
               )}
 
@@ -1331,13 +1235,13 @@ export default function AdminReportView({
                 {canEdit && (
                   <button
                     type="button"
-                    onClick={() => (isEditing ? setIsEditing(false) : handleOpenEditor())}
+                    onClick={() => (isEditing ? handleCloseEditMode() : handleOpenEditor())}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 6,
-                      background: isEditing ? '#0f172a' : '#f1f5f9',
-                      border: '1px solid #cbd5e1',
+                      background: isEditing ? '#b45309' : '#f1f5f9',
+                      border: isEditing ? '1px solid #92400e' : '1px solid #cbd5e1',
                       color: isEditing ? '#ffffff' : '#1e293b',
                       padding: '8px 14px',
                       borderRadius: 8,
@@ -1347,7 +1251,7 @@ export default function AdminReportView({
                     }}
                   >
                     <Edit3 size={15} />
-                    <span>{isEditing ? 'បិទផ្ទាំងកែប្រែ' : 'កែប្រែអត្ថបទ'}</span>
+                    <span>{isEditing ? 'បិទ Edit Mode' : 'របៀបកែប្រែ (Edit Mode)'}</span>
                   </button>
                 )}
 
@@ -1477,770 +1381,81 @@ export default function AdminReportView({
       </div>
 
       {/* ================================================================== */}
-      {/* STANDALONE SCHOOL HISTORY INLINE EDITOR PANEL                      */}
+      {/* SMART CLICK-TO-EDIT MODE BAR (Quick Jump Chips — PC & Mobile /mp)  */}
       {/* ================================================================== */}
-      {canEdit && isEditing && isHistoryOnly && historyEditDraft && (
-        <form
-          onSubmit={handleSaveHistoryEditor}
-          className="no-print"
-          style={{
-            background: '#ffffff',
-            border: '2px solid #0284c7',
-            borderRadius: 14,
-            padding: isMobile ? 14 : 20,
-            marginBottom: 18,
-            boxShadow: '0 6px 20px rgba(2, 132, 199, 0.14)'
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 8,
-              marginBottom: 14,
-              paddingBottom: 10,
-              borderBottom: '1px solid #bae6fd'
-            }}
-          >
-            <h3 className="font-moul" style={{ margin: 0, fontSize: 15, color: '#0c4a6e' }}>
-              កែសម្រួលរបាយការណ៍ប្រវត្តិសាលា (ឆ្នាំ{schoolHistoryModel.yearKhmer})
-            </h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="submit"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  background: '#15803d',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                <Check size={15} />
-                <span>រក្សាទុក</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  background: '#f1f5f9',
-                  color: '#475569',
-                  border: '1px solid #cbd5e1',
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                <X size={15} />
-                <span>បោះបង់</span>
-              </button>
-            </div>
-          </div>
-
-          <SchoolHistoryEditorFields
-            draft={historyEditDraft}
-            onChangeDraft={setHistoryEditDraft}
-            showStandaloneMeta={true}
-            isMobile={isMobile}
-            fmtNum={fmtNum}
-          />
-        </form>
+      {canEdit && isEditing && (
+        <ReportEditModeBar
+          sections={activeEditSections}
+          activeSectionId={activeEditSection}
+          onSelectSection={handleSelectEditSection}
+          onCloseEditMode={handleCloseEditMode}
+          isMobile={isMobile}
+          savedToastText={savedToastText}
+          theme={isHistoryOnly || isSem1Combined ? 'sky' : 'amber'}
+        />
       )}
 
       {/* ================================================================== */}
-      {/* INLINE EDITOR PANEL (When user clicks "កែប្រែអត្ថបទ")               */}
+      {/* FOCUSED SINGLE-SECTION DRAWER (PC Side Drawer / Mobile Sheet)      */}
       {/* ================================================================== */}
-      {canEdit && isEditing && !isMinistryActive && !isHistoryOnly && editDraft && (
-        <form
-          onSubmit={handleSaveEditor}
-          className="no-print"
-          style={{
-            background: '#ffffff',
-            border: '2px solid #f59e0b',
-            borderRadius: 14,
-            padding: isMobile ? 14 : 20,
-            marginBottom: 18,
-            boxShadow: '0 6px 20px rgba(180, 83, 9, 0.12)'
-          }}
+      {canEdit && isEditing && (
+        <ReportSectionDrawer
+          isOpen={Boolean(activeEditSection)}
+          isMobile={isMobile}
+          sections={activeEditSections}
+          activeSectionId={activeEditSection}
+          onSelectSection={handleSelectEditSection}
+          onSave={
+            isHistoryOnly
+              ? handleSaveHistoryEditor
+              : isMinistryActive
+                ? handleSaveMinistryEditor
+                : handleSaveEditor
+          }
+          onCancel={handleCancelActiveDrawer}
+          theme={isHistoryOnly || isSem1Combined ? 'sky' : 'amber'}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 14,
-              paddingBottom: 10,
-              borderBottom: '1px solid #fde68a'
-            }}
-          >
-            <h3 className="font-moul" style={{ margin: 0, fontSize: 15, color: '#92400e' }}>
-              កែសម្រួលរបាយការណ៍រដ្ឋបាល ({displayModel.periodTitlePhrase}{isSem1Combined ? ' + ប្រវត្តិសាលា' : ''})
-            </h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="submit"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  background: '#15803d',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                <Check size={15} />
-                <span>រក្សាទុក</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  background: '#f1f5f9',
-                  color: '#475569',
-                  border: '1px solid #cbd5e1',
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                <X size={15} />
-                <span>បោះបង់</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Editable Combined Subject + Intro Box (កម្មវត្ថុ៖ + សេចក្ដីដូចមានចែង...) */}
-          <div
-            style={{
-              marginBottom: 14,
-              background: '#fffbeb',
-              border: '1px solid #fde68a',
-              borderRadius: 10,
-              padding: 12
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 6,
-                marginBottom: 5
-              }}
-            >
-              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#92400e' }}>
-                កម្មវត្ថុ៖ និងសេចក្ដីផ្ដើម (បន្ទាត់ទី ១ = កម្មវត្ថុ • ចុច Enter ចុះបន្ទាត់ = សេចក្ដីដូចមានចែង... — ទុកទទេដើម្បីប្រើស្វ័យប្រវត្តិ)
-              </label>
-              {String(editDraft.subjectIntroText || '').trim() !==
-                `${String(displayModel.defaultAutoSubject || '').trim()}\n${String(displayModel.defaultAutoIntroParagraph || '').trim()}` && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditDraft(prev => ({
-                        ...prev,
-                        subjectIntroText: `${String(displayModel.defaultAutoSubject || '').trim()}\n${String(
-                          displayModel.defaultAutoIntroParagraph || ''
-                        ).trim()}`
-                      }))
-                    }
-                    style={{
-                      background: '#ffffff',
-                      border: '1px solid #f59e0b',
-                      color: '#b45309',
-                      borderRadius: 6,
-                      padding: '2px 8px',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    ប្រើកម្មវត្ថុដើមវិញ
-                  </button>
-                )}
-            </div>
-            <textarea
-              rows={5}
-              value={editDraft.subjectIntroText ?? ''}
-              onChange={e => setEditDraft({ ...editDraft, subjectIntroText: e.target.value })}
-              placeholder={`${displayModel.defaultAutoSubject || ''}\n${displayModel.defaultAutoIntroParagraph || ''}`}
-              style={{
-                width: '100%',
-                padding: '8px 10px',
-                borderRadius: 8,
-                border: '1px solid #fcd34d',
-                fontSize: 13,
-                lineHeight: 1.55,
-                boxSizing: 'border-box',
-                fontFamily: 'inherit',
-                background: '#ffffff'
-              }}
+          {isHistoryOnly ? (
+            <HistorySectionEditorContent
+              sectionId={activeEditSection}
+              historyEditDraft={historyEditDraft}
+              setHistoryEditDraft={setHistoryEditDraft}
+              isMobile={isMobile}
+              fmtNum={fmtNum}
             />
-          </div>
-
-          {/* Combined Mode: Editable School History Section (I. សាវតារ + Table Intro + 16-Year Auto-Sum Table) */}
-          {isSem1Combined && historyEditDraft && (
-            <div
-              style={{
-                marginBottom: 16,
-                background: '#f0f9ff',
-                border: '1.5px solid #7dd3fc',
-                borderRadius: 12,
-                padding: isMobile ? 10 : 14
-              }}
-            >
-              <div
-                className="font-moul"
-                style={{
-                  fontSize: 13.5,
-                  color: '#0c4a6e',
-                  marginBottom: 10,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-              >
-                <Landmark size={16} color="#0284c7" />
-                <span>ផ្នែកប្រវត្តិសាលា (I. សាវតារ និងតារាងធនធានមនុស្សក្រោម IV. ក)</span>
-              </div>
-              <SchoolHistoryEditorFields
-                draft={historyEditDraft}
-                onChangeDraft={setHistoryEditDraft}
-                showStandaloneMeta={false}
-                isMobile={isMobile}
-                fmtNum={fmtNum}
-              />
-            </div>
+          ) : isMinistryActive ? (
+            <MinistrySectionEditorContent
+              sectionId={activeEditSection}
+              ministryEditDraft={ministryEditDraft}
+              setMinistryEditDraft={setMinistryEditDraft}
+              ministryDocType={ministryDocType}
+              isMobile={isMobile}
+            />
+          ) : (
+            <AdminSectionEditorContent
+              sectionId={activeEditSection}
+              editDraft={editDraft}
+              setEditDraft={setEditDraft}
+              historyEditDraft={historyEditDraft}
+              setHistoryEditDraft={setHistoryEditDraft}
+              displayModel={displayModel}
+              periodType={periodType}
+              useKhmerNumerals={useKhmerNumerals}
+              isMobile={isMobile}
+              fmtNum={fmtNum}
+              buildDraftStudentStatsObj={buildDraftStudentStatsObj}
+              buildDraftAdminDocsObj={buildDraftAdminDocsObj}
+              onTotalStudentsChange={handleTotalStudentsChange}
+              onGradeCountChange={handleGradeCountChange}
+              onAdminDocCountChange={handleAdminDocCountChange}
+            />
           )}
-
-          {/* Grid for Student Counts & Admin Doc Counts */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
-              gap: 10,
-              marginBottom: 14,
-              background: '#f8fafc',
-              padding: 12,
-              borderRadius: 10,
-              border: '1px solid #e2e8f0'
-            }}
-          >
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                សមណសិស្សសរុប
-              </label>
-              <input
-                type="number"
-                value={editDraft.totalStudents}
-                onChange={e => handleTotalStudentsChange(e.target.value)}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                ថ្នាក់មត្តេយ្យ
-              </label>
-              <input
-                type="number"
-                value={editDraft.gradeKindergarten}
-                onChange={e => handleGradeCountChange('gradeKindergarten', e.target.value)}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                ថ្នាក់ទី១
-              </label>
-              <input
-                type="number"
-                value={editDraft.grade1}
-                onChange={e => handleGradeCountChange('grade1', e.target.value)}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                ថ្នាក់ទី២
-              </label>
-              <input
-                type="number"
-                value={editDraft.grade2}
-                onChange={e => handleGradeCountChange('grade2', e.target.value)}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                ថ្នាក់ទី៣
-              </label>
-              <input
-                type="number"
-                value={editDraft.grade3}
-                onChange={e => handleGradeCountChange('grade3', e.target.value)}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                លិខិតចេញ (ច្បាប់)
-              </label>
-              <input
-                type="number"
-                value={editDraft.outgoingLetters}
-                onChange={e => setEditDraft({ ...editDraft, outgoingLetters: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                លិខិតចូល (ច្បាប់)
-              </label>
-              <input
-                type="number"
-                value={editDraft.incomingLetters}
-                onChange={e => setEditDraft({ ...editDraft, incomingLetters: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                កំណត់ហេតុប្រជុំ (ច្បាប់)
-              </label>
-              <input
-                type="number"
-                value={editDraft.schoolMinutes}
-                onChange={e => setEditDraft({ ...editDraft, schoolMinutes: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                របាយការណ៍ទៅមន្ទីរ
-              </label>
-              <input
-                type="number"
-                value={editDraft.schoolReportsToMinistry}
-                onChange={e => setEditDraft({ ...editDraft, schoolReportsToMinistry: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                ប្រជុំក្នុងមន្ទីរ (លើក)
-              </label>
-              <input
-                type="number"
-                value={editDraft.ministryMeetings}
-                onChange={e => setEditDraft({ ...editDraft, ministryMeetings: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1' }}
-              />
-            </div>
-          </div>
-
-          {/* Textareas for Sections III-VI (or IV-VII in Combined mode) */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                {displayModel.sectionNumbers?.progress || 'III'}. ក. សកម្មភាពការងារ (❖ ចុច Enter ចុះបន្ទាត់ថ្មី)
-              </label>
-              <HangingBulletEditor
-                rows={6}
-                bullet="❖"
-                value={editDraft.activitiesText}
-                onChange={nextVal => setEditDraft(prev => ({ ...prev, activitiesText: nextVal }))}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                {displayModel.sectionNumbers?.challenges || 'IV'}. ១-បញ្ហាប្រឈម (- ចុច Enter ចុះបន្ទាត់ថ្មី)
-              </label>
-              <HangingBulletEditor
-                rows={6}
-                bullet="-"
-                value={editDraft.challengesText}
-                onChange={nextVal => setEditDraft(prev => ({ ...prev, challengesText: nextVal }))}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                {displayModel.sectionNumbers?.challenges || 'IV'}. ២-ដំណោះស្រាយ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
-              </label>
-              <HangingBulletEditor
-                rows={5}
-                bullet="-"
-                value={editDraft.solutionsText}
-                onChange={nextVal => setEditDraft(prev => ({ ...prev, solutionsText: nextVal }))}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                {displayModel.sectionNumbers?.challenges || 'IV'}. ៣-សំណូមពរ (- ចុច Enter ចុះបន្ទាត់ថ្មី)
-              </label>
-              <HangingBulletEditor
-                rows={5}
-                bullet="-"
-                value={editDraft.requestsText}
-                onChange={nextVal => setEditDraft(prev => ({ ...prev, requestsText: nextVal }))}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                {displayModel.sectionNumbers?.directions || 'V'}. ទិសដៅបន្ត (- ចុច Enter ចុះបន្ទាត់ថ្មី)
-              </label>
-              <HangingBulletEditor
-                rows={5}
-                bullet="-"
-                value={editDraft.directionsText}
-                onChange={nextVal => setEditDraft(prev => ({ ...prev, directionsText: nextVal }))}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                {displayModel.sectionNumbers?.conclusion || 'VI'}. សេចក្ដីសន្និដ្ឋាន
-              </label>
-              <textarea
-                rows={5}
-                value={editDraft.conclusionText}
-                onChange={e => setEditDraft({ ...editDraft, conclusionText: e.target.value })}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
-              />
-            </div>
-          </div>
-        </form>
+        </ReportSectionDrawer>
       )}
 
-      {/* ================================================================== */}
-      {/* MINISTRY TEMPLATE INLINE EDITOR PANEL                              */}
-      {/* ================================================================== */}
-      {canEdit && isEditing && isMinistryActive && ministryEditDraft && (
-        <form
-          onSubmit={handleSaveMinistryEditor}
-          className="no-print"
-          style={{
-            background: '#ffffff',
-            border: '2px solid #f59e0b',
-            borderRadius: 14,
-            padding: isMobile ? 14 : 20,
-            marginBottom: 18,
-            boxShadow: '0 6px 20px rgba(180, 83, 9, 0.12)'
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 8,
-              marginBottom: 14,
-              paddingBottom: 10,
-              borderBottom: '1px solid #fde68a'
-            }}
-          >
-            <h3 className="font-moul" style={{ margin: 0, fontSize: 15, color: '#92400e' }}>
-              កែសម្រួលរបាយការណ៍ប្រចាំឆ្នាំ — ទម្រង់មន្ទីរ ({ministryModel.yearKhmer})
-            </h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="submit"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  background: '#15803d',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                <Check size={15} />
-                <span>រក្សាទុក</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  background: '#f1f5f9',
-                  color: '#475569',
-                  border: '1px solid #cbd5e1',
-                  padding: '6px 12px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                <X size={15} />
-                <span>បោះបង់</span>
-              </button>
-            </div>
-          </div>
 
-          {/* 1. Student, Teacher & Exam Statistics Grid */}
-          <div
-            style={{
-              fontWeight: 700,
-              fontSize: 13,
-              color: '#92400e',
-              marginBottom: 6
-            }}
-          >
-            ១. ស្ថិតិសិស្ស គ្រូបង្រៀន ការប្រឡង និងកុំព្យូទ័រ (សម្រាប់ទាំងទម្រង់ពេញ និងតារាងសង្ខេប ១០ ជួរ)
-          </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
-              gap: 10,
-              marginBottom: 14,
-              background: '#f8fafc',
-              padding: 12,
-              borderRadius: 10,
-              border: '1px solid #e2e8f0'
-            }}
-          >
-            {[
-              { key: 'appliedStudents', label: 'សិស្សដាក់ពាក្យចូលរៀន', type: 'number' },
-              { key: 'permanentStudents', label: 'សិស្សសិក្សាអចិន្ត្រៃយ៍', type: 'number' },
-              { key: 'oldStudents', label: 'សិស្សចាស់ (សង្ខេប)', type: 'number' },
-              { key: 'newStudents', label: 'សិស្សថ្មី (សង្ខេប)', type: 'number' },
-              { key: 'dropoutStudents', label: 'សិស្សបោះបង់ការសិក្សា', type: 'number' },
-              { key: 'remainingStudents', label: 'សិស្សនៅសល់ចុងឆ្នាំ', type: 'number' },
-              { key: 'remainingGrade3', label: 'សិស្សនៅសល់ថ្នាក់ទី៣', type: 'number' },
-              { key: 'offCampusStudents', label: 'សិស្សស្នាក់នៅក្រៅសាលា', type: 'number' },
-              { key: 'teacherTotal', label: 'គ្រូបង្រៀនសរុប', type: 'number' },
-              { key: 'teacherFramework', label: 'គ្រូក្របខណ្ឌ', type: 'number' },
-              { key: 'teacherContract', label: 'គ្រូកិច្ចសន្យា', type: 'number' },
-              { key: 'teacherHourly', label: 'គ្រូប្រាក់ម៉ោង', type: 'number' },
-              { key: 'paliExamTotal', label: 'ប្រឡងបាលីរង (សរុប)', type: 'number' },
-              { key: 'paliExamPassed', label: 'ប្រឡងបាលីរង (ជាប់)', type: 'number' },
-              { key: 'paliExamFailed', label: 'ប្រឡងបាលីរង (ធ្លាក់)', type: 'number' },
-              { key: 'dhammaExamTotal', label: 'ប្រឡងធម្មវិន័យ (សរុប)', type: 'number' },
-              { key: 'dhammaExamTri', label: 'ធម្មវិន័យ ថ្នាក់ត្រី', type: 'number' },
-              { key: 'dhammaExamTo', label: 'ធម្មវិន័យ ថ្នាក់ទោ', type: 'number' },
-              { key: 'dhammaExamEk', label: 'ធម្មវិន័យ ថ្នាក់ឯក', type: 'number' },
-              { key: 'dhammaExamNote', label: 'សម្គាល់ប្រឡងធម្មវិន័យ', type: 'text' },
-              { key: 'computerCountText', label: 'ចំនួនកុំព្យូទ័រ (ឧ. ១០គ្រឿង)', type: 'text' },
-              { key: 'computerNoteText', label: 'សម្គាល់កុំព្យូទ័រ', type: 'text' },
-              { key: 'awardCeremonyIncome1', label: 'ចំណូលចែកបណ្ណសរសើរ (៛)', type: 'number' },
-              { key: 'awardCeremonyIncome2', label: 'ចំណូលពីវត្ត-បណ្ណសរសើរ (៛)', type: 'number' },
-              { key: 'awardCeremonyExpense', label: 'ចំណាយចែកបណ្ណសរសើរ (៛)', type: 'number' }
-            ].map(f => (
-              <div key={f.key}>
-                <label style={{ fontSize: 11.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                  {f.label}
-                </label>
-                <input
-                  type={f.type}
-                  value={ministryEditDraft[f.key] ?? ''}
-                  onChange={e => setMinistryEditDraft({ ...ministryEditDraft, [f.key]: e.target.value })}
-                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
-                />
-              </div>
-            ))}
-          </div>
 
-          {/* 2. Monthly Hourly-Pay Income Inputs (ច, ច.១, ច.២) */}
-          <div
-            style={{
-              fontWeight: 700,
-              fontSize: 13,
-              color: '#92400e',
-              marginBottom: 6
-            }}
-          >
-            ២. ចំណូលប្រាក់ម៉ោងតាមខែ (៛) — ទុកទទេ ឬដាក់ 0 បើគ្មាន (ចំណាយ និងចំនួនម៉ោងទាញស្វ័យប្រវត្តិពីផ្ទាំងចំណូលចំណាយ)
-          </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
-              gap: 8,
-              marginBottom: 14,
-              background: '#fffbeb',
-              padding: 12,
-              borderRadius: 10,
-              border: '1px solid #fde68a'
-            }}
-          >
-            {[...MINISTRY_SEM1_MONTHS, ...MINISTRY_SEM2_MONTHS].map(m => (
-              <div key={m.num}>
-                <label style={{ fontSize: 11.5, fontWeight: 700, color: '#78350f', display: 'block', marginBottom: 3 }}>
-                  {m.fullLabel || m.name} (៛)
-                </label>
-                <input
-                  type="number"
-                  placeholder="គ្មាន (0)"
-                  value={ministryEditDraft.hourlyIncomeByMonth?.[m.num] ?? ''}
-                  onChange={e =>
-                    setMinistryEditDraft({
-                      ...ministryEditDraft,
-                      hourlyIncomeByMonth: {
-                        ...(ministryEditDraft.hourlyIncomeByMonth || {}),
-                        [m.num]: e.target.value
-                      }
-                    })
-                  }
-                  style={{ width: '100%', padding: '5px 8px', borderRadius: 6, border: '1px solid #fcd34d', fontSize: 12.5 }}
-                />
-              </div>
-            ))}
-          </div>
 
-          {/* 3. Dates & Signers */}
-          <div
-            style={{
-              fontWeight: 700,
-              fontSize: 13,
-              color: '#92400e',
-              marginBottom: 6
-            }}
-          >
-            ៣. កាលបរិច្ឆេទ លេខលិខិត និងតួនាទីហត្ថលេខា
-          </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, 1fr)',
-              gap: 10,
-              marginBottom: 14
-            }}
-          >
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                កាលបរិច្ឆេទច័ន្ទគតិ
-              </label>
-              <input
-                type="text"
-                value={ministryEditDraft.lunarDateLine}
-                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, lunarDateLine: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                កាលបរិច្ឆេទសុរិយគតិ
-              </label>
-              <input
-                type="text"
-                value={ministryEditDraft.solarDateLine}
-                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, solarDateLine: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                លេខលិខិត
-              </label>
-              <input
-                type="text"
-                value={ministryEditDraft.docNumber}
-                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, docNumber: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                តួនាទីអ្នកធ្វើរបាយការណ៍
-              </label>
-              <input
-                type="text"
-                value={ministryEditDraft.reporterTitle}
-                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, reporterTitle: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
-                តួនាទីអ្នកចុះហត្ថលេខា (ព្រះនាយក)
-              </label>
-              <input
-                type="text"
-                value={ministryEditDraft.signerTitle}
-                onChange={e => setMinistryEditDraft({ ...ministryEditDraft, signerTitle: e.target.value })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
-              />
-            </div>
-          </div>
-
-          {/* 4. Narrative Textareas */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
-            {[
-              { key: 'teacherActivitiesText', label: 'ខ.១. សកម្មភាពរបស់គ្រូ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
-              { key: 'studentActivitiesText', label: 'ខ.២. សកម្មភាពសមណសិស្ស សិស្ស (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
-              { key: 'outsideActivitiesText', label: 'គ. សកម្មភាពនៅក្រៅសាលា (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
-              { key: 'abbotResponsibilitiesText', label: 'ឃ.១. ការទទួលខុសត្រូវរបស់ព្រះគ្រូចៅអធិការ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
-              { key: 'managementActivitiesText', label: 'ង. សកម្មភាពគណៈគ្រប់គ្រង (រួមទាំងព្រឹត្តិការណ៍ពិសេស)', rows: 7, bullet: true },
-              { key: 'libraryLinesText', label: 'ង.១. ពុទ្ធិកបណ្ណាល័យ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 5, bullet: true },
-              { key: 'donationLinesText', label: 'ង.២. ការទទួលជំនួយពីសប្បុរសជន (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 3, bullet: true },
-              { key: 'teacherRelationsText', label: 'ឆ. សកម្មភាពគ្រូបង្រៀនជាមួយសមណសិស្ស (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true },
-              { key: 'challengesText', label: 'ជ. បញ្ហាប្រឈម (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true },
-              { key: 'solutionsText', label: 'ឈ. ដំណោះស្រាយ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true },
-              { key: 'conclusionParasText', label: 'ញ. សេចក្ដីសន្និដ្ឋាន', rows: 5, bullet: false },
-              { key: 'requestsText', label: 'ដ. សំណូមពរ (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true },
-              { key: 'ccListText', label: 'ចម្លងប្រគេនជូន (CC) (- ចុច Enter ចុះបន្ទាត់ថ្មី)', rows: 4, bullet: true }
-            ].map(sec => (
-              <div key={sec.key}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-                  {sec.label}
-                </label>
-                {sec.bullet ? (
-                  <HangingBulletEditor
-                    rows={sec.rows}
-                    bullet="-"
-                    value={ministryEditDraft[sec.key] || ''}
-                    onChange={nextVal => setMinistryEditDraft(prev => ({ ...prev, [sec.key]: nextVal }))}
-                  />
-                ) : (
-                  <textarea
-                    rows={sec.rows}
-                    value={ministryEditDraft[sec.key] || ''}
-                    onChange={e => setMinistryEditDraft({ ...ministryEditDraft, [sec.key]: e.target.value })}
-                    style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5, lineHeight: 1.7 }}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </form>
-      )}
 
       {/* ================================================================== */}
       {/* VIEW RENDERER:                                                     */}
@@ -2263,7 +1478,10 @@ export default function AdminReportView({
             <button
               type="button"
               className="no-print"
-              onClick={() => setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'))}
+              onClick={() => {
+                setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'));
+                setActiveEditSection(null);
+              }}
               style={{
                 position: 'absolute',
                 top: 12,
@@ -2297,7 +1515,7 @@ export default function AdminReportView({
               className="no-print"
               onClick={() => {
                 setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
-                setIsEditing(false);
+                handleCloseEditMode();
               }}
               style={{
                 position: 'absolute',
@@ -2331,18 +1549,27 @@ export default function AdminReportView({
                 id="printable-school-history-document"
                 historyModel={schoolHistoryModel}
                 useKhmerNumerals={useKhmerNumerals}
+                editMode={canEdit && isEditing && !isExportingPdf}
+                activeEditSection={activeEditSection}
+                onSelectEditSection={handleSelectEditSection}
               />
             ) : isMinistryActive ? (
               ministryDocType === 'summary' ? (
                 <OfficialMinistrySummaryDocument
                   id="printable-ministry-summary-document"
                   ministryModel={ministryModel}
+                  editMode={canEdit && isEditing && !isExportingPdf}
+                  activeEditSection={activeEditSection}
+                  onSelectEditSection={handleSelectEditSection}
                 />
               ) : (
                 <OfficialMinistryReportDocument
                   id="printable-ministry-report-document"
                   ministryModel={ministryModel}
                   useKhmerNumerals={useKhmerNumerals}
+                  editMode={canEdit && isEditing && !isExportingPdf}
+                  activeEditSection={activeEditSection}
+                  onSelectEditSection={handleSelectEditSection}
                 />
               )
             ) : (
@@ -2350,6 +1577,9 @@ export default function AdminReportView({
                 id="printable-admin-report-document"
                 displayModel={displayModel}
                 useKhmerNumerals={useKhmerNumerals}
+                editMode={canEdit && isEditing && !isExportingPdf}
+                activeEditSection={activeEditSection}
+                onSelectEditSection={handleSelectEditSection}
               />
             )}
           </div>
@@ -2371,7 +1601,10 @@ export default function AdminReportView({
               {annualTemplate === 'ministry' && (
                 <button
                   type="button"
-                  onClick={() => setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'))}
+                  onClick={() => {
+                    setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'));
+                    setActiveEditSection(null);
+                  }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -2396,7 +1629,7 @@ export default function AdminReportView({
                 type="button"
                 onClick={() => {
                   setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
-                  setIsEditing(false);
+                  handleCloseEditMode();
                 }}
                 style={{
                   display: 'inline-flex',
@@ -2425,18 +1658,27 @@ export default function AdminReportView({
                 id="printable-school-history-document"
                 historyModel={schoolHistoryModel}
                 useKhmerNumerals={useKhmerNumerals}
+                editMode={canEdit && isEditing && !isExportingPdf}
+                activeEditSection={activeEditSection}
+                onSelectEditSection={handleSelectEditSection}
               />
             ) : isMinistryActive ? (
               ministryDocType === 'summary' ? (
                 <OfficialMinistrySummaryDocument
                   id="printable-ministry-summary-document"
                   ministryModel={ministryModel}
+                  editMode={canEdit && isEditing && !isExportingPdf}
+                  activeEditSection={activeEditSection}
+                  onSelectEditSection={handleSelectEditSection}
                 />
               ) : (
                 <OfficialMinistryReportDocument
                   id="printable-ministry-report-document"
                   ministryModel={ministryModel}
                   useKhmerNumerals={useKhmerNumerals}
+                  editMode={canEdit && isEditing && !isExportingPdf}
+                  activeEditSection={activeEditSection}
+                  onSelectEditSection={handleSelectEditSection}
                 />
               )
             ) : (
@@ -2444,6 +1686,9 @@ export default function AdminReportView({
                 id="printable-admin-report-document"
                 displayModel={displayModel}
                 useKhmerNumerals={useKhmerNumerals}
+                editMode={canEdit && isEditing && !isExportingPdf}
+                activeEditSection={activeEditSection}
+                onSelectEditSection={handleSelectEditSection}
               />
             )}
           </A4SheetScaler>
@@ -2466,7 +1711,10 @@ export default function AdminReportView({
                 {annualTemplate === 'ministry' && (
                   <button
                     type="button"
-                    onClick={() => setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'))}
+                    onClick={() => {
+                      setMinistryDocType(prev => (prev === 'full' ? 'summary' : 'full'));
+                      setActiveEditSection(null);
+                    }}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -2491,7 +1739,7 @@ export default function AdminReportView({
                   type="button"
                   onClick={() => {
                     setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
-                    setIsEditing(false);
+                    handleCloseEditMode();
                   }}
                   style={{
                     display: 'inline-flex',
@@ -2517,6 +1765,13 @@ export default function AdminReportView({
             {isHistoryOnly ? (
               <>
                 {/* Standalone School History Mobile Cards */}
+                <ReportEditableZone
+                  editMode={canEdit && isEditing}
+                  sectionId="hist_title"
+                  label="ចំណងជើងរបាយការណ៍"
+                  activeSectionId={activeEditSection}
+                  onSelectSection={handleSelectEditSection}
+                >
                 <div
                   style={{
                     background: 'linear-gradient(135deg, #0c4a6e 0%, #0369a1 100%)',
@@ -2562,7 +1817,15 @@ export default function AdminReportView({
                     របាយការណ៍ ស្ដីពី {schoolHistoryModel.title}
                   </div>
                 </div>
+                </ReportEditableZone>
 
+                <ReportEditableZone
+                  editMode={canEdit && isEditing}
+                  sectionId="hist_bg"
+                  label="១.១. សាវតារ"
+                  activeSectionId={activeEditSection}
+                  onSelectSection={handleSelectEditSection}
+                >
                 <div
                   style={{
                     background: '#ffffff',
@@ -2579,13 +1842,24 @@ export default function AdminReportView({
                     <span>{fmtNum(1)}.{fmtNum(1)}. សាវតារ</span>
                   </div>
                   <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
-                    {(schoolHistoryModel.backgroundParagraphs || []).map((p, i) => (
-                      <p key={i} style={{ margin: '0 0 8px', textIndent: 24, textAlign: 'left' }}>
-                        {p}
-                      </p>
-                    ))}
+                    {(schoolHistoryModel.backgroundParagraphs || []).map((p, i) =>
+                      String(p || '').trim() ? (
+                        <KhmerJustifiedText
+                          key={i}
+                          text={p}
+                          firstLineIndent={24}
+                          fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                          fontSize={12.5}
+                          lineHeight={1.7}
+                          style={{ margin: '0 0 8px', color: '#334155' }}
+                        />
+                      ) : (
+                        <div key={i} aria-hidden="true" style={{ height: 14 }} />
+                      )
+                    )}
                   </div>
                 </div>
+                </ReportEditableZone>
 
                 <div
                   style={{
@@ -2595,10 +1869,22 @@ export default function AdminReportView({
                     padding: 14
                   }}
                 >
+                  <ReportEditableZone
+                    editMode={canEdit && isEditing}
+                    sectionId="hist_table"
+                    label="តារាង ១៦ ឆ្នាំ"
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                  >
                   {schoolHistoryModel.tableIntro && (
-                    <div style={{ fontSize: 12.5, color: '#1e293b', lineHeight: 1.65, marginBottom: 10, textIndent: 24, textAlign: 'left' }}>
-                      {schoolHistoryModel.tableIntro}
-                    </div>
+                    <KhmerJustifiedText
+                      text={schoolHistoryModel.tableIntro}
+                      firstLineIndent={24}
+                      fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                      fontSize={12.5}
+                      lineHeight={1.65}
+                      style={{ marginBottom: 10, color: '#1e293b' }}
+                    />
                   )}
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', minWidth: 500, borderCollapse: 'collapse', fontSize: 11.5 }}>
@@ -2640,7 +1926,15 @@ export default function AdminReportView({
                       </tbody>
                     </table>
                   </div>
+                  </ReportEditableZone>
 
+                  <ReportEditableZone
+                    editMode={canEdit && isEditing}
+                    sectionId="hist_signature"
+                    label="កាលបរិច្ឆេទ & ហត្ថលេខា"
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                  >
                   <div
                     style={{
                       borderTop: '1px dashed #cbd5e1',
@@ -2657,10 +1951,18 @@ export default function AdminReportView({
                       {schoolHistoryModel.signerTitle}
                     </div>
                   </div>
+                  </ReportEditableZone>
                 </div>
               </>
             ) : isMinistryActive ? (
               ministryDocType === 'summary' ? (
+                <ReportEditableZone
+                  editMode={canEdit && isEditing}
+                  sectionId="min_stats"
+                  label="តារាងសង្ខេប ១០ ជួរ"
+                  activeSectionId={activeEditSection}
+                  onSelectSection={handleSelectEditSection}
+                >
                 <div
                   style={{
                     background: '#ffffff',
@@ -2709,7 +2011,32 @@ export default function AdminReportView({
                       </div>
                     ))}
                   </div>
+                  <ReportEditableZone
+                    editMode={canEdit && isEditing}
+                    sectionId="min_signature"
+                    label="លេខលិខិត & ហត្ថលេខា"
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                  >
+                    <div
+                      style={{
+                        borderTop: '1px dashed #cbd5e1',
+                        marginTop: 12,
+                        paddingTop: 10,
+                        textAlign: 'right',
+                        fontSize: 12,
+                        color: '#475569'
+                      }}
+                    >
+                      <div>{ministryModel.lunarDateLine}</div>
+                      <div>{ministryModel.solarDateLine}</div>
+                      <div className="font-moul" style={{ marginTop: 4, color: '#0f172a' }}>
+                        {ministryModel.signerTitle} / {ministryModel.reporterTitle}
+                      </div>
+                    </div>
+                  </ReportEditableZone>
                 </div>
+                </ReportEditableZone>
               ) : (
                 <>
                   <div
@@ -2728,6 +2055,13 @@ export default function AdminReportView({
                     </div>
                   </div>
 
+                  <ReportEditableZone
+                    editMode={canEdit && isEditing}
+                    sectionId="min_stats"
+                    label="ក. ព័ត៌មានទូទៅ"
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                  >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
                     <div className="font-moul" style={{ fontSize: 13, color: '#92400e', marginBottom: 8 }}>
                       ក. ព័ត៌មានទូទៅ
@@ -2738,7 +2072,90 @@ export default function AdminReportView({
                       </div>
                     ))}
                   </div>
+                  </ReportEditableZone>
 
+                  {/* ខ. សកម្មភាពក្នុងសាលា */}
+                  <ReportEditableZone
+                    editMode={canEdit && isEditing}
+                    sectionId="min_in_school"
+                    label="ខ. ក្នុងសាលា"
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                  >
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                    <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 8 }}>
+                      ខ. សកម្មភាពនៅក្នុងសាលា
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 4 }}>ខ.១. សកម្មភាពរបស់គ្រូ</div>
+                    {(ministryModel.teacherActivities || []).map((line, i) => (
+                      <div key={`mt-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                    ))}
+                    <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginTop: 8, marginBottom: 4 }}>ខ.២. សកម្មភាពសមណសិស្ស សិស្ស</div>
+                    {(ministryModel.studentActivities || []).map((line, i) => (
+                      <div key={`ms-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                    ))}
+                  </div>
+                  </ReportEditableZone>
+
+                  {/* គ. សកម្មភាពក្រៅសាលា & ឃ. ព្រះគ្រូចៅអធិការ */}
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <ReportEditableZone
+                      editMode={canEdit && isEditing}
+                      sectionId="min_outside"
+                      label="គ. ក្រៅសាលា"
+                      activeSectionId={activeEditSection}
+                      onSelectSection={handleSelectEditSection}
+                    >
+                      <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 6 }}>គ. សកម្មភាពនៅក្រៅសាលា</div>
+                      {(ministryModel.outsideActivities || []).map((line, i) => (
+                        <div key={`mo-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                      ))}
+                    </ReportEditableZone>
+                    <ReportEditableZone
+                      editMode={canEdit && isEditing}
+                      sectionId="min_abbot"
+                      label="ឃ. ព្រះចៅអធិការ"
+                      activeSectionId={activeEditSection}
+                      onSelectSection={handleSelectEditSection}
+                    >
+                      <div className="font-moul" style={{ fontSize: 13, color: '#92400e', marginBottom: 6 }}>ឃ.១. ការទទួលខុសត្រូវព្រះគ្រូចៅអធិការ</div>
+                      {(ministryModel.abbotResponsibilities || []).map((line, i) => (
+                        <div key={`ma-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                      ))}
+                    </ReportEditableZone>
+                  </div>
+
+                  {/* ង. គណៈគ្រប់គ្រង បណ្ណាល័យ ជំនួយ */}
+                  <ReportEditableZone
+                    editMode={canEdit && isEditing}
+                    sectionId="min_management"
+                    label="ង. គណៈគ្រប់គ្រង"
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                  >
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
+                    <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 6 }}>ង. សកម្មភាពគណៈគ្រប់គ្រង បណ្ណាល័យ & ជំនួយ</div>
+                    {(ministryModel.managementActivities || []).map((line, i) => (
+                      <div key={`mm-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                    ))}
+                    <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginTop: 8, marginBottom: 4 }}>ង.១. ពុទ្ធិកបណ្ណាល័យ</div>
+                    {(ministryModel.libraryLines || []).map((line, i) => (
+                      <div key={`ml-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                    ))}
+                    <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginTop: 8, marginBottom: 4 }}>ង.២. ការទទួលជំនួយពីសប្បុរសជន</div>
+                    {(ministryModel.donationLines || []).map((line, i) => (
+                      <div key={`md-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                    ))}
+                  </div>
+                  </ReportEditableZone>
+
+                  <ReportEditableZone
+                    editMode={canEdit && isEditing}
+                    sectionId="min_finance"
+                    label="ច. ហិរញ្ញវត្ថុ"
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                  >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
                     <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 8 }}>
                       ច. សង្ខេបហិរញ្ញវត្ថុប្រចាំឆ្នាំ ({ministryModel.yearKhmer})
@@ -2750,6 +2167,96 @@ export default function AdminReportView({
                       <div>• ចំណាយរួមប្រចាំឆ្នាំ៖ <strong style={{ color: '#b91c1c' }}>{ministryModel.grandAnnualTable?.expenseKHRText}</strong></div>
                       <div>• សមតុល្យប្រចាំឆ្នាំ៖ <strong>{ministryModel.grandAnnualTable?.balanceKHRText}</strong></div>
                     </div>
+                  </div>
+                  </ReportEditableZone>
+
+                  {/* ឆ. គ្រូ & សិស្ស + ជ-ឈ. បញ្ហា & ដំណោះស្រាយ */}
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <ReportEditableZone
+                      editMode={canEdit && isEditing}
+                      sectionId="min_relations"
+                      label="ឆ. គ្រូ & សិស្ស"
+                      activeSectionId={activeEditSection}
+                      onSelectSection={handleSelectEditSection}
+                    >
+                      <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 6 }}>ឆ. សកម្មភាពគ្រូជាមួយសមណសិស្ស</div>
+                      {(ministryModel.teacherRelations || []).map((line, i) => (
+                        <div key={`mr-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                      ))}
+                    </ReportEditableZone>
+                    <ReportEditableZone
+                      editMode={canEdit && isEditing}
+                      sectionId="min_challenges"
+                      label="ជ-ឈ. បញ្ហា & ដំណោះស្រាយ"
+                      activeSectionId={activeEditSection}
+                      onSelectSection={handleSelectEditSection}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: 12.5, color: '#991b1b', marginBottom: 4 }}>ជ. បញ្ហាប្រឈម</div>
+                      {(ministryModel.challenges || []).map((line, i) => (
+                        <div key={`mc-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                      ))}
+                      <div style={{ fontWeight: 700, fontSize: 12.5, color: '#15803d', marginTop: 8, marginBottom: 4 }}>ឈ. ដំណោះស្រាយ</div>
+                      {(ministryModel.solutions || []).map((line, i) => (
+                        <div key={`msol-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                      ))}
+                    </ReportEditableZone>
+                  </div>
+
+                  {/* ញ-ដ. សន្និដ្ឋាន សំណូមពរ & ហត្ថលេខា/CC */}
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <ReportEditableZone
+                      editMode={canEdit && isEditing}
+                      sectionId="min_conclusion"
+                      label="ញ-ដ. សន្និដ្ឋាន & សំណូមពរ"
+                      activeSectionId={activeEditSection}
+                      onSelectSection={handleSelectEditSection}
+                    >
+                      <div className="font-moul" style={{ fontSize: 13, color: '#78350f', marginBottom: 6 }}>ញ. សេចក្ដីសន្និដ្ឋាន</div>
+                      {(ministryModel.conclusionParas || []).map((p, i) =>
+                        String(p || '').trim() ? (
+                          <KhmerJustifiedText
+                            key={`mconc-${i}`}
+                            text={p}
+                            firstLineIndent={24}
+                            fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                            fontSize={12.5}
+                            lineHeight={1.65}
+                            style={{ color: '#334155', marginBottom: 6 }}
+                          />
+                        ) : (
+                          <div key={`mconc-${i}`} aria-hidden="true" style={{ height: 14 }} />
+                        )
+                      )}
+                      <div style={{ fontWeight: 700, fontSize: 12.5, color: '#b45309', marginTop: 6, marginBottom: 4 }}>ដ. សំណូមពរ</div>
+                      {(ministryModel.requests || []).map((line, i) => (
+                        <div key={`mreq-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
+                      ))}
+                    </ReportEditableZone>
+                    <ReportEditableZone
+                      editMode={canEdit && isEditing}
+                      sectionId="min_signature"
+                      label="ហត្ថលេខា & CC"
+                      activeSectionId={activeEditSection}
+                      onSelectSection={handleSelectEditSection}
+                    >
+                      <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: 8, fontSize: 12, color: '#475569' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div>{ministryModel.lunarDateLine}</div>
+                          <div>{ministryModel.solarDateLine}</div>
+                          <div className="font-moul" style={{ marginTop: 4, color: '#0f172a' }}>
+                            {ministryModel.signerTitle} / {ministryModel.reporterTitle}
+                          </div>
+                        </div>
+                        {(ministryModel.ccList || []).length > 0 && (
+                          <div style={{ marginTop: 8, fontSize: 11.5 }}>
+                            <div style={{ fontWeight: 700, color: '#334155', marginBottom: 2 }}>ចម្លងប្រគេនជូន៖</div>
+                            {(ministryModel.ccList || []).map((cc, i) => (
+                              <div key={`mcc-${i}`}>- {cc}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </ReportEditableZone>
                   </div>
                 </>
               )
@@ -2765,6 +2272,13 @@ export default function AdminReportView({
                 boxShadow: '0 4px 12px rgba(180, 83, 9, 0.2)'
               }}
             >
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="header"
+                label="លេខ/អ្នកទទួល"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div
                 style={{
                   display: 'flex',
@@ -2800,16 +2314,37 @@ export default function AdminReportView({
               <div style={{ fontSize: 11.5, opacity: 0.9, marginBottom: 4 }}>
                 គោរពប្រគេន៖ {displayModel.recipientTitle}
               </div>
+              </ReportEditableZone>
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="subject_intro"
+                label="កម្មវត្ថុ & សេចក្ដីផ្ដើម"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div className="font-moul" style={{ fontSize: 13.5, lineHeight: 1.5, marginBottom: 6 }}>
                 របាយការណ៍បូកសរុបលទ្ធផលការងារ{displayModel.periodTitlePhrase}
               </div>
-              <div style={{ fontSize: 12.5, opacity: 0.95, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12.5, opacity: 0.95, lineHeight: 1.5, whiteSpace: 'pre-line', marginBottom: 6 }}>
                 {displayModel.subjectText}
               </div>
+              {displayModel.introParagraph && (
+                <div style={{ fontSize: 12, opacity: 0.9, lineHeight: 1.55, whiteSpace: 'pre-line', borderTop: '1px solid rgba(255,255,255,0.18)', paddingTop: 6 }}>
+                  {displayModel.introParagraph}
+                </div>
+              )}
+              </ReportEditableZone>
             </div>
 
             {/* Combined Mode ONLY: Card I. សាវតារ */}
             {displayModel.includeHistory && displayModel.schoolHistory && (
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="history_bg"
+                label="I. សាវតារ"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div
                 style={{
                   background: '#ffffff',
@@ -2826,13 +2361,24 @@ export default function AdminReportView({
                   <span>I. សាវតារ</span>
                 </div>
                 <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
-                  {(displayModel.schoolHistory.backgroundParagraphs || []).map((p, i) => (
-                    <p key={i} style={{ margin: '0 0 8px', textIndent: 24, textAlign: 'left' }}>
-                      {p}
-                    </p>
-                  ))}
+                  {(displayModel.schoolHistory.backgroundParagraphs || []).map((p, i) =>
+                    String(p || '').trim() ? (
+                      <KhmerJustifiedText
+                        key={i}
+                        text={p}
+                        firstLineIndent={24}
+                        fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                        fontSize={12.5}
+                        lineHeight={1.7}
+                        style={{ margin: '0 0 8px', color: '#334155' }}
+                      />
+                    ) : (
+                      <div key={i} aria-hidden="true" style={{ height: 14 }} />
+                    )
+                  )}
                 </div>
               </div>
+              </ReportEditableZone>
             )}
 
             {/* Card I & II (or II & III): គណៈគ្រប់គ្រង និងស្ថិតិសមណសិស្ស */}
@@ -2844,6 +2390,13 @@ export default function AdminReportView({
                 padding: 14
               }}
             >
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="management"
+                label={`${displayModel.sectionNumbers?.management || 'I'}. តួនាទី និងភារកិច្ច`}
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div
                 className="font-moul"
                 style={{ fontSize: 13, color: '#92400e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
@@ -2853,6 +2406,16 @@ export default function AdminReportView({
                   {displayModel.sectionNumbers?.management || 'I'} & {displayModel.sectionNumbers?.stats || 'II'}. គណៈគ្រប់គ្រង និងស្ថិតិសមណសិស្ស
                 </span>
               </div>
+              {displayModel.section1Intro && (
+                <KhmerJustifiedText
+                  text={displayModel.section1Intro}
+                  firstLineIndent={24}
+                  fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                  fontSize={12.5}
+                  lineHeight={1.65}
+                  style={{ color: '#475569', marginBottom: 8 }}
+                />
+              )}
               <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 8 }}>
                 {(displayModel.managementRoles || []).map((m, i) => (
                   <div key={i} style={{ marginBottom: 4 }}>
@@ -2860,6 +2423,14 @@ export default function AdminReportView({
                   </div>
                 ))}
               </div>
+              </ReportEditableZone>
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="stats"
+                label={`${displayModel.sectionNumbers?.stats || 'II'}. ស្ថិតិ`}
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div
                 style={{
                   background: '#fffbeb',
@@ -2870,10 +2441,20 @@ export default function AdminReportView({
                   color: '#78350f'
                 }}
               >
+                <div style={{ fontWeight: 700, marginBottom: 4, color: '#92400e' }}>
+                  ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ
+                </div>
+                {(displayModel.staffStats || []).map((line, i) => (
+                  <div key={`mob-staff-${i}`} style={{ marginBottom: 3 }}>- {line}</div>
+                ))}
+                <div style={{ fontWeight: 700, marginTop: 8, marginBottom: 4, color: '#92400e' }}>
+                  ខ-ចំនួនថ្នាក់ សមណសិស្ស
+                </div>
                 {(displayModel.studentStatLines || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 3 }}>- {line}</div>
+                  <div key={`mob-st-${i}`} style={{ marginBottom: 3 }}>- {line}</div>
                 ))}
               </div>
+              </ReportEditableZone>
             </div>
 
             {/* Card III: វឌ្ឍនភាពការងារ */}
@@ -2885,6 +2466,13 @@ export default function AdminReportView({
                 padding: 14
               }}
             >
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="activities"
+                label="ក. សកម្មភាព"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div
                 className="font-moul"
                 style={{ fontSize: 13, color: '#0369a1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
@@ -2900,9 +2488,17 @@ export default function AdminReportView({
                   <div key={i} style={{ marginBottom: 4 }}>❖ {line}</div>
                 ))}
               </div>
+              </ReportEditableZone>
 
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="admin_docs"
+                label="ខ. លិខិតរដ្ឋបាល"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 6 }}>
-                ខ. ការងារគ្រប់គ្រង លិខិតរដ្ឋបាល និងរបាយការណ៍
+                ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍
               </div>
               <div
                 style={{
@@ -2918,14 +2514,29 @@ export default function AdminReportView({
                   <div key={i} style={{ marginBottom: 3 }}>- {line}</div>
                 ))}
               </div>
+              </ReportEditableZone>
 
               {/* Combined Mode ONLY: Editable Table Intro + 16-Year Human Resource Training Table (placed after ខ) */}
               {displayModel.includeHistory && displayModel.schoolHistory && (
+                <ReportEditableZone
+                  editMode={canEdit && isEditing}
+                  sectionId="history_table"
+                  label="គ. & តារាង ១៦ ឆ្នាំ"
+                  activeSectionId={activeEditSection}
+                  onSelectSection={handleSelectEditSection}
+                >
                 <div style={{ marginTop: 12 }}>
                   {displayModel.schoolHistory.tableIntro && (
-                    <div style={{ fontSize: 12.5, color: '#1e293b', lineHeight: 1.65, marginBottom: 8, textIndent: 22, textAlign: 'left' }}>
-                      {displayModel.schoolHistory.tableIntro}
-                    </div>
+                    <KhmerJustifiedText
+                      text={displayModel.schoolHistory.tableIntro}
+                      firstParagraphPrefixBold="គ."
+                      firstLineIndent={22}
+                      indentFirstParagraphOnly
+                      fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                      fontSize={12.5}
+                      lineHeight={1.65}
+                      style={{ marginBottom: 8, color: '#1e293b' }}
+                    />
                   )}
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', minWidth: 500, borderCollapse: 'collapse', fontSize: 11.5 }}>
@@ -2968,7 +2579,25 @@ export default function AdminReportView({
                     </table>
                   </div>
                 </div>
+                </ReportEditableZone>
               )}
+
+              {/* Appendix items (គ/ឃ & ឃ/ង) on Mobile Card */}
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="appendix"
+                label="ឧបសម្ព័ន្ធ"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
+                <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #cbd5e1', fontSize: 12.5, color: '#334155' }}>
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>{displayModel.section3SubCHeading}</div>
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>{displayModel.section3SubDHeading}</div>
+                  {(displayModel.appendixItems || []).map((line, i) => (
+                    <div key={`mob-appx-${i}`} style={{ paddingLeft: 10, marginBottom: 2 }}>- {line}</div>
+                  ))}
+                </div>
+              </ReportEditableZone>
             </div>
 
             {/* Card IV: បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ */}
@@ -2988,6 +2617,13 @@ export default function AdminReportView({
                 <span>{displayModel.sectionNumbers?.challenges || 'IV'}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ</span>
               </div>
 
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="challenges"
+                label="១-បញ្ហាប្រឈម"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div style={{ fontWeight: 700, fontSize: 12.5, color: '#991b1b', marginBottom: 4 }}>
                 ១-បញ្ហាប្រឈម
               </div>
@@ -2996,7 +2632,15 @@ export default function AdminReportView({
                   <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
                 ))}
               </div>
+              </ReportEditableZone>
 
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="solutions"
+                label="២-ដំណោះស្រាយ"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div style={{ fontWeight: 700, fontSize: 12.5, color: '#15803d', marginBottom: 4 }}>
                 ២-ដំណោះស្រាយ
               </div>
@@ -3005,7 +2649,15 @@ export default function AdminReportView({
                   <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
                 ))}
               </div>
+              </ReportEditableZone>
 
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="requests"
+                label="៣-សំណូមពរ"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div style={{ fontWeight: 700, fontSize: 12.5, color: '#b45309', marginBottom: 4 }}>
                 ៣-សំណូមពរ
               </div>
@@ -3014,6 +2666,7 @@ export default function AdminReportView({
                   <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
                 ))}
               </div>
+              </ReportEditableZone>
             </div>
 
             {/* Card V & VI: ទិសដៅបន្ត និងសេចក្ដីសន្និដ្ឋាន */}
@@ -3025,6 +2678,13 @@ export default function AdminReportView({
                 padding: 14
               }}
             >
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="directions"
+                label={`${displayModel.sectionNumbers?.directions || 'V'}. ទិសដៅបន្ត`}
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div
                 className="font-moul"
                 style={{ fontSize: 13, color: '#15803d', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}
@@ -3037,13 +2697,35 @@ export default function AdminReportView({
                   <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
                 ))}
               </div>
+              </ReportEditableZone>
 
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="conclusion"
+                label={`${displayModel.sectionNumbers?.conclusion || 'VI'}. សន្និដ្ឋាន`}
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div className="font-moul" style={{ fontSize: 13, color: '#78350f', marginBottom: 6 }}>
                 {displayModel.sectionNumbers?.conclusion || 'VI'}. សន្និដ្ឋាន
               </div>
-              <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6, marginBottom: 8 }}>
-                {displayModel.conclusionText}
-              </div>
+              <KhmerJustifiedText
+                text={displayModel.conclusionText}
+                firstLineIndent={24}
+                fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                fontSize={12.5}
+                lineHeight={1.6}
+                style={{ color: '#334155', marginBottom: 8 }}
+              />
+              </ReportEditableZone>
+
+              <ReportEditableZone
+                editMode={canEdit && isEditing}
+                sectionId="signature"
+                label="កាលបរិច្ឆេទ & ហត្ថលេខា"
+                activeSectionId={activeEditSection}
+                onSelectSection={handleSelectEditSection}
+              >
               <div
                 style={{
                   borderTop: '1px dashed #cbd5e1',
@@ -3059,6 +2741,7 @@ export default function AdminReportView({
                   {displayModel.signerTitle}
                 </div>
               </div>
+              </ReportEditableZone>
             </div>
               </>
             )}

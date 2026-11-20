@@ -84,7 +84,7 @@
 
 ## ស្ថានភាពបច្ចុប្បន្ន និងកិច្ចការត្រូវបន្ត (Active Session Milestone)
 * **គោលការណ៍ Rolling Snapshot**: ផ្នែកនេះត្រូវតែប្រើប្រព័ន្ធ **In-Place Overwrite** រក្សាត្រឹមតែ ៣-៤ បន្ទាត់សង្ខេបចុងក្រោយ (ហាម append logs នាំឱ្យឯកសាររីកធំ)។
-* **កាលបរិច្ឆេទ**: 2026-11-20
+* **កាលបរិច្ឆេទ**: 2026-11-21
 * **គម្រោង**: Ann Klee Project (ប្រព័ន្ធគ្រប់គ្រងច្បាប់សមណសិស្ស និងចំណូលចំណាយ)
-* **ស្ថានភាព**: បានកែលម្អ និង Commit & Push ឡើង `origin/main` (Vercel) នូវប្រព័ន្ធស្កេន OCR បំបែក ២ បន្ទប់ដាច់ពីគ្នា (`/mp`)៖ (១) Strict 2-Pool Monitor (`🟢 Healthy Pool` តម្រៀប Key លឿន ≤4s មុនគេ vs `🔒 Quarantine Pool` ចាក់សោរ Key គាំង/429/403 ដាច់មិនឱ្យ User ប្រើរហូតដល់ Auto-Heal តេស្តចេញ `200 OK` ពិត, Check Healthy ៥ នាទី/ម្ដងលើ Cloud + Quarantine Auto-Heal ២ នាទី/ម្ដង + Telegram Admin `1379643928` ក្នុង `src/utils/geminiKeyMonitor.js`), (២) Fast 4-Key Failover (`10s` Router / `15s` Leave / `20s` Finance), និង (៣) តារាងបង្ហាញ ២ បន្ទប់ដាច់ពីគ្នាក្នុង `ApiKeyModal.jsx`។
-* **ការងារបន្ទាប់**: រង់ចាំ Vercel Deploy រួច និងទទួលសំណើកែលម្អបន្ទាប់ពីបង។
+* **ស្ថានភាព**: បានដាក់ប្រព័ន្ធ **Smart Click-to-Edit + Quick Section Switcher** លើគ្រប់របាយការណ៍ទាំងអស់ (`/mp`) + ជួសជុល Edge Cases ទាំង ៦ (ភ្ជាប់វណ្ណយុត្តិ `។ ៖ ៗ ) »` កុំឱ្យធ្លាក់តែឯង, កាត់ខ្សែចុច/ពាក្យវែងហួសទទឹងក្រដាស, តម្រឹម `សេចក្ដីផ្ដើម` Word === PDF, រក្សា `Enter` ១–២ ដងក្នុង `សាវតារ`/`សន្និដ្ឋាន`, ការពារទំព័រទី ១ របៀបធម្មតាកុំឱ្យហៀរ និងបំពេញ Mobile Cards គ្រប់ផ្នែក ១០០%)។
+* **ការងារបន្ទាប់**: រង់ចាំការត្រួតពិនិត្យលើ Local (`http://localhost:5173`) និងការបញ្ជាក់ Commit & Push ឡើង Vercel ពីបង។

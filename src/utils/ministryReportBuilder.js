@@ -691,8 +691,8 @@ export function buildMinistryReportModel({
       : synthesizedAnnual.solutions || [];
 
   const conclusionParas =
-    Array.isArray(savedOverride.conclusionParas) && savedOverride.conclusionParas.length > 0
-      ? savedOverride.conclusionParas
+    Array.isArray(savedOverride.conclusionParas) && savedOverride.conclusionParas.some(p => String(p || '').trim())
+      ? savedOverride.conclusionParas.map(p => String(p ?? '').trim())
       : DEFAULT_MINISTRY_CONCLUSION_PARAS;
 
   const requests =

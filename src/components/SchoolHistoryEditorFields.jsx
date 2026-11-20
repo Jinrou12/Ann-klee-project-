@@ -35,11 +35,16 @@ export default function SchoolHistoryEditorFields({
   draft,
   onChangeDraft,
   showStandaloneMeta = false,
+  sectionMode = 'all', // 'all' | 'title' | 'background' | 'table' | 'signature'
   isMobile = false,
   fmtNum = (n) => toKhmerDigits(n)
 }) {
   if (!draft) return null;
   const rows = Array.isArray(draft.rows) ? draft.rows : [];
+  const showTitle = sectionMode === 'title' || (sectionMode === 'all' && showStandaloneMeta);
+  const showBackground = sectionMode === 'all' || sectionMode === 'background';
+  const showTable = sectionMode === 'all' || sectionMode === 'table';
+  const showSignature = sectionMode === 'signature' || (sectionMode === 'all' && showStandaloneMeta);
 
   let sumKg = 0;
   let sumG1 = 0;
@@ -97,7 +102,7 @@ export default function SchoolHistoryEditorFields({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {showStandaloneMeta && (
+      {showTitle && (
         <div>
           <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
             ចំណងជើងរបាយការណ៍ (ប្រវត្តិសាលា)
@@ -119,59 +124,66 @@ export default function SchoolHistoryEditorFields({
       )}
 
       {/* Background (I. សាវតារ / ១.១. សាវតារ) */}
-      <div>
-        <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-          {showStandaloneMeta ? '១.១. សាវតារ' : 'I. សាវតារ'} (ចុច Enter ដើម្បីចុះកថាខណ្ឌថ្មី)
-        </label>
-        <textarea
-          rows={isMobile ? 7 : 6}
-          value={draft.backgroundText ?? ''}
-          onChange={e => onChangeDraft(prev => ({ ...prev, backgroundText: e.target.value }))}
-          style={{
-            width: '100%',
-            padding: 9,
-            borderRadius: 8,
-            border: '1px solid #cbd5e1',
-            fontSize: 13,
-            lineHeight: 1.65,
-            boxSizing: 'border-box',
-            fontFamily: 'inherit'
-          }}
-        />
-      </div>
+      {showBackground && (
+        <div>
+          <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
+            {showStandaloneMeta ? '១.១. សាវតារ' : 'I. សាវតារ'} (ចុច Enter ដើម្បីចុះកថាខណ្ឌថ្មី)
+          </label>
+          <textarea
+            rows={sectionMode === 'background' ? (isMobile ? 10 : 12) : (isMobile ? 7 : 6)}
+            value={draft.backgroundText ?? ''}
+            onChange={e => onChangeDraft(prev => ({ ...prev, backgroundText: e.target.value }))}
+            style={{
+              width: '100%',
+              padding: 9,
+              borderRadius: 8,
+              border: '1px solid #cbd5e1',
+              fontSize: 13,
+              lineHeight: 1.65,
+              boxSizing: 'border-box',
+              fontFamily: 'inherit'
+            }}
+          />
+        </div>
+      )}
 
       {/* Table Intro Paragraph */}
-      <div>
-        <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-          អត្ថបទណែនាំមុនតារាងទិន្នន័យធនធានមនុស្ស (កែពាក្យបានតាមចិត្ត)
-        </label>
-        <textarea
-          rows={3}
-          value={draft.tableIntro ?? ''}
-          onChange={e => onChangeDraft(prev => ({ ...prev, tableIntro: e.target.value }))}
-          placeholder="ឧទាហរណ៍៖ សាលាពុទ្ធិកបឋមសិក្សាផ្នែកពុទ្ធចក្រ សម្រាប់ព្រះសង្ឃ..."
-          style={{
-            width: '100%',
-            padding: 9,
-            borderRadius: 8,
-            border: '1px solid #cbd5e1',
-            fontSize: 13,
-            lineHeight: 1.6,
-            boxSizing: 'border-box',
-            fontFamily: 'inherit'
-          }}
-        />
-      </div>
+      {showTable && (
+        <div>
+          <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
+            {showStandaloneMeta
+              ? 'អត្ថបទណែនាំមុនតារាងទិន្នន័យធនធានមនុស្ស (កែពាក្យ និងចុច Enter ចុះបន្ទាត់បាន)'
+              : 'គ. អត្ថបទណែនាំមុនតារាងទិន្នន័យធនធានមនុស្ស (កែពាក្យ និងចុច Enter ចុះបន្ទាត់បាន)'}
+          </label>
+          <textarea
+            rows={4}
+            value={draft.tableIntro ?? ''}
+            onChange={e => onChangeDraft(prev => ({ ...prev, tableIntro: e.target.value }))}
+            placeholder="ឧទាហរណ៍៖ សាលាពុទ្ធិកបឋមសិក្សាផ្នែកពុទ្ធចក្រ សម្រាប់ព្រះសង្ឃ..."
+            style={{
+              width: '100%',
+              padding: 9,
+              borderRadius: 8,
+              border: '1px solid #cbd5e1',
+              fontSize: 13,
+              lineHeight: 1.6,
+              boxSizing: 'border-box',
+              fontFamily: 'inherit'
+            }}
+          />
+        </div>
+      )}
 
       {/* Interactive Auto-Summing Multi-Year Table */}
-      <div
-        style={{
-          background: '#f8fafc',
-          border: '1px solid #e2e8f0',
-          borderRadius: 10,
-          padding: isMobile ? 8 : 12
-        }}
-      >
+      {showTable && (
+        <div
+          style={{
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: 10,
+            padding: isMobile ? 8 : 12
+          }}
+        >
         <div
           style={{
             display: 'flex',
@@ -352,12 +364,13 @@ export default function SchoolHistoryEditorFields({
           </table>
         </div>
       </div>
+      )}
 
-      {showStandaloneMeta && (
+      {showSignature && (
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+            gridTemplateColumns: isMobile ? '1fr' : (sectionMode === 'signature' ? '1fr' : 'repeat(3, 1fr)'),
             gap: 10
           }}
         >

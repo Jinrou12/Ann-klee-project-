@@ -540,3 +540,104 @@ input:focus, select:focus, textarea:focus {
     display: none !important;
   }
 }
+
+/* ===================================================================== */
+/* SMART CLICK-TO-EDIT REPORT ZONES (Scoped under .monastic-app, 0px shift) */
+/* ===================================================================== */
+.monastic-app .report-edit-zone {
+  position: relative;
+  cursor: pointer;
+  border-radius: 5px;
+  outline: 1.5px dashed rgba(217, 119, 6, 0.42);
+  outline-offset: 2px;
+  transition: outline-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.monastic-app .report-edit-zone:hover {
+  outline: 2px solid #d97706;
+  outline-offset: 2px;
+  background-color: rgba(254, 243, 199, 0.28);
+  z-index: 4;
+}
+
+.monastic-app .report-edit-zone[data-active="true"] {
+  outline: 2.5px solid #0284c7;
+  outline-offset: 2px;
+  background-color: rgba(224, 242, 254, 0.34);
+  z-index: 5;
+}
+
+.monastic-app .report-edit-zone-badge {
+  position: absolute;
+  top: -11px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1.5px 8px;
+  border-radius: 999px;
+  background: #b45309;
+  color: #ffffff;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.14s ease, transform 0.14s ease, background-color 0.14s ease;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.22);
+  z-index: 12;
+}
+
+.monastic-app .report-edit-zone:hover > .report-edit-zone-badge,
+.monastic-app .report-edit-zone[data-active="true"] > .report-edit-zone-badge {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.monastic-app .report-edit-zone[data-active="true"] > .report-edit-zone-badge {
+  background: #0284c7;
+}
+
+@media (hover: none), (max-width: 768px) {
+  .monastic-app .report-edit-zone > .report-edit-zone-badge {
+    opacity: 0.92;
+    transform: translateY(0);
+  }
+}
+
+.monastic-app .report-edit-chips-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.monastic-app .report-edit-chips-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.monastic-app .report-edit-chips-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+@keyframes reportDrawerSlideIn {
+  from { transform: translateX(24px); opacity: 0.7; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes reportSheetSlideUp {
+  from { transform: translateY(24px); opacity: 0.75; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media print {
+  .monastic-app .report-edit-zone {
+    outline: none !important;
+    background: transparent !important;
+  }
+  .monastic-app .report-edit-zone-badge {
+    display: none !important;
+  }
+}

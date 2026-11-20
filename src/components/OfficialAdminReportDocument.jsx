@@ -1,7 +1,28 @@
-import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
+import KhmerJustifiedText from './KhmerJustifiedText';
+import ReportEditableZone, { renderBlocksWithEditZones } from './ReportEditableZone';
 import { toKhmerDigits } from '../utils/khmerNumerals';
 import { renderSchoolHistoryTableChunk } from './OfficialSchoolHistoryDocument';
+import { subscribeKhmerFontReady, getKhmerFontVersion } from '../utils/khmerJustifyEngine';
+
+function mapAdminBlockIdToSection(blockId = '') {
+  const id = String(blockId || '');
+  if (id === 'sec-hist-head' || id.startsWith('hist-bg-para-')) return 'history_bg';
+  if (id === 'sec-mgmt-head' || id === 'sec-mgmt-intro' || id.startsWith('comb-role-')) return 'management';
+  if (id === 'sec-stats-head' || id.startsWith('comb-staff-') || id === 'sec-stats-subB' || id.startsWith('comb-st-') || id.startsWith('st-p2-')) return 'stats';
+  if (id === 'sec3-head' || id.startsWith('act-')) return 'activities';
+  if (id === 'sec3-subB' || id.startsWith('doc-')) return 'admin_docs';
+  if (id === 'hist-tbl-intro' || id.startsWith('comb-hist-tbl-')) return 'history_table';
+  if (id === 'sec3-subCD' || id.startsWith('appx-')) return 'appendix';
+  if (id === 'sec4-head' || id.startsWith('chal-')) return 'challenges';
+  if (id === 'sec4-sol-head' || id.startsWith('sol-')) return 'solutions';
+  if (id === 'sec4-req-head' || id.startsWith('req-')) return 'requests';
+  if (id === 'sec5-head' || id.startsWith('dir-')) return 'directions';
+  if (id === 'sec6-conclusion') return 'conclusion';
+  if (id === 'sec6-closing-signature') return 'signature';
+  return null;
+}
 
 const SIEMREAP_FONT = "'Khmer OS Siemreap', 'Siemreap', 'Battambang', sans-serif";
 const MOUL_FONT = "'Khmer OS Muol Light', 'Khmer OS Moul Light', 'Khmer OS Muol', 'Moul', serif";
@@ -44,76 +65,24 @@ function renderMonkTitleAndName(fullName = '') {
 }
 
 /**
- * Highlights specific monastic titles in Muol Light inside body/closing paragraphs.
- * Each monastic title is wrapped with whiteSpace: 'nowrap' so a royal/monastic title
- * (such as ព្រះធម្មសាលវង្ស) is never broken in half across lines.
- */
-function renderParagraphWithMuolHighlights(text = '', boldPhrases = []) {
-  const cleanText = normalizeSingleSpaces(text);
-  const tokens = [
-    'ព្រះធម្មសាលវង្ស',
-    'ព្រះអនុគណ',
-    ...boldPhrases.map(b => normalizeSingleSpaces(b)).filter(Boolean)
-  ];
-  if (!cleanText) return null;
-
-  let parts = [{ text: cleanText, type: 'normal' }];
-  tokens.forEach(token => {
-    const isMuol = token === 'ព្រះអនុគណ' || token === 'ព្រះធម្មសាលវង្ស';
-    const nextParts = [];
-    parts.forEach(part => {
-      if (part.type !== 'normal' || !part.text.includes(token)) {
-        nextParts.push(part);
-        return;
-      }
-      const splitArr = part.text.split(token);
-      splitArr.forEach((seg, idx) => {
-        if (seg) nextParts.push({ text: seg, type: 'normal' });
-        if (idx < splitArr.length - 1) {
-          nextParts.push({ text: token, type: isMuol ? 'moul' : 'bold' });
-        }
-      });
-    });
-    parts = nextParts;
-  });
-
-  return parts.map((p, i) => {
-    if (p.type === 'moul') {
-      return (
-        <span
-          key={i}
-          style={{
-            fontFamily: MOUL_FONT,
-            fontWeight: 400,
-            whiteSpace: 'nowrap'
-          }}
-        >
-          {p.text}
-        </span>
-      );
-    }
-    if (p.type === 'bold') {
-      return (
-        <strong key={i} style={{ fontWeight: 700 }}>
-          {p.text}
-        </strong>
-      );
-    }
-    return <React.Fragment key={i}>{p.text}</React.Fragment>;
-  });
-}
-
-/**
  * Estimate visual pixel height of a Khmer paragraph by stripping zero-width subscripts/diacritics first
  * (Used only as initial fallback before real DOM offsetHeight measurement completes)
  */
+function countEstimatedVisualLines(text = '', visualCharsPerLine = 64) {
+  const rawLines = String(text || '').split(/\r?\n/);
+  let total = 0;
+  for (const ln of rawLines) {
+    const visualStr = ln
+      .replace(/\u17D2[\u1780-\u17A2]/g, '') // Subscript consonants sit underneath and take ~0 width
+      .replace(/[\u17B7-\u17BD\u17C6\u17C9-\u17D3\u17DD\u200B]/g, '') // Top/bottom vowels & signs take ~0 width
+      .trim();
+    total += visualStr ? Math.max(1, Math.ceil(visualStr.length / visualCharsPerLine)) : 1;
+  }
+  return Math.max(1, total);
+}
+
 function estimateVisualHeightPx(text = '', visualCharsPerLine = 64, extraPx = 4) {
-  const visualStr = String(text || '')
-    .replace(/\u17D2[\u1780-\u17A2]/g, '') // Subscript consonants sit underneath and take ~0 width
-    .replace(/[\u17B7-\u17BD\u17C6\u17C9-\u17D3\u17DD\u200B]/g, '') // Top/bottom vowels & signs take ~0 width
-    .trim();
-  const lines = Math.max(1, Math.ceil(visualStr.length / visualCharsPerLine));
-  return lines * 27.5 + extraPx;
+  return countEstimatedVisualLines(text, visualCharsPerLine) * 27.5 + extraPx;
 }
 
 /**
@@ -127,15 +96,56 @@ function estimateVisualHeightPx(text = '', visualCharsPerLine = 64, extraPx = 4)
 export default function OfficialAdminReportDocument({
   id = 'printable-admin-report-document',
   displayModel,
-  useKhmerNumerals = true
+  useKhmerNumerals = true,
+  editMode = false,
+  activeEditSection = null,
+  onSelectEditSection = null
 }) {
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
+  const secNumsForLabels = displayModel?.sectionNumbers || {
+    management: 'I',
+    stats: 'II',
+    progress: 'III',
+    challenges: 'IV',
+    directions: 'V',
+    conclusion: 'VI'
+  };
+  const adminSectionLabels = useMemo(
+    () => ({
+      header: 'លេខលិខិត & អ្នកទទួល',
+      subject_intro: 'កម្មវត្ថុ & សេចក្ដីផ្ដើម',
+      history_bg: 'I. សាវតារ',
+      management: `${secNumsForLabels.management}. តួនាទី និងភារកិច្ច`,
+      stats: `${secNumsForLabels.stats}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`,
+      activities: `${secNumsForLabels.progress}. ក. សកម្មភាពការងារ`,
+      admin_docs: `${secNumsForLabels.progress}. ខ. ការងារគ្រប់គ្រង លិខិតរដ្ឋបាល`,
+      history_table: 'គ. & តារាង ១៦ ឆ្នាំ',
+      appendix: 'ឧបសម្ព័ន្ធ (ចំណាយ)',
+      challenges: `${secNumsForLabels.challenges}. ១-បញ្ហាប្រឈម`,
+      solutions: `${secNumsForLabels.challenges}. ២-ដំណោះស្រាយ`,
+      requests: `${secNumsForLabels.challenges}. ៣-សំណូមពរ`,
+      directions: `${secNumsForLabels.directions}. ទិសដៅបន្ត`,
+      conclusion: `${secNumsForLabels.conclusion}. សន្និដ្ឋាន`,
+      signature: 'កាលបរិច្ឆេទ & ហត្ថលេខា'
+    }),
+    [
+      secNumsForLabels.management,
+      secNumsForLabels.stats,
+      secNumsForLabels.progress,
+      secNumsForLabels.challenges,
+      secNumsForLabels.directions,
+      secNumsForLabels.conclusion
+    ]
+  );
   const measureContainerRef = useRef(null);
   const measureHeaderRef = useRef(null);
   const measureHistTableRef = useRef(null);
   const [measuredHeights, setMeasuredHeights] = useState(null);
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState(440);
   const [measuredHistTable, setMeasuredHistTable] = useState(null);
+  const [fontVersion, setFontVersion] = useState(() => getKhmerFontVersion());
+
+  useEffect(() => subscribeKhmerFontReady(setFontVersion), []);
 
   // Build Page 1 Node + Flow Blocks for Page 2..N (or continuous flow from Page 1 when includeHistory is true)
   const { page1Node, flowBlocks, isHistoryCombined } = useMemo(() => {
@@ -153,7 +163,24 @@ export default function OfficialAdminReportDocument({
     };
 
     const studentLines = (displayModel.studentStatLines || []).map(normalizeSingleSpaces);
-    const p1SliceCount = displayModel.periodType && displayModel.periodType !== 'month' ? 2 : 3;
+    const extraSubjLines = Math.max(0, countEstimatedVisualLines(displayModel.subjectText, 48) - 2);
+    const extraIntroLines = Math.max(0, countEstimatedVisualLines(displayModel.introParagraph, 48) - 3);
+    const extraSec1Lines = Math.max(0, countEstimatedVisualLines(displayModel.section1Intro, 52) - 4);
+    const roleVisualLines = (displayModel.managementRoles || []).reduce(
+      (sum, m) => sum + Math.max(1, countEstimatedVisualLines(m?.role || '', 34)),
+      0
+    );
+    const extraRoleLines = Math.max(0, roleVisualLines - 4);
+    const staffVisualLines = (displayModel.staffStats || []).reduce(
+      (sum, s) => sum + Math.max(1, countEstimatedVisualLines(s, 52)),
+      0
+    );
+    const extraStaffLines = Math.max(0, staffVisualLines - 4);
+    const totalP1ExtraLines =
+      extraSubjLines + extraIntroLines + extraSec1Lines + extraRoleLines + extraStaffLines;
+
+    const baseP1Slice = displayModel.periodType && displayModel.periodType !== 'month' ? 2 : 3;
+    const p1SliceCount = Math.max(0, baseP1Slice - totalP1ExtraLines);
     const page1StudentLines = studentLines.slice(0, p1SliceCount);
     const page2CarryStudentLines = studentLines.slice(p1SliceCount);
 
@@ -214,91 +241,124 @@ export default function OfficialAdminReportDocument({
             <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, whiteSpace: 'nowrap' }}>
               ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម
             </div>
-            <div style={{ fontFamily: SIEMREAP_FONT, fontSize: 15 }}>
-              លេខ {displayModel.docNumber || '......................'}ព.ប.ហ.ណ
-            </div>
+            <ReportEditableZone
+              editMode={editMode}
+              sectionId="header"
+              label={adminSectionLabels.header}
+              activeSectionId={activeEditSection}
+              onSelectSection={onSelectEditSection}
+            >
+              <div style={{ fontFamily: SIEMREAP_FONT, fontSize: 15 }}>
+                លេខ {displayModel.docNumber || '......................'}ព.ប.ហ.ណ
+              </div>
+            </ReportEditableZone>
           </div>
         </div>
 
         {/* 3. Salutation & Recipient Block */}
-        <div style={{ textAlign: 'center', marginBottom: 8, lineHeight: 1.62 }}>
-          <div
-            style={{
-              fontFamily: MOUL_FONT,
-              fontSize: 17.5,
-              color: NAVY_HEADER_COLOR,
-              marginBottom: 2
-            }}
-          >
-            សូមក្រាបថ្វាយបង្គំ
+        <ReportEditableZone
+          editMode={editMode}
+          sectionId="header"
+          label={adminSectionLabels.header}
+          activeSectionId={activeEditSection}
+          onSelectSection={onSelectEditSection}
+        >
+          <div style={{ textAlign: 'center', marginBottom: 8, lineHeight: 1.62 }}>
+            <div
+              style={{
+                fontFamily: MOUL_FONT,
+                fontSize: 17.5,
+                color: NAVY_HEADER_COLOR,
+                marginBottom: 2
+              }}
+            >
+              សូមក្រាបថ្វាយបង្គំ
+            </div>
+            <div
+              style={{
+                fontFamily: MOUL_FONT,
+                fontSize: 15.8,
+                color: NAVY_HEADER_COLOR,
+                marginBottom: 3
+              }}
+            >
+              {normalizeSingleSpaces(displayModel.recipientTitle)}
+            </div>
+            <div
+              style={{
+                fontFamily: SIEMREAP_FONT,
+                fontSize: 15.2,
+                fontWeight: 700,
+                fontStyle: 'italic',
+                color: '#000000',
+                textAlign: 'right',
+                paddingRight: 0
+              }}
+            >
+              ជាទីគោរពសក្ការៈដ៏ខ្ពង់ខ្ពស់!
+            </div>
           </div>
-          <div
-            style={{
-              fontFamily: MOUL_FONT,
-              fontSize: 15.8,
-              color: NAVY_HEADER_COLOR,
-              marginBottom: 3
-            }}
-          >
-            {normalizeSingleSpaces(displayModel.recipientTitle)}
-          </div>
-          <div
-            style={{
-              fontFamily: SIEMREAP_FONT,
-              fontSize: 15.2,
-              fontWeight: 700,
-              fontStyle: 'italic',
-              color: '#000000',
-              textAlign: 'right',
-              paddingRight: 0
-            }}
-          >
-            ជាទីគោរពសក្ការៈដ៏ខ្ពង់ខ្ពស់!
-          </div>
-        </div>
+        </ReportEditableZone>
 
-        {/* 4. Subject (កម្មវត្ថុ៖ with hanging indent) */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            textAlign: 'left',
-            wordSpacing: 'normal',
-            marginBottom: 8,
-            lineHeight: 1.75
-          }}
+        {/* 4 & 5. Subject & Intro Paragraph */}
+        <ReportEditableZone
+          editMode={editMode}
+          sectionId="subject_intro"
+          label={adminSectionLabels.subject_intro}
+          activeSectionId={activeEditSection}
+          onSelectSection={onSelectEditSection}
         >
           <div
             style={{
-              fontFamily: MOUL_FONT,
-              fontSize: 15.2,
-              minWidth: 76,
-              flexShrink: 0
+              display: 'flex',
+              alignItems: 'baseline',
+              marginBottom: 8,
+              lineHeight: 1.75
             }}
           >
-            កម្មវត្ថុ៖
+            <div
+              style={{
+                fontFamily: MOUL_FONT,
+                fontSize: 15.2,
+                width: 76,
+                minWidth: 76,
+                flexShrink: 0
+              }}
+            >
+              កម្មវត្ថុ៖
+            </div>
+            <KhmerJustifiedText
+              text={displayModel.subjectText}
+              boldPhrases={[displayModel.periodTitlePhrase]}
+              highlightMonasticTitles
+              maxWidthPx={618}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.75}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
-          <div style={{ flex: 1, textAlign: 'left' }}>
-            {renderParagraphWithMuolHighlights(displayModel.subjectText, [
-              displayModel.periodTitlePhrase
-            ])}
-          </div>
-        </div>
 
-        {/* 5. Intro Paragraph */}
-        <div
-          style={{
-            textAlign: 'left',
-            wordSpacing: 'normal',
-            paddingLeft: 76,
-            marginBottom: 8,
-            lineHeight: 1.75
-          }}
-        >
-          {renderParagraphWithMuolHighlights(displayModel.introParagraph, [
-            displayModel.inPeriodPhrase
-          ])}
-        </div>
+          <div
+            style={{
+              paddingLeft: 76,
+              marginBottom: 8,
+              boxSizing: 'border-box'
+            }}
+          >
+            <KhmerJustifiedText
+              text={displayModel.introParagraph}
+              boldPhrases={[displayModel.inPeriodPhrase]}
+              highlightMonasticTitles
+              maxWidthPx={618}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.75}
+            />
+          </div>
+        </ReportEditableZone>
       </>
     );
 
@@ -318,23 +378,30 @@ export default function OfficialAdminReportDocument({
         {!includeHist && (
           <>
             {/* 6. Section I: I.តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា */}
-            <div style={{ marginBottom: 8 }}>
+            <ReportEditableZone
+              editMode={editMode}
+              sectionId="management"
+              label={adminSectionLabels.management}
+              activeSectionId={activeEditSection}
+              onSelectSection={onSelectEditSection}
+            >
+              <div style={{ marginBottom: 8 }}>
               <div style={{ paddingLeft: 28, marginBottom: 4 }}>
                 <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>I.</span>
                 <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
                   តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
                 </span>
               </div>
-              <div
-                style={{
-                  textAlign: 'left',
-                  wordSpacing: 'normal',
-                  textIndent: 68,
-                  marginBottom: 6,
-                  lineHeight: 1.8
-                }}
-              >
-                {normalizeSingleSpaces(displayModel.section1Intro)}
+              <div style={{ paddingLeft: 56, marginBottom: 6, boxSizing: 'border-box' }}>
+                <KhmerJustifiedText
+                  text={displayModel.section1Intro}
+                  maxWidthPx={638}
+                  firstLineIndent={46}
+                  fontFamily={SIEMREAP_FONT}
+                  moulFontFamily={MOUL_FONT}
+                  fontSize={15.2}
+                  lineHeight={1.8}
+                />
               </div>
               <div style={{ paddingLeft: 56 }}>
                 {(displayModel.managementRoles || []).map((m, idx) => (
@@ -356,8 +423,16 @@ export default function OfficialAdminReportDocument({
                 ))}
               </div>
             </div>
+            </ReportEditableZone>
 
             {/* 7. Section II: II.ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស */}
+            <ReportEditableZone
+              editMode={editMode}
+              sectionId="stats"
+              label={adminSectionLabels.stats}
+              activeSectionId={activeEditSection}
+              onSelectSection={onSelectEditSection}
+            >
             <div>
               <div style={{ paddingLeft: 28, marginBottom: 4 }}>
                 <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>II.</span>
@@ -387,37 +462,58 @@ export default function OfficialAdminReportDocument({
                     }}
                   >
                     <span style={{ width: 18, flexShrink: 0 }}>-</span>
-                    <span>{normalizeSingleSpaces(line)}</span>
+                    <KhmerJustifiedText
+                      text={line}
+                      maxWidthPx={608}
+                      fontFamily={SIEMREAP_FONT}
+                      moulFontFamily={MOUL_FONT}
+                      fontSize={15.2}
+                      lineHeight={1.78}
+                      style={{ flex: 1, minWidth: 0 }}
+                    />
                   </div>
                 ))}
               </div>
 
-              <div
-                style={{
-                  paddingLeft: 68,
-                  fontWeight: 700,
-                  marginBottom: 3
-                }}
-              >
-                ខ-ចំនួនថ្នាក់ សមណសិស្ស
-              </div>
-              <div style={{ paddingLeft: 68 }}>
-                {page1StudentLines.map((line, idx) => (
+              {page1StudentLines.length > 0 && (
+                <>
                   <div
-                    key={`st-p1-${idx}`}
                     style={{
-                      display: 'flex',
-                      alignItems: 'baseline',
-                      marginBottom: 2,
-                      lineHeight: 1.78
+                      paddingLeft: 68,
+                      fontWeight: 700,
+                      marginBottom: 3
                     }}
                   >
-                    <span style={{ width: 18, flexShrink: 0 }}>-</span>
-                    <span>{line}</span>
+                    ខ-ចំនួនថ្នាក់ សមណសិស្ស
                   </div>
-                ))}
-              </div>
+                  <div style={{ paddingLeft: 68 }}>
+                    {page1StudentLines.map((line, idx) => (
+                      <div
+                        key={`st-p1-${idx}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          marginBottom: 2,
+                          lineHeight: 1.78
+                        }}
+                      >
+                        <span style={{ width: 18, flexShrink: 0 }}>-</span>
+                        <KhmerJustifiedText
+                          text={line}
+                          maxWidthPx={608}
+                          fontFamily={SIEMREAP_FONT}
+                          moulFontFamily={MOUL_FONT}
+                          fontSize={15.2}
+                          lineHeight={1.78}
+                          style={{ flex: 1, minWidth: 0 }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
+            </ReportEditableZone>
           </>
         )}
       </div>
@@ -441,22 +537,29 @@ export default function OfficialAdminReportDocument({
 
       (displayModel.schoolHistory.backgroundParagraphs || []).forEach((para, idx) => {
         const cleanPara = normalizeSingleSpaces(para);
+        if (!cleanPara) {
+          blocks.push({
+            id: `hist-bg-para-${idx}`,
+            estPx: 22,
+            node: <div key={`hist-bg-para-${idx}`} aria-hidden="true" style={{ height: 22 }} />
+          });
+          return;
+        }
         blocks.push({
           id: `hist-bg-para-${idx}`,
           estPx: estimateVisualHeightPx(cleanPara, 62, 8),
           node: (
-            <div
+            <KhmerJustifiedText
               key={`hist-bg-para-${idx}`}
-              style={{
-                textAlign: 'left',
-                wordSpacing: 'normal',
-                textIndent: 56,
-                marginBottom: 6,
-                lineHeight: 1.8
-              }}
-            >
-              {cleanPara}
-            </div>
+              text={cleanPara}
+              maxWidthPx={694}
+              firstLineIndent={56}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.8}
+              style={{ marginBottom: 6 }}
+            />
           )
         });
       });
@@ -478,19 +581,18 @@ export default function OfficialAdminReportDocument({
 
       blocks.push({
         id: 'sec-mgmt-intro',
-        estPx: estimateVisualHeightPx(displayModel.section1Intro, 62, 6),
+        estPx: estimateVisualHeightPx(displayModel.section1Intro, 58, 6),
         node: (
-          <div
-            key="sec-mgmt-intro"
-            style={{
-              textAlign: 'left',
-              wordSpacing: 'normal',
-              textIndent: 68,
-              marginBottom: 6,
-              lineHeight: 1.8
-            }}
-          >
-            {normalizeSingleSpaces(displayModel.section1Intro)}
+          <div key="sec-mgmt-intro" style={{ paddingLeft: 56, marginBottom: 6, boxSizing: 'border-box' }}>
+            <KhmerJustifiedText
+              text={displayModel.section1Intro}
+              maxWidthPx={638}
+              firstLineIndent={46}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.8}
+            />
           </div>
         )
       });
@@ -556,7 +658,15 @@ export default function OfficialAdminReportDocument({
               }}
             >
               <span style={{ width: 18, flexShrink: 0 }}>-</span>
-              <span>{normalizeSingleSpaces(line)}</span>
+              <KhmerJustifiedText
+                text={line}
+                maxWidthPx={608}
+                fontFamily={SIEMREAP_FONT}
+                moulFontFamily={MOUL_FONT}
+                fontSize={15.2}
+                lineHeight={1.78}
+                style={{ flex: 1, minWidth: 0 }}
+              />
             </div>
           )
         });
@@ -597,13 +707,41 @@ export default function OfficialAdminReportDocument({
               }}
             >
               <span style={{ width: 18, flexShrink: 0 }}>-</span>
-              <span>{line}</span>
+              <KhmerJustifiedText
+                text={line}
+                maxWidthPx={608}
+                fontFamily={SIEMREAP_FONT}
+                moulFontFamily={MOUL_FONT}
+                fontSize={15.2}
+                lineHeight={1.78}
+                style={{ flex: 1, minWidth: 0 }}
+              />
             </div>
           )
         });
       });
     } else {
-      // Standard Mode: Remaining student stat lines from Section II (ខ)
+      // Standard Mode: If Page 1 filled before ខ-, carry the subheading cleanly onto Page 2!
+      if (page1StudentLines.length === 0 && page2CarryStudentLines.length > 0) {
+        blocks.push({
+          id: 'sec-stats-subB',
+          isHeading: true,
+          estPx: 32,
+          node: (
+            <div
+              key="sec-stats-subB-p2"
+              style={{
+                paddingLeft: 68,
+                fontWeight: 700,
+                marginBottom: 3
+              }}
+            >
+              ខ-ចំនួនថ្នាក់ សមណសិស្ស
+            </div>
+          )
+        });
+      }
+      // Remaining student stat lines from Section II (ខ)
       page2CarryStudentLines.forEach((line, idx) => {
         blocks.push({
           id: `st-p2-${idx}`,
@@ -620,7 +758,15 @@ export default function OfficialAdminReportDocument({
               }}
             >
               <span style={{ width: 18, flexShrink: 0 }}>-</span>
-              <span>{line}</span>
+              <KhmerJustifiedText
+                text={line}
+                maxWidthPx={608}
+                fontFamily={SIEMREAP_FONT}
+                moulFontFamily={MOUL_FONT}
+                fontSize={15.2}
+                lineHeight={1.78}
+                style={{ flex: 1, minWidth: 0 }}
+              />
             </div>
           )
         });
@@ -662,14 +808,20 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 86,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'left',
-              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
           >
             <span style={{ width: 22, flexShrink: 0, fontSize: 13 }}>❖</span>
-            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
+            <KhmerJustifiedText
+              text={line}
+              maxWidthPx={586}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.78}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
         )
       });
@@ -699,7 +851,7 @@ export default function OfficialAdminReportDocument({
       const line = normalizeSingleSpaces(rawLine);
       blocks.push({
         id: `doc-${idx}`,
-        estPx: 29,
+        estPx: estimateVisualHeightPx(line, 58, 3),
         node: (
           <div
             key={`doc-${idx}`}
@@ -712,34 +864,43 @@ export default function OfficialAdminReportDocument({
             }}
           >
             <span style={{ width: 18, flexShrink: 0 }}>-</span>
-            <span>{line}</span>
+            <KhmerJustifiedText
+              text={line}
+              maxWidthPx={590}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.76}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
         )
       });
     });
 
-    // Combined Mode ONLY: Editable Table Intro Paragraph + 16-Year Human Resource Training Table (between ខ and គ)
+    // Combined Mode ONLY: ចំណុច គ. (Line 1 starts with គ. aligned straight under ខ. at 69.5px with locked space;
+    // Line 2+ & Enter lines align flush at 0px with table ល.រ left border)
     if (includeHist) {
       const introStr = normalizeSingleSpaces(displayModel.schoolHistory.tableIntro || '');
       if (introStr) {
         blocks.push({
           id: 'hist-tbl-intro',
           isHeading: true,
-          estPx: estimateVisualHeightPx(introStr, 60, 10),
+          estPx: estimateVisualHeightPx(introStr, 60, 14),
           node: (
-            <div
+            <KhmerJustifiedText
               key="hist-tbl-intro"
-              style={{
-                paddingTop: 6,
-                marginBottom: 6,
-                textAlign: 'left',
-                wordSpacing: 'normal',
-                textIndent: 52,
-                lineHeight: 1.78
-              }}
-            >
-              {introStr}
-            </div>
+              text={introStr}
+              firstParagraphPrefixBold="គ."
+              maxWidthPx={694}
+              firstLineIndent={69.5}
+              indentFirstParagraphOnly
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.78}
+              style={{ paddingTop: 6, marginBottom: 6 }}
+            />
           )
         });
       }
@@ -754,19 +915,50 @@ export default function OfficialAdminReportDocument({
       });
     }
 
-    // Section III (គ & ឃ) Appendix
+    // Section III (គ & ឃ, or ឃ & ង in Combined mode) Appendix — right-align prefix box so `.` and text align 100%
+    const renderAlignedLetterSubHeading = (headingText, marginBottom = 0) => {
+      const m = String(headingText || '').match(/^([ក-អ]\.)\s*(.*)$/);
+      if (!m) {
+        return (
+          <div style={{ paddingLeft: 68, fontWeight: 700, marginBottom }}>
+            {headingText}
+          </div>
+        );
+      }
+      return (
+        <div
+          style={{
+            paddingLeft: 68,
+            fontWeight: 700,
+            marginBottom,
+            display: 'flex',
+            alignItems: 'baseline'
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-block',
+              width: 15.5,
+              textAlign: 'right',
+              marginRight: 4.5,
+              flexShrink: 0
+            }}
+          >
+            {m[1]}
+          </span>
+          <span>{m[2]}</span>
+        </div>
+      );
+    };
+
     blocks.push({
       id: 'sec3-subCD',
       isHeading: true,
       estPx: 60,
       node: (
         <div key="sec3-subCD" style={{ paddingTop: 4, marginBottom: 2 }}>
-          <div style={{ paddingLeft: 68, fontWeight: 700, marginBottom: 3 }}>
-            {displayModel.section3SubCHeading}
-          </div>
-          <div style={{ paddingLeft: 68, fontWeight: 700 }}>
-            {displayModel.section3SubDHeading}
-          </div>
+          {renderAlignedLetterSubHeading(displayModel.section3SubCHeading, 3)}
+          {renderAlignedLetterSubHeading(displayModel.section3SubDHeading, 0)}
         </div>
       )
     });
@@ -780,15 +972,23 @@ export default function OfficialAdminReportDocument({
           <div
             key={`appx-${idx}`}
             style={{
-              paddingLeft: 82,
+              paddingLeft: 86,
               display: 'flex',
               alignItems: 'baseline',
               marginBottom: 2,
               lineHeight: 1.76
             }}
           >
-            <span style={{ width: 20, flexShrink: 0 }}>-</span>
-            <span>{line}</span>
+            <span style={{ width: 18, flexShrink: 0 }}>-</span>
+            <KhmerJustifiedText
+              text={line}
+              maxWidthPx={590}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.76}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
         )
       });
@@ -828,14 +1028,20 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 76,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'left',
-              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
           >
             <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
+            <KhmerJustifiedText
+              text={line}
+              maxWidthPx={602}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.78}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
         )
       });
@@ -873,14 +1079,20 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 76,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'left',
-              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
           >
             <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
+            <KhmerJustifiedText
+              text={line}
+              maxWidthPx={602}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.78}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
         )
       });
@@ -918,14 +1130,20 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 76,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'left',
-              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
           >
             <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
+            <KhmerJustifiedText
+              text={line}
+              maxWidthPx={602}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.78}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
         )
       });
@@ -958,14 +1176,20 @@ export default function OfficialAdminReportDocument({
               paddingLeft: 76,
               display: 'flex',
               alignItems: 'baseline',
-              textAlign: 'left',
-              wordSpacing: 'normal',
               marginBottom: 3,
               lineHeight: 1.78
             }}
           >
             <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
+            <KhmerJustifiedText
+              text={line}
+              maxWidthPx={602}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.78}
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
         )
       });
@@ -983,16 +1207,16 @@ export default function OfficialAdminReportDocument({
             </span>
             <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>សន្និដ្ឋាន</span>
           </div>
-          <div
-            style={{
-              paddingLeft: 28,
-              textAlign: 'left',
-              wordSpacing: 'normal',
-              textIndent: 42,
-              lineHeight: 1.82
-            }}
-          >
-            {normalizeSingleSpaces(displayModel.conclusionText)}
+          <div style={{ paddingLeft: 28, boxSizing: 'border-box' }}>
+            <KhmerJustifiedText
+              text={displayModel.conclusionText}
+              maxWidthPx={666}
+              firstLineIndent={42}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.82}
+            />
           </div>
         </div>
       )
@@ -1003,29 +1227,29 @@ export default function OfficialAdminReportDocument({
       estPx: 162,
       node: (
         <div key="sec6-closing-signature" className="signature-block">
-          <div
-            style={{
-              paddingLeft: 28,
-              textAlign: 'left',
-              wordSpacing: 'normal',
-              textIndent: 42,
-              marginBottom: 4,
-              lineHeight: 1.8
-            }}
-          >
-            {renderParagraphWithMuolHighlights(displayModel.closingLine1)}
+          <div style={{ paddingLeft: 28, marginBottom: 4, boxSizing: 'border-box' }}>
+            <KhmerJustifiedText
+              text={displayModel.closingLine1}
+              highlightMonasticTitles
+              maxWidthPx={666}
+              firstLineIndent={42}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.8}
+            />
           </div>
-          <div
-            style={{
-              paddingLeft: 28,
-              textAlign: 'left',
-              wordSpacing: 'normal',
-              textIndent: 42,
-              marginBottom: 8,
-              lineHeight: 1.8
-            }}
-          >
-            {renderParagraphWithMuolHighlights(displayModel.closingLine2)}
+          <div style={{ paddingLeft: 28, marginBottom: 8, boxSizing: 'border-box' }}>
+            <KhmerJustifiedText
+              text={displayModel.closingLine2}
+              highlightMonasticTitles
+              maxWidthPx={666}
+              firstLineIndent={42}
+              fontFamily={SIEMREAP_FONT}
+              moulFontFamily={MOUL_FONT}
+              fontSize={15.2}
+              lineHeight={1.8}
+            />
           </div>
 
           <div
@@ -1056,7 +1280,7 @@ export default function OfficialAdminReportDocument({
     });
 
     return { page1Node: p1Node, flowBlocks: blocks, isHistoryCombined: includeHist };
-  }, [displayModel]);
+  }, [displayModel, editMode, activeEditSection, onSelectEditSection, adminSectionLabels]);
 
   // Measure actual rendered DOM pixel heights of every block inside the 694px content width
   useLayoutEffect(() => {
@@ -1119,7 +1343,7 @@ export default function OfficialAdminReportDocument({
     if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
       document.fonts.ready.then(measureNow).catch(() => {});
     }
-  }, [flowBlocks, isHistoryCombined, displayModel]);
+  }, [flowBlocks, isHistoryCombined, displayModel, fontVersion]);
 
   const pages = useMemo(() => {
     if (!page1Node) return [];
@@ -1164,7 +1388,18 @@ export default function OfficialAdminReportDocument({
               flexDirection: 'column'
             }}
           >
-            {bucketObj.items.map(b => b.node)}
+            {renderBlocksWithEditZones(
+              bucketObj.items.map(b => ({
+                ...b,
+                editSectionId: mapAdminBlockIdToSection(b.id)
+              })),
+              {
+                editMode,
+                activeSectionId: activeEditSection,
+                onSelectSection: onSelectEditSection,
+                sectionLabels: adminSectionLabels
+              }
+            )}
           </div>
         ))
       ];
@@ -1173,13 +1408,13 @@ export default function OfficialAdminReportDocument({
     // Combined Mode (Sem 1 + School History): continuous flow starting right below Page 1 Header +
     // Splittable 16-year table with repeating <thead> header across page breaks
     const pageNodesList = [];
-    let currentNodes = [page1Node];
+    let currentItems = [{ id: 'page-1-header-wrap', editSectionId: null, node: page1Node }];
     let currentPx = measuredHeaderHeight || 440;
 
     const flushPage = () => {
-      if (currentNodes.length > 0) {
-        pageNodesList.push(currentNodes);
-        currentNodes = [];
+      if (currentItems.length > 0) {
+        pageNodesList.push(currentItems);
+        currentItems = [];
         currentPx = 0;
       }
     };
@@ -1197,7 +1432,7 @@ export default function OfficialAdminReportDocument({
         let chunkIdx = 0;
         while (cursor < allRows.length) {
           const minNeeded = theadH + (rowHeights[cursor] || 32) + 14;
-          if (currentNodes.length > 0 && currentPx + minNeeded > MAX_PAGE_CONTENT_PX) {
+          if (currentItems.length > 0 && currentPx + minNeeded > MAX_PAGE_CONTENT_PX) {
             flushPage();
           }
 
@@ -1218,16 +1453,19 @@ export default function OfficialAdminReportDocument({
           const reachedEnd = cursor >= allRows.length;
           if (reachedEnd) usedH += totalRowH;
 
-          currentNodes.push(
-            renderSchoolHistoryTableChunk({
+          const chunkKey = `comb-hist-tbl-${chunkIdx}`;
+          currentItems.push({
+            id: chunkKey,
+            editSectionId: 'history_table',
+            node: renderSchoolHistoryTableChunk({
               rowsChunk: chunk,
               totals: blk.totals,
               includeTotalsRow: reachedEnd,
-              keyPrefix: `comb-hist-tbl-${chunkIdx}`,
+              keyPrefix: chunkKey,
               marginTop: chunkIdx === 0 ? 4 : 0,
               marginBottom: 8
             })
-          );
+          });
           currentPx += usedH;
           chunkIdx += 1;
 
@@ -1250,16 +1488,20 @@ export default function OfficialAdminReportDocument({
       }
       const neededPx = blkPx + nextNeededPx;
 
-      if (currentNodes.length > 0 && currentPx + neededPx > MAX_PAGE_CONTENT_PX) {
+      if (currentItems.length > 0 && currentPx + neededPx > MAX_PAGE_CONTENT_PX) {
         flushPage();
       }
-      currentNodes.push(blk.node);
+      currentItems.push({
+        id: blk.id,
+        editSectionId: mapAdminBlockIdToSection(blk.id),
+        node: blk.node
+      });
       currentPx += blkPx;
     }
 
     flushPage();
 
-    return pageNodesList.map((nodes, pIdx) => (
+    return pageNodesList.map((items, pIdx) => (
       <div
         key={`comb-page-body-${pIdx + 1}`}
         style={{
@@ -1267,10 +1509,26 @@ export default function OfficialAdminReportDocument({
           flexDirection: 'column'
         }}
       >
-        {nodes}
+        {renderBlocksWithEditZones(items, {
+          editMode,
+          activeSectionId: activeEditSection,
+          onSelectSection: onSelectEditSection,
+          sectionLabels: adminSectionLabels
+        })}
       </div>
     ));
-  }, [page1Node, flowBlocks, measuredHeights, isHistoryCombined, measuredHeaderHeight, measuredHistTable]);
+  }, [
+    page1Node,
+    flowBlocks,
+    measuredHeights,
+    isHistoryCombined,
+    measuredHeaderHeight,
+    measuredHistTable,
+    editMode,
+    activeEditSection,
+    onSelectEditSection,
+    adminSectionLabels
+  ]);
 
   if (!displayModel) return null;
 

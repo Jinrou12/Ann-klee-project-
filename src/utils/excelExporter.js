@@ -1160,7 +1160,9 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   // Optional 16-Year Human Resource Training Table placed between ខ and គ
   if (includeHist) {
     if (displayModel.schoolHistory.tableIntro) {
-      pushFullRow(displayModel.schoolHistory.tableIntro, 0, 42);
+      const rawIntro = String(displayModel.schoolHistory.tableIntro || '').trim();
+      const excelIntro = rawIntro.startsWith('គ.') ? rawIntro : `គ. ${rawIntro}`;
+      pushFullRow(excelIntro, 0, 42);
     }
     rows.push({
       height: 26,

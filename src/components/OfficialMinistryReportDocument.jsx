@@ -1,10 +1,41 @@
-import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
+import KhmerJustifiedText from './KhmerJustifiedText';
+import { renderBlocksWithEditZones } from './ReportEditableZone';
 import { toKhmerDigits } from '../utils/khmerNumerals';
+import { subscribeKhmerFontReady, getKhmerFontVersion } from '../utils/khmerJustifyEngine';
 import {
   formatMinistryLunarDateLine,
   formatMinistrySolarDateLine
 } from '../utils/ministryReportBuilder';
+
+const MINISTRY_SECTION_LABELS = {
+  min_stats: 'ក. ព័ត៌មានទូទៅ & ស្ថិតិ',
+  min_in_school: 'ខ. សកម្មភាពក្នុងសាលា',
+  min_outside: 'គ. សកម្មភាពក្រៅសាលា',
+  min_abbot: 'ឃ. ទំនួលខុសត្រូវព្រះគ្រូចៅអធិការ',
+  min_management: 'ង. គណៈគ្រប់គ្រង បណ្ណាល័យ & ជំនួយ',
+  min_finance: 'ច. ចំណូលប្រាក់ម៉ោង & បណ្ណសរសើរ',
+  min_relations: 'ឆ. សកម្មភាពគ្រូ & សមណសិស្ស',
+  min_challenges: 'ជ-ឈ. បញ្ហាប្រឈម & ដំណោះស្រាយ',
+  min_conclusion: 'ញ-ដ. សន្និដ្ឋាន & សំណូមពរ',
+  min_signature: 'ហត្ថលេខា កាលបរិច្ឆេទ & CC'
+};
+
+function mapMinistryBlockIdToSection(blockId = '') {
+  const id = String(blockId || '');
+  if (id === 'header-and-sec-a') return 'min_stats';
+  if (id === 'sec-b' || id === 'sec-b1' || id === 'sec-b2' || id.startsWith('b1-') || id.startsWith('b2-')) return 'min_in_school';
+  if (id === 'sec-c' || id.startsWith('c-')) return 'min_outside';
+  if (id === 'sec-d' || id === 'sec-d1' || id.startsWith('d1-')) return 'min_abbot';
+  if (id === 'sec-e' || id === 'sec-e1' || id === 'sec-e2' || id.startsWith('e-') || id.startsWith('e1-') || id.startsWith('e2-')) return 'min_management';
+  if (id.startsWith('tbl-')) return 'min_finance';
+  if (id === 'sec-ch' || id.startsWith('ch-')) return 'min_relations';
+  if (id === 'sec-j' || id.startsWith('j-') || id === 'sec-chh' || id.startsWith('chh-')) return 'min_challenges';
+  if (id === 'sec-nh' || id.startsWith('conc-') || id === 'sec-da' || id.startsWith('da-')) return 'min_conclusion';
+  if (id === 'closing-sig-and-cc') return 'min_signature';
+  return null;
+}
 
 const MOUL_FONT = "'Khmer OS Muol Light', 'Khmer OS Moul Light', 'Khmer OS Muol', 'Moul', serif";
 const BATTAMBANG_FONT = "'Khmer OS Battambang', 'Kh Battambang', 'Battambang', 'Khmer OS Siemreap', sans-serif";
@@ -203,11 +234,17 @@ const tdCellStyle = {
 export default function OfficialMinistryReportDocument({
   id = 'printable-ministry-report-document',
   ministryModel,
-  useKhmerNumerals = true
+  useKhmerNumerals = true,
+  editMode = false,
+  activeEditSection = null,
+  onSelectEditSection = null
 }) {
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
   const measureContainerRef = useRef(null);
   const [measuredHeights, setMeasuredHeights] = useState(null);
+  const [fontVersion, setFontVersion] = useState(() => getKhmerFontVersion());
+
+  useEffect(() => subscribeKhmerFontReady(setFontVersion), []);
 
   const flowBlocks = useMemo(() => {
     if (!ministryModel) return [];
@@ -262,6 +299,7 @@ export default function OfficialMinistryReportDocument({
     };
 
     const pushBulletList = (prefixKey, lines = [], indent = 28) => {
+      const bulletTextWidth = Math.max(200, 694 - indent - 14);
       (lines || []).forEach((rawLine, idx) => {
         const line = normalizeSingleSpaces(rawLine);
         if (!line) return;
@@ -275,13 +313,20 @@ export default function OfficialMinistryReportDocument({
                 paddingLeft: indent,
                 display: 'flex',
                 alignItems: 'baseline',
-                textAlign: 'left',
                 marginBottom: 2,
                 lineHeight: 1.72
               }}
             >
               <span style={{ width: 14, flexShrink: 0 }}>-</span>
-              <span style={{ flex: 1 }}>{line}</span>
+              <KhmerJustifiedText
+                text={line}
+                maxWidthPx={bulletTextWidth}
+                fontFamily={BATTAMBANG_FONT}
+                moulFontFamily={MOUL_FONT}
+                fontSize={16}
+                lineHeight={1.72}
+                style={{ flex: 1, minWidth: 0 }}
+              />
             </div>
           )
         });
@@ -1061,22 +1106,29 @@ export default function OfficialMinistryReportDocument({
     pushHeading('sec-nh', 'ញ.សេចក្ដីសន្និដ្ឋាន');
     (ministryModel.conclusionParas || []).forEach((p, idx) => {
       const clean = normalizeSingleSpaces(p);
-      if (!clean) return;
+      if (!clean) {
+        blocks.push({
+          id: `conc-${idx}`,
+          estPx: 22,
+          node: <div key={`conc-${idx}`} aria-hidden="true" style={{ height: 22 }} />
+        });
+        return;
+      }
       blocks.push({
         id: `conc-${idx}`,
         estPx: Math.max(54, Math.ceil(clean.length / 60) * 26),
         node: (
-          <div
+          <KhmerJustifiedText
             key={`conc-${idx}`}
-            style={{
-              textIndent: 36,
-              textAlign: 'left',
-              lineHeight: 1.76,
-              marginBottom: 4
-            }}
-          >
-            {clean}
-          </div>
+            text={clean}
+            maxWidthPx={694}
+            firstLineIndent={36}
+            fontFamily={BATTAMBANG_FONT}
+            moulFontFamily={MOUL_FONT}
+            fontSize={16}
+            lineHeight={1.76}
+            style={{ marginBottom: 4 }}
+          />
         )
       });
     });
@@ -1201,7 +1253,7 @@ export default function OfficialMinistryReportDocument({
     if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
       document.fonts.ready.then(measureNow).catch(() => { });
     }
-  }, [flowBlocks]);
+  }, [flowBlocks, fontVersion]);
 
   const pages = useMemo(() => {
     if (!flowBlocks.length) return [];
@@ -1456,7 +1508,18 @@ export default function OfficialMinistryReportDocument({
               boxSizing: 'border-box'
             }}
           >
-            {pageBlocks.map(b => b.node)}
+            {renderBlocksWithEditZones(
+              pageBlocks.map(b => ({
+                ...b,
+                editSectionId: mapMinistryBlockIdToSection(b.id)
+              })),
+              {
+                editMode,
+                activeSectionId: activeEditSection,
+                onSelectSection: onSelectEditSection,
+                sectionLabels: MINISTRY_SECTION_LABELS
+              }
+            )}
           </div>
 
           {/* Running Bottom Footer (Original .docx: thinThickSmallGap 3pt #823B0B + Left Italic Title + Right "ទំព័រ ១") */}

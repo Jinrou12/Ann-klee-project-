@@ -63,10 +63,14 @@ export function buildSchoolHistoryModel({
       ? String(saved.title).trim()
       : DEFAULT_SCHOOL_HISTORY_TITLE;
 
+  const savedBgRaw = Array.isArray(saved.backgroundParagraphs)
+    ? saved.backgroundParagraphs.map(p => String(p ?? '').trim())
+    : [];
+  while (savedBgRaw.length > 0 && savedBgRaw[0] === '') savedBgRaw.shift();
+  while (savedBgRaw.length > 0 && savedBgRaw[savedBgRaw.length - 1] === '') savedBgRaw.pop();
+
   const backgroundParagraphs =
-    Array.isArray(saved.backgroundParagraphs) && saved.backgroundParagraphs.length > 0
-      ? saved.backgroundParagraphs.map(p => String(p || '').trim()).filter(Boolean)
-      : [...DEFAULT_SCHOOL_HISTORY_BACKGROUND];
+    savedBgRaw.some(Boolean) ? savedBgRaw : [...DEFAULT_SCHOOL_HISTORY_BACKGROUND];
 
   const tableIntro =
     saved.tableIntro !== undefined

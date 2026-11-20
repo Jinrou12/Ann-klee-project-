@@ -1007,15 +1007,22 @@ function wMultiRunParagraph(runs = [], {
   spaceAfter = 0,
   indentLeft = 0,
   firstLine = 0,
+  hanging = 0,
   tabStops = []
 } = {}) {
   const indAttrs = [
     indentLeft > 0 ? `w:left="${indentLeft}"` : '',
-    firstLine > 0 ? `w:firstLine="${firstLine}"` : ''
+    hanging > 0 ? `w:hanging="${hanging}"` : (firstLine > 0 ? `w:firstLine="${firstLine}"` : '')
   ].filter(Boolean).join(' ');
   const indXml = indAttrs ? `<w:ind ${indAttrs}/>` : '';
   const tabsXml = tabStops.length > 0
-    ? `<w:tabs>${tabStops.map(pos => `<w:tab w:val="left" w:pos="${pos}"/>`).join('')}</w:tabs>`
+    ? `<w:tabs>${tabStops
+        .map(t =>
+          typeof t === 'object' && t !== null
+            ? `<w:tab w:val="${t.val || 'left'}" w:pos="${t.pos}"/>`
+            : `<w:tab w:val="left" w:pos="${t}"/>`
+        )
+        .join('')}</w:tabs>`
     : '';
   const runsXml = runs.map(r => {
     if (r.tab) return '<w:r><w:tab/></w:r>';
@@ -1260,7 +1267,58 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
   const listItem = (text, bullet = '-') =>
     wParagraph(`${bullet} ${text}`, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', indentLeft: BODY_INDENT + SUB_INDENT });
   const bodyPara = (text, boldPhrases = []) =>
-    wMultiRunParagraph(buildHighlightedRuns(text, boldPhrases, SZ), { align: 'both', firstLine: FIRST_LINE });
+    String(text || '')
+      .split(/\r?\n/)
+      .map(ln => {
+        const cleanLn = ln.trim();
+        if (!cleanLn) return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ });
+        return wMultiRunParagraph(buildHighlightedRuns(cleanLn, boldPhrases, SZ), {
+          align: 'both',
+          firstLine: FIRST_LINE
+        });
+      })
+      .join('');
+
+  const buildIntroParas = (introStr, boldPhrases = []) =>
+    String(introStr || '')
+      .split(/\r?\n/)
+      .map(ln => {
+        const cleanLn = ln.trim();
+        if (!cleanLn) return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ, indentLeft: 1080 });
+        return wMultiRunParagraph(buildHighlightedRuns(cleanLn, boldPhrases, SZ), {
+          align: 'both',
+          indentLeft: 1080,
+          firstLine: 0
+        });
+      })
+      .join('');
+
+  const buildSubjectParas = (subjectStr, boldPhrases = []) => {
+    const subjLines = String(subjectStr || '').trim().split(/\r?\n/);
+    return subjLines
+      .map((ln, idx) => {
+        const cleanLn = ln.trim();
+        const isLast = idx === subjLines.length - 1;
+        if (idx === 0) {
+          return wMultiRunParagraph(
+            [
+              { text: 'កម្មវត្ថុ៖ ', font: FONT_MOUL, sizePt: SZ },
+              ...buildHighlightedRuns(cleanLn, boldPhrases, SZ)
+            ],
+            { align: 'both', indentLeft: 0, spaceAfter: isLast ? 60 : 0 }
+          );
+        }
+        if (!cleanLn) {
+          return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ, spaceAfter: isLast ? 60 : 0 });
+        }
+        return wMultiRunParagraph(buildHighlightedRuns(cleanLn, boldPhrases, SZ), {
+          align: 'both',
+          indentLeft: 1080,
+          spaceAfter: isLast ? 60 : 0
+        });
+      })
+      .join('');
+  };
 
   const roleTabPos = 4680;
   const includeHist = Boolean(displayModel.includeHistory && displayModel.schoolHistory);
@@ -1281,28 +1339,38 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     wParagraph(displayModel.recipientTitle, { font: FONT_MOUL, sizePt: SZ, color: NAVY, align: 'center' }),
     wParagraph('ជាទីគោរពសក្ការៈដ៏ខ្ពង់ខ្ពស់!', { font: FONT_SIEMREAP, sizePt: SZ, bold: true, align: 'right', spaceAfter: 120 }),
 
-    // Subject (កម្មវត្ថុ) — period phrase bold, monastic titles in Muol Light
-    wMultiRunParagraph([
-      { text: 'កម្មវត្ថុ៖ ', font: FONT_MOUL, sizePt: SZ },
-      ...buildHighlightedRuns(displayModel.subjectText, [displayModel.periodTitlePhrase], SZ)
-    ], { align: 'both', indentLeft: 0, spaceAfter: 60 }),
+    // Subject (កម្មវត្ថុ) — period phrase bold, monastic titles in Muol Light, respects Enter line breaks
+    buildSubjectParas(displayModel.subjectText, [displayModel.periodTitlePhrase]),
 
-    // Intro Paragraph
-    bodyPara(displayModel.introParagraph, [displayModel.inPeriodPhrase]),
+    // Intro Paragraph (aligned straight under កម្មវត្ថុ៖ text at 1080 dxa — exact match with A4 Preview/PDF)
+    buildIntroParas(displayModel.introParagraph, [displayModel.inPeriodPhrase]),
 
-    // Optional I. សាវតារ (Semester 1 + School History Combined Mode)
+    // Optional I. សាវតារ (Semester 1 + School History Combined Mode — respects both single & double Enter)
     ...(includeHist
       ? [
         sectionHeading('I. សាវតារ'),
-        ...(displayModel.schoolHistory.backgroundParagraphs || []).map(p =>
-          wParagraph(p, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', firstLine: FIRST_LINE, spaceAfter: 40 })
-        )
+        ...(displayModel.schoolHistory.backgroundParagraphs || []).map(p => {
+          const cleanP = String(p || '').trim();
+          if (!cleanP) return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ });
+          return wParagraph(cleanP, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', firstLine: FIRST_LINE, spaceAfter: 40 });
+        })
       ]
       : []),
 
     // I (or II). តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
     sectionHeading(`${secNums.management}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា`),
-    bodyPara(displayModel.section1Intro),
+    String(displayModel.section1Intro || '')
+      .split(/\r?\n/)
+      .map(ln => {
+        const cleanLn = ln.trim();
+        if (!cleanLn) return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ });
+        return wMultiRunParagraph(buildHighlightedRuns(cleanLn, [], SZ), {
+          align: 'both',
+          indentLeft: BODY_INDENT + SUB_INDENT,
+          firstLine: 680
+        });
+      })
+      .join(''),
     ...(displayModel.managementRoles || []).map((m) => {
       const { prefix, personal } = splitMonkTitleAndName(m.name);
       return wMultiRunParagraph([
@@ -1331,28 +1399,91 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     subHeading('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍'),
     ...(displayModel.adminDocLines || []).map(line => listItem(line)),
 
-    // Optional School History Intro + 16-Year Training Table placed between ខ and គ
+    // Optional School History ចំណុច គ. Intro (Line 1 គ. at SUB_INDENT*2 = 568 dxa aligned with ខ.,
+    // Line 2+ & Enter lines flush at 0 dxa aligned with table ល.រ left edge) + 16-Year Table
     ...(includeHist
       ? [
         ...(displayModel.schoolHistory.tableIntro
-          ? [
-            wParagraph(displayModel.schoolHistory.tableIntro, {
-              font: FONT_SIEMREAP,
-              sizePt: SZ,
-              align: 'both',
-              firstLine: FIRST_LINE,
-              spaceBefore: 60,
-              spaceAfter: 60
-            })
-          ]
+          ? (() => {
+            const gSubLeft = SUB_INDENT * 2; // 568 dxa — exact column of ក., ខ., ឃ., ង.
+            const introLines = String(displayModel.schoolHistory.tableIntro || '').trim().split(/\r?\n/);
+            let appliedPrefix = false;
+            return introLines.map((ln, idx) => {
+              let cleanLn = ln.trim();
+              const isFirst = idx === 0;
+              const isLast = idx === introLines.length - 1;
+              if (!cleanLn) {
+                return wParagraph('', {
+                  font: FONT_SIEMREAP,
+                  sizePt: SZ,
+                  indentLeft: 0,
+                  spaceBefore: isFirst ? 60 : 0,
+                  spaceAfter: isLast ? 60 : 0
+                });
+              }
+              if (!appliedPrefix) {
+                appliedPrefix = true;
+                if (cleanLn.startsWith('គ.')) {
+                  cleanLn = cleanLn.slice(2).trim();
+                }
+                return wMultiRunParagraph(
+                  [
+                    { text: 'គ. ', font: FONT_SIEMREAP, sizePt: SZ, bold: true },
+                    ...(cleanLn ? [{ text: cleanLn, font: FONT_SIEMREAP, sizePt: SZ }] : [])
+                  ],
+                  {
+                    align: 'both',
+                    indentLeft: 0,
+                    firstLine: gSubLeft,
+                    spaceBefore: 60,
+                    spaceAfter: isLast ? 60 : 0
+                  }
+                );
+              }
+              return wParagraph(cleanLn, {
+                font: FONT_SIEMREAP,
+                sizePt: SZ,
+                align: 'both',
+                indentLeft: 0,
+                firstLine: 0,
+                spaceAfter: isLast ? 60 : 0
+              });
+            });
+          })()
           : []),
         buildSchoolHistoryTableXml(displayModel.schoolHistory, contentWidth),
         wParagraph('', { sizePt: 6, spaceAfter: 40 })
       ]
       : []),
 
-    subHeading(displayModel.section3SubCHeading),
-    subHeading(displayModel.section3SubDHeading),
+    (() => {
+      const renderAlignedAppendixSubHead = (txt) => {
+        const m = String(txt || '').match(/^([ក-អ]\.)\s*(.*)$/);
+        if (!m) return subHeading(txt);
+        const dotPos = SUB_INDENT * 2 + 225;
+        const textPos = SUB_INDENT * 2 + 305;
+        return wMultiRunParagraph(
+          [
+            { tab: true },
+            { text: m[1], font: FONT_SIEMREAP, sizePt: SZ, bold: true },
+            { tab: true },
+            { text: m[2], font: FONT_SIEMREAP, sizePt: SZ, bold: true }
+          ],
+          {
+            align: 'left',
+            indentLeft: 0,
+            tabStops: [
+              { val: 'right', pos: dotPos },
+              { val: 'left', pos: textPos }
+            ]
+          }
+        );
+      };
+      return [
+        renderAlignedAppendixSubHead(displayModel.section3SubCHeading),
+        renderAlignedAppendixSubHead(displayModel.section3SubDHeading)
+      ].join('');
+    })(),
     ...(displayModel.appendixItems || []).map(line => listItem(line)),
 
     // IV (or V). បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
@@ -1830,7 +1961,7 @@ export async function exportMinistryReportToWord(ministryModel) {
   const subHead = (txt) =>
     wParagraph(txt, { font: FONT_BATTAMBANG, sizePt: SZ, bold: true, align: 'left', indentLeft: 280, spaceBefore: 40, spaceAfter: 20 });
   const bulletPara = (txt) =>
-    wParagraph(`-${txt}`, { font: FONT_BATTAMBANG, sizePt: SZ, align: 'left', indentLeft: 360, spaceAfter: 16 });
+    wParagraph(`-${txt}`, { font: FONT_BATTAMBANG, sizePt: SZ, align: 'both', indentLeft: 360, spaceAfter: 16 });
 
   const leftSchoolTableXml = wTable(
     [5500, contentWidth - 5500],
@@ -1960,9 +2091,11 @@ export async function exportMinistryReportToWord(ministryModel) {
     secHead('ឈ. ដំណោះស្រាយ'),
     ...(ministryModel.solutions || []).map(bulletPara),
     secHead('ញ.សេចក្ដីសន្និដ្ឋាន'),
-    ...(ministryModel.conclusionParas || []).map(p =>
-      wParagraph(p, { font: FONT_BATTAMBANG, sizePt: SZ, align: 'left', firstLine: 720, spaceAfter: 40 })
-    ),
+    ...(ministryModel.conclusionParas || []).map(p => {
+      const cleanP = String(p || '').trim();
+      if (!cleanP) return wParagraph('', { font: FONT_BATTAMBANG, sizePt: SZ });
+      return wParagraph(cleanP, { font: FONT_BATTAMBANG, sizePt: SZ, align: 'both', firstLine: 720, spaceAfter: 40 });
+    }),
     secHead('ដ.សំណូមពរ'),
     ...(ministryModel.requests || []).map(bulletPara),
     wParagraph('', { sizePt: 8, spaceAfter: 60 }),
@@ -2052,11 +2185,26 @@ export async function exportSchoolHistoryToWord(historyModel) {
       spaceAfter: 120
     }),
     wParagraph('១.១. សាវតារ', { font: FONT_MOUL, sizePt: 11.5, color: NAVY, align: 'left', indentLeft: 280, spaceAfter: 40 }),
-    ...(historyModel.backgroundParagraphs || []).map(p =>
-      wParagraph(p, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 60 })
-    ),
+    ...(historyModel.backgroundParagraphs || []).map(p => {
+      const cleanP = String(p || '').trim();
+      if (!cleanP) return wParagraph('', { font: FONT_SIEMREAP, sizePt: 11.5 });
+      return wParagraph(cleanP, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 60 });
+    }),
     ...(historyModel.tableIntro
-      ? [wParagraph(historyModel.tableIntro, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 80 })]
+      ? String(historyModel.tableIntro)
+        .trim()
+        .split(/\r?\n/)
+        .map((ln, idx, arr) => {
+          const cleanLn = ln.trim();
+          const isLast = idx === arr.length - 1;
+          return wParagraph(cleanLn, {
+            font: FONT_SIEMREAP,
+            sizePt: 11.5,
+            align: 'both',
+            firstLine: cleanLn ? 720 : 0,
+            spaceAfter: isLast ? 80 : 0
+          });
+        })
       : []),
     buildSchoolHistoryTableXml(historyModel, contentWidth),
     wParagraph('', { sizePt: 8, spaceAfter: 120 }),

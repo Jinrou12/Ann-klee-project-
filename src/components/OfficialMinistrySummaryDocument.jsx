@@ -1,5 +1,6 @@
 import React from 'react';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
+import ReportEditableZone from './ReportEditableZone';
 import {
   formatMinistryLunarDateLine,
   formatMinistrySolarDateLine
@@ -23,7 +24,10 @@ function formatCompactDots(text = '', dotCount = 16) {
  */
 export default function OfficialMinistrySummaryDocument({
   id = 'printable-ministry-summary-document',
-  ministryModel
+  ministryModel,
+  editMode = false,
+  activeEditSection = null,
+  onSelectEditSection = null
 }) {
   if (!ministryModel) return null;
 
@@ -150,6 +154,13 @@ export default function OfficialMinistrySummaryDocument({
         </div>
 
         {/* 3. 10-Row Summary Table (WYSIWYG single-edge hairline borders) */}
+        <ReportEditableZone
+          editMode={editMode}
+          sectionId="min_stats"
+          label="តារាងសង្ខេប ១០ ជួរ (ស្ថិតិ)"
+          activeSectionId={activeEditSection}
+          onSelectSection={onSelectEditSection}
+        >
         <table
           style={{
             width: '100%',
@@ -193,10 +204,18 @@ export default function OfficialMinistrySummaryDocument({
             ))}
           </tbody>
         </table>
+        </ReportEditableZone>
 
         {/* 4. Side-by-Side Signature & Approval Block (+1pt => 16.5px with 14/11 lunar & 7/12 solar dots):
             - Left (staggered 1 line below Right): លេខ .... (above បានឃើញ និងឯកភាព) + បានឃើញ និងឯកភាព + Lunar + Solar + ព្រះនាយក
             - Right: Lunar Date + Solar Date + អ្នកធ្វើរបាយការណ៍ */}
+        <ReportEditableZone
+          editMode={editMode}
+          sectionId="min_signature"
+          label="លេខលិខិត កាលបរិច្ឆេទ & ហត្ថលេខា"
+          activeSectionId={activeEditSection}
+          onSelectSection={onSelectEditSection}
+        >
         <div
           className="signature-block"
           style={{
@@ -235,6 +254,7 @@ export default function OfficialMinistrySummaryDocument({
             </div>
           </div>
         </div>
+        </ReportEditableZone>
       </div>
     </div>
   );

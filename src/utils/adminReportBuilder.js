@@ -962,6 +962,60 @@ export function synthesizeMultiMonthAdminReport({
 }
 
 /**
+ * Auto-generate Section "ស្ថិតិ ... ខ-ចំនួនថ្នាក់ សមណសិស្ស" lines from student counts
+ * (Single source of truth shared by the display model AND the inline editor auto-sync)
+ */
+export function buildAutoStudentStatLines({ periodType = 'month', studentStats = {}, useKhmerNumerals = true } = {}) {
+  const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
+  const st = studentStats || {};
+  const classCountStr = fmtNum(String(st.classCount || 4).padStart(2, '0'));
+  const isMultiMonth = periodType !== 'month';
+  const startTermLabel = periodType === 'sem1' ? 'ដើមឆមាសទី១' : periodType === 'sem2' ? 'ដើមឆមាសទី២' : 'ដើមឆ្នាំ';
+  const endTermLabel = periodType === 'sem1' ? 'ចុងឆមាសទី១' : periodType === 'sem2' ? 'ចុងឆមាសទី២' : 'ចុងឆ្នាំ';
+
+  if (!isMultiMonth) {
+    return [
+      `ថ្នាក់រៀនមានចំនួន ${classCountStr}ថ្នាក់ សមណសិស្សសរុបចំនួន ${fmtNum(st.totalStudents ?? 81)}អង្គ/នាក់`,
+      `ថ្នាក់ទីមត្តេយ្យ មានចំនួន ${fmtNum(st.gradeKindergarten ?? 15)}អង្គ/នាក់`,
+      `ថ្នាក់ទី១ មានចំនួន ${fmtNum(st.grade1 ?? 15)}អង្គ`,
+      `ថ្នាក់ទី២ មានចំនួន ${fmtNum(st.grade2 ?? 30)}អង្គ/នាក់`,
+      `ថ្នាក់ទី៣ មានចំនួន ${fmtNum(st.grade3 ?? 21)}អង្គ`
+    ];
+  }
+
+  const sTotalVal = st.startTotalStudents ?? st.totalStudents ?? 100;
+  const sKgVal = st.startGradeKindergarten ?? st.gradeKindergarten ?? 21;
+  const sG1Val = st.startGrade1 ?? st.grade1 ?? 22;
+  const sG2Val = st.startGrade2 ?? st.grade2 ?? 32;
+  const sG3Val = st.startGrade3 ?? st.grade3 ?? 25;
+
+  return [
+    `ថ្នាក់រៀនមានចំនួន ${classCountStr}ថ្នាក់ សមណសិស្ស${startTermLabel}មានចំនួន ${fmtNum(sTotalVal)}អង្គ/នាក់ និង${endTermLabel}មានចំនួន ${fmtNum(st.totalStudents ?? 81)}អង្គ/នាក់`,
+    `ថ្នាក់ទីមត្តេយ្យ មានចំនួន ${fmtNum(st.gradeKindergarten ?? 15)}អង្គ/នាក់ (${startTermLabel} ${fmtNum(sKgVal)}អង្គ/នាក់)`,
+    `ថ្នាក់ទី១ មានចំនួន ${fmtNum(st.grade1 ?? 15)}អង្គ (${startTermLabel} ${fmtNum(sG1Val)}អង្គ)`,
+    `ថ្នាក់ទី២ មានចំនួន ${fmtNum(st.grade2 ?? 30)}អង្គ/នាក់ (${startTermLabel} ${fmtNum(sG2Val)}អង្គ/នាក់)`,
+    `ថ្នាក់ទី៣ មានចំនួន ${fmtNum(st.grade3 ?? 21)}អង្គ (${startTermLabel} ${fmtNum(sG3Val)}អង្គ)`
+  ];
+}
+
+/**
+ * Auto-generate Section "ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល..." lines from admin doc counts
+ */
+export function buildAutoAdminDocLines({ adminDocs = {}, useKhmerNumerals = true } = {}) {
+  const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
+  const ad = adminDocs || {};
+  return [
+    `បានធ្វើលិខិតចេញចំនួន ${fmtNum(ad.outgoingLetters ?? 0)}ច្បាប់`,
+    `បានទទួលលិខិតចូលចំនួន ${fmtNum(ad.incomingLetters ?? 0)}ច្បាប់`,
+    `កំណត់ហេតុប្រជុំសាលា ${fmtNum(ad.schoolMinutes ?? 0)}ច្បាប់`,
+    ...(Number(ad.schoolReportsToMinistry) > 0
+      ? [`របាយការណ៍របស់សាលា ${fmtNum(ad.schoolReportsToMinistry)}ច្បាប់ (ទៅមន្ទីរ)`]
+      : []),
+    `ប្រជុំតូច-ធំ ក្នុងមន្ទីរមានចំនួន ${fmtNum(ad.ministryMeetings ?? 0)}លើក`
+  ];
+}
+
+/**
  * Build the complete formatted display model for UI, PDF, Word, and Excel
  */
 export function buildAdminReportDisplayModel({
@@ -1090,17 +1144,20 @@ export function buildAdminReportDisplayModel({
       ? 'ក. សកម្មភាពប្រចាំឆមាស'
       : 'ក. សកម្មភាពប្រចាំឆ្នាំ';
 
+  const subCLetter = shouldIncludeHistory ? 'ឃ' : 'គ';
+  const subDLetter = shouldIncludeHistory ? 'ង' : 'ឃ';
+
   const section3SubCHeading = periodType === 'month'
-    ? 'គ. សរុបអវត្តមានប្រចាំខែ (តារាងឧសម្ព័ន្ធ)'
+    ? `${subCLetter}. សរុបអវត្តមានប្រចាំខែ (តារាងឧសម្ព័ន្ធ)`
     : periodType === 'sem1' || periodType === 'sem2'
-      ? 'គ. សរុបអវត្តមានប្រចាំឆមាស (តារាងឧសម្ព័ន្ធ)'
-      : 'គ. សរុបអវត្តមានប្រចាំឆ្នាំ (តារាងឧសម្ព័ន្ធ)';
+      ? `${subCLetter}. សរុបអវត្តមានប្រចាំឆមាស (តារាងឧសម្ព័ន្ធ)`
+      : `${subCLetter}. សរុបអវត្តមានប្រចាំឆ្នាំ (តារាងឧសម្ព័ន្ធ)`;
 
   const section3SubDHeading = periodType === 'month'
-    ? 'ឃ. ចំណាយប្រចាំខែ (តារាងឧសម្ព័ន្ធ)'
+    ? `${subDLetter}. ចំណាយប្រចាំខែ (តារាងឧសម្ព័ន្ធ)`
     : periodType === 'sem1' || periodType === 'sem2'
-      ? 'ឃ. ចំណាយប្រចាំឆមាស (តារាងឧសម្ព័ន្ធ)'
-      : 'ឃ. ចំណាយប្រចាំឆ្នាំ (តារាងឧសម្ព័ន្ធ)';
+      ? `${subDLetter}. ចំណាយប្រចាំឆមាស (តារាងឧសម្ព័ន្ធ)`
+      : `${subDLetter}. ចំណាយប្រចាំឆ្នាំ (តារាងឧសម្ព័ន្ធ)`;
 
   const defaultAutoSubject = `របាយការណ៍បូកសរុបលទ្ធផលការងារ${periodTitlePhrase} និងលើកទិសដៅការងារបន្តរបស់សាលាពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម។`;
   const rawCustomSubj = String(rawReport.customSubjectText || '').trim();
@@ -1117,8 +1174,6 @@ export function buildAdminReportDisplayModel({
 
   // Format Section II Student Stats lines
   const st = rawReport.studentStats || {};
-  const classCountStr = fmtNum(String(st.classCount || 4).padStart(2, '0'));
-  const isMultiMonth = periodType !== 'month';
 
   const startTermLabel = periodType === 'sem1'
     ? 'ដើមឆមាសទី១'
@@ -1139,43 +1194,15 @@ export function buildAdminReportDisplayModel({
       .replace(/ចុងគ្រា/g, endTermLabel);
   };
 
-  const sTotalVal = st.startTotalStudents ?? st.totalStudents ?? 100;
-  const sKgVal = st.startGradeKindergarten ?? st.gradeKindergarten ?? 21;
-  const sG1Val = st.startGrade1 ?? st.grade1 ?? 22;
-  const sG2Val = st.startGrade2 ?? st.grade2 ?? 32;
-  const sG3Val = st.startGrade3 ?? st.grade3 ?? 25;
-
   const studentStatLines = Array.isArray(rawReport.customStudentLines) && rawReport.customStudentLines.length > 0
     ? rawReport.customStudentLines.map(replaceLegacyTermWords)
-    : isMultiMonth
-      ? [
-        `ថ្នាក់រៀនមានចំនួន ${classCountStr}ថ្នាក់ សមណសិស្ស${startTermLabel}មានចំនួន ${fmtNum(sTotalVal)}អង្គ/នាក់ និង${endTermLabel}មានចំនួន ${fmtNum(st.totalStudents ?? 81)}អង្គ/នាក់`,
-        `ថ្នាក់ទីមត្តេយ្យ មានចំនួន ${fmtNum(st.gradeKindergarten ?? 15)}អង្គ/នាក់ (${startTermLabel} ${fmtNum(sKgVal)}អង្គ/នាក់)`,
-        `ថ្នាក់ទី១ មានចំនួន ${fmtNum(st.grade1 ?? 15)}អង្គ (${startTermLabel} ${fmtNum(sG1Val)}អង្គ)`,
-        `ថ្នាក់ទី២ មានចំនួន ${fmtNum(st.grade2 ?? 30)}អង្គ/នាក់ (${startTermLabel} ${fmtNum(sG2Val)}អង្គ/នាក់)`,
-        `ថ្នាក់ទី៣ មានចំនួន ${fmtNum(st.grade3 ?? 21)}អង្គ (${startTermLabel} ${fmtNum(sG3Val)}អង្គ)`
-      ]
-      : [
-        `ថ្នាក់រៀនមានចំនួន ${classCountStr}ថ្នាក់ សមណសិស្សសរុបចំនួន ${fmtNum(st.totalStudents ?? 81)}អង្គ/នាក់`,
-        `ថ្នាក់ទីមត្តេយ្យ មានចំនួន ${fmtNum(st.gradeKindergarten ?? 15)}អង្គ/នាក់`,
-        `ថ្នាក់ទី១ មានចំនួន ${fmtNum(st.grade1 ?? 15)}អង្គ`,
-        `ថ្នាក់ទី២ មានចំនួន ${fmtNum(st.grade2 ?? 30)}អង្គ/នាក់`,
-        `ថ្នាក់ទី៣ មានចំនួន ${fmtNum(st.grade3 ?? 21)}អង្គ`
-      ];
+    : buildAutoStudentStatLines({ periodType, studentStats: st, useKhmerNumerals });
 
   // Format Section III (ខ) Admin Doc Lines
   const ad = rawReport.adminDocs || {};
   const adminDocLines = Array.isArray(rawReport.customAdminDocLines) && rawReport.customAdminDocLines.length > 0
     ? rawReport.customAdminDocLines
-    : [
-      `បានធ្វើលិខិតចេញចំនួន ${fmtNum(ad.outgoingLetters ?? 0)}ច្បាប់`,
-      `បានទទួលលិខិតចូលចំនួន ${fmtNum(ad.incomingLetters ?? 0)}ច្បាប់`,
-      `កំណត់ហេតុប្រជុំសាលា ${fmtNum(ad.schoolMinutes ?? 0)}ច្បាប់`,
-      ...(Number(ad.schoolReportsToMinistry) > 0
-        ? [`របាយការណ៍របស់សាលា ${fmtNum(ad.schoolReportsToMinistry)}ច្បាប់ (ទៅមន្ទីរ)`]
-        : []),
-      `ប្រជុំតូច-ធំ ក្នុងមន្ទីរមានចំនួន ${fmtNum(ad.ministryMeetings ?? 0)}លើក`
-    ];
+    : buildAutoAdminDocLines({ adminDocs: ad, useKhmerNumerals });
 
   const shortFileNameTag = periodType === 'month'
     ? `ខែ${monthName}_${yrKh}`
@@ -1219,8 +1246,17 @@ export function buildAdminReportDisplayModel({
     defaultAutoIntroParagraph,
     introParagraph,
     section1Intro: rawReport.section1Intro || DEFAULT_SECTION1_INTRO,
-    managementRoles: rawReport.managementRoles || DEFAULT_MANAGEMENT_ROLES,
-    staffStats: rawReport.staffStats || DEFAULT_STAFF_STATS,
+    defaultSection1Intro: DEFAULT_SECTION1_INTRO,
+    managementRoles:
+      Array.isArray(rawReport.managementRoles) && rawReport.managementRoles.length > 0
+        ? rawReport.managementRoles
+        : DEFAULT_MANAGEMENT_ROLES,
+    defaultManagementRoles: DEFAULT_MANAGEMENT_ROLES,
+    staffStats:
+      Array.isArray(rawReport.staffStats) && rawReport.staffStats.length > 0
+        ? rawReport.staffStats
+        : DEFAULT_STAFF_STATS,
+    defaultAutoStaffStats: DEFAULT_STAFF_STATS,
     studentStats: st,
     studentStatLines,
     section3Heading,
@@ -1238,9 +1274,9 @@ export function buildAdminReportDisplayModel({
     conclusionText: rawReport.conclusionText || '',
     closingLine1: 'សេចក្ដីដូចបានប្រគេនខាងលើ សូម ព្រះអនុគណ ព្រះមេត្តាជ្រាបជារបាយការណ៍ដ៏ខ្ពង់ខ្ពស់។',
     closingLine2: 'សូម ព្រះធម្មសាលវង្ស ព្រះអនុគណ ព្រះមេត្តាទទួលនូវគារវកិច្ចដ៏ខ្ពង់ខ្ពស់ពីខ្ញុំព្រះករុណា។',
-    lunarDateLine: 'ថ្ងៃ…………………..ខែ………………… ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០',
-    solarDateLine: `ក្រុងកំពង់ចាម ថ្ងៃទី…………. ខែ……………ឆ្នាំ${yrKh}`,
-    signerTitle: 'ព្រះនាយក'
+    lunarDateLine: rawReport.lunarDateLine || 'ថ្ងៃ…………………..ខែ………………… ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០',
+    solarDateLine: rawReport.solarDateLine || `ក្រុងកំពង់ចាម ថ្ងៃទី…………. ខែ……………ឆ្នាំ${yrKh}`,
+    signerTitle: rawReport.signerTitle || 'ព្រះនាយក'
   };
 }
 

@@ -1,6 +1,23 @@
-import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
+import KhmerJustifiedText from './KhmerJustifiedText';
+import { renderBlocksWithEditZones } from './ReportEditableZone';
 import { toKhmerDigits } from '../utils/khmerNumerals';
+import { subscribeKhmerFontReady, getKhmerFontVersion } from '../utils/khmerJustifyEngine';
+
+const HIST_SECTION_LABELS = {
+  hist_title: 'ចំណងជើងរបាយការណ៍',
+  hist_bg: '១.១. សាវតារ',
+  hist_table: 'អត្ថបទណែនាំ & តារាង ១៦ ឆ្នាំ',
+  hist_signature: 'កាលបរិច្ឆេទ & ហត្ថលេខា'
+};
+
+function mapHistoryProseIdToSection(id = '') {
+  if (id === 'hist-title') return 'hist_title';
+  if (id === 'hist-sec-heading' || id.startsWith('hist-bg-')) return 'hist_bg';
+  if (id === 'hist-table-intro') return 'hist_table';
+  return null;
+}
 
 const SIEMREAP_FONT = "'Khmer OS Siemreap', 'Siemreap', 'Battambang', sans-serif";
 const MOUL_FONT = "'Khmer OS Muol Light', 'Khmer OS Moul Light', 'Khmer OS Muol', 'Moul', serif";
@@ -136,11 +153,17 @@ export function renderSchoolHistoryTableChunk({
 export default function OfficialSchoolHistoryDocument({
   id = 'printable-school-history-document',
   historyModel,
-  useKhmerNumerals = true
+  useKhmerNumerals = true,
+  editMode = false,
+  activeEditSection = null,
+  onSelectEditSection = null
 }) {
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
   const measureRef = useRef(null);
   const [measured, setMeasured] = useState(null);
+  const [fontVersion, setFontVersion] = useState(() => getKhmerFontVersion());
+
+  useEffect(() => subscribeKhmerFontReady(setFontVersion), []);
 
   const proseBlocks = useMemo(() => {
     if (!historyModel) return [];
@@ -257,25 +280,32 @@ export default function OfficialSchoolHistoryDocument({
       )
     });
 
-    // 4. Background Paragraphs
+    // 4. Background Paragraphs (Word-grade Khmer Justify on 706px printable width; respects double Enter blank spacers)
     (historyModel.backgroundParagraphs || []).forEach((para, idx) => {
+      const cleanPara = String(para || '').trim();
+      if (!cleanPara) {
+        blocks.push({
+          id: `hist-bg-${idx}`,
+          estPx: 22,
+          node: <div key={`hist-bg-${idx}`} aria-hidden="true" style={{ height: 22 }} />
+        });
+        return;
+      }
       blocks.push({
         id: `hist-bg-${idx}`,
-        estPx: Math.max(42, Math.ceil(para.length / 62) * 27),
+        estPx: Math.max(42, Math.ceil(cleanPara.length / 62) * 27),
         node: (
-          <div
+          <KhmerJustifiedText
             key={`hist-bg-${idx}`}
-            style={{
-              textAlign: 'left',
-              wordSpacing: 'normal',
-              textIndent: 46,
-              lineHeight: 1.78,
-              marginBottom: 6,
-              fontSize: 15.2
-            }}
-          >
-            {para}
-          </div>
+            text={cleanPara}
+            maxWidthPx={706}
+            firstLineIndent={46}
+            fontFamily={SIEMREAP_FONT}
+            moulFontFamily={MOUL_FONT}
+            fontSize={15.2}
+            lineHeight={1.78}
+            style={{ marginBottom: 6 }}
+          />
         )
       });
     });
@@ -286,19 +316,17 @@ export default function OfficialSchoolHistoryDocument({
         id: 'hist-table-intro',
         estPx: 66,
         node: (
-          <div
+          <KhmerJustifiedText
             key="hist-table-intro"
-            style={{
-              textAlign: 'left',
-              wordSpacing: 'normal',
-              textIndent: 46,
-              lineHeight: 1.78,
-              marginBottom: 8,
-              fontSize: 15.2
-            }}
-          >
-            {historyModel.tableIntro}
-          </div>
+            text={historyModel.tableIntro}
+            maxWidthPx={706}
+            firstLineIndent={46}
+            fontFamily={SIEMREAP_FONT}
+            moulFontFamily={MOUL_FONT}
+            fontSize={15.2}
+            lineHeight={1.78}
+            style={{ marginBottom: 8 }}
+          />
         )
       });
     }
@@ -379,7 +407,7 @@ export default function OfficialSchoolHistoryDocument({
     if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
       document.fonts.ready.then(measureNow).catch(() => {});
     }
-  }, [proseBlocks, historyModel]);
+  }, [proseBlocks, historyModel, fontVersion]);
 
   const pages = useMemo(() => {
     if (!historyModel) return [];
@@ -394,18 +422,19 @@ export default function OfficialSchoolHistoryDocument({
     const sigH = measured?.sigH || 115;
 
     const resultPages = [];
-    let currentNodes = [];
+    let currentItems = [];
     let currentPx = 0;
 
     // 1. Place prose blocks across pages
     proseBlocks.forEach((blk, idx) => {
       const h = proseHeights[idx];
-      if (currentNodes.length > 0 && currentPx + h > MAX_PAGE_CONTENT_PX) {
-        resultPages.push(currentNodes);
-        currentNodes = [blk.node];
+      const wrapped = { id: blk.id, editSectionId: mapHistoryProseIdToSection(blk.id), node: blk.node };
+      if (currentItems.length > 0 && currentPx + h > MAX_PAGE_CONTENT_PX) {
+        resultPages.push(currentItems);
+        currentItems = [wrapped];
         currentPx = h;
       } else {
-        currentNodes.push(blk.node);
+        currentItems.push(wrapped);
         currentPx += h;
       }
     });
@@ -415,9 +444,9 @@ export default function OfficialSchoolHistoryDocument({
     let chunkIdx = 0;
     while (rowCursor < allRows.length) {
       const minTableStartH = theadH + (rowHeights[rowCursor] || 32) + 14;
-      if (currentNodes.length > 0 && currentPx + minTableStartH > MAX_PAGE_CONTENT_PX) {
-        resultPages.push(currentNodes);
-        currentNodes = [];
+      if (currentItems.length > 0 && currentPx + minTableStartH > MAX_PAGE_CONTENT_PX) {
+        resultPages.push(currentItems);
+        currentItems = [];
         currentPx = 0;
       }
 
@@ -440,38 +469,42 @@ export default function OfficialSchoolHistoryDocument({
         usedH += totalRowH;
       }
 
-      currentNodes.push(
-        renderSchoolHistoryTableChunk({
+      const tblKey = `hist-page-tbl-${chunkIdx}`;
+      currentItems.push({
+        id: tblKey,
+        editSectionId: 'hist_table',
+        node: renderSchoolHistoryTableChunk({
           rowsChunk: chunk,
           totals: historyModel.totals,
           includeTotalsRow: reachedEnd,
-          keyPrefix: `hist-page-tbl-${chunkIdx}`,
+          keyPrefix: tblKey,
           marginTop: chunkIdx === 0 ? 4 : 0,
           marginBottom: 8
         })
-      );
+      });
       currentPx += usedH;
       chunkIdx += 1;
 
       if (!reachedEnd) {
-        resultPages.push(currentNodes);
-        currentNodes = [];
+        resultPages.push(currentItems);
+        currentItems = [];
         currentPx = 0;
       }
     }
 
     // 3. Place signature block (moves to new page only if it doesn't fit below total row)
     if (signatureNode) {
-      if (currentNodes.length > 0 && currentPx + sigH > MAX_PAGE_CONTENT_PX) {
-        resultPages.push(currentNodes);
-        currentNodes = [signatureNode];
+      const sigItem = { id: 'hist-signature', editSectionId: 'hist_signature', node: signatureNode };
+      if (currentItems.length > 0 && currentPx + sigH > MAX_PAGE_CONTENT_PX) {
+        resultPages.push(currentItems);
+        currentItems = [sigItem];
       } else {
-        currentNodes.push(signatureNode);
+        currentItems.push(sigItem);
       }
     }
 
-    if (currentNodes.length > 0) {
-      resultPages.push(currentNodes);
+    if (currentItems.length > 0) {
+      resultPages.push(currentItems);
     }
 
     return resultPages;
@@ -611,7 +644,12 @@ export default function OfficialSchoolHistoryDocument({
               flexDirection: 'column'
             }}
           >
-            {pageNodes}
+            {renderBlocksWithEditZones(pageNodes, {
+              editMode,
+              activeSectionId: activeEditSection,
+              onSelectSection: onSelectEditSection,
+              sectionLabels: HIST_SECTION_LABELS
+            })}
           </div>
 
           {/* Bottom-Center Khmer Page Number */}
