@@ -48,7 +48,9 @@ import {
   syncAppStateToCloud,
   subscribeToCloudAppState,
   fetchTrainingFromCloud,
-  subscribeToCloudTraining
+  subscribeToCloudTraining,
+  isBareGenericCameraFilename,
+  normalizeOriginalFilename
 } from './utils/storage';
 import {
   processUploadedImage,
@@ -58,8 +60,11 @@ import {
   rotateImageDataUrl,
   detectUprightRotationWithAI,
   compressImageForOCR,
-  formatKhmerScanError
+  formatKhmerScanError,
+  computeImageFingerprint,
+  matchByImageFingerprint
 } from './utils/ocrService';
+import { ensurePeriodicKeyHealthMonitor } from './utils/geminiKeyMonitor';
 import { parseDurationShorthand, normalizeCurrency } from './utils/khmerNumerals';
 import { loadAuthSession, authenticateUser, logoutAuthSession } from './utils/auth';
 
@@ -340,6 +345,14 @@ export default function App() {
   useEffect(() => {
     saveOfflineQueue(queue);
   }, [queue]);
+
+  // Cloud-Shared Background Gemini API Key Health Monitor (Option ក: checks at most once per 20 min across all devices)
+  useEffect(() => {
+    const startTimer = setTimeout(() => {
+      ensurePeriodicKeyHealthMonitor(apiKey);
+    }, 1500);
+    return () => clearTimeout(startTimer);
+  }, [apiKey]);
 
   // Auto-generate current academic month & next academic month starting on the last Saturday of each month
   const getAutoAcademicMonthsForDate = useCallback((now = new Date()) => {
@@ -980,18 +993,58 @@ export default function App() {
                 }
               }
             } else {
-              const oriented = await autoOrientDocumentImage(dataUrl, targetDocType, apiKey);
-              preResolvedDocType = oriented?.detectedDocType || '';
-              preRouterError = oriented?.routerError || '';
-              if (oriented?.dataUrl) {
-                orientedDataUrl = oriented.dataUrl;
+              // PC Optimization: check AI Flywheel Memory BEFORE calling Gemini Router (0 API calls for previously verified photos!)
+              let hasVerifiedMemoryHit = false;
+              try {
+                const quickHash = await computeImageFingerprint(dataUrl);
+                let memHit = matchByImageFingerprint(quickHash, batchTrainingDataset);
+                if (!memHit && targetFile?.name && !isBareGenericCameraFilename(targetFile.name) && Array.isArray(batchTrainingDataset)) {
+                  const cleanTargetName = normalizeOriginalFilename(targetFile.name)
+                    .toLowerCase()
+                    .replace(/\s*\(\d+\)\s*(?=\.[^.]+$|$)/, '')
+                    .trim();
+                  memHit = batchTrainingDataset.find(s => {
+                    const sOrig = normalizeOriginalFilename(s.originalFileName || s.fileName || '')
+                      .toLowerCase()
+                      .replace(/\s*\(\d+\)\s*(?=\.[^.]+$|$)/, '')
+                      .trim();
+                    return sOrig && !isBareGenericCameraFilename(sOrig) && sOrig === cleanTargetName;
+                  }) || null;
+                }
+                if (memHit && memHit.groundTruth) {
+                  const isLeaveMem = memHit.docType !== 'finance';
+                  if (!isLeaveMem || (memHit.groundTruth.name && String(memHit.groundTruth.name).trim())) {
+                    hasVerifiedMemoryHit = true;
+                  }
+                }
+              } catch {
+                hasVerifiedMemoryHit = false;
+              }
+
+              if (hasVerifiedMemoryHit) {
+                orientedDataUrl = dataUrl;
                 updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
                   ...q,
-                  previewUrl: orientedDataUrl,
+                  previewUrl: dataUrl,
                   scanStage: 'ocr'
                 } : q));
                 if (oldBlobUrl) {
                   try { URL.revokeObjectURL(oldBlobUrl); } catch { /* ignore */ }
+                }
+              } else {
+                const oriented = await autoOrientDocumentImage(dataUrl, targetDocType, apiKey);
+                preResolvedDocType = oriented?.detectedDocType || '';
+                preRouterError = oriented?.routerError || '';
+                if (oriented?.dataUrl) {
+                  orientedDataUrl = oriented.dataUrl;
+                  updateQueueSafe(prev => prev.map(q => q.id === itemId ? {
+                    ...q,
+                    previewUrl: orientedDataUrl,
+                    scanStage: 'ocr'
+                  } : q));
+                  if (oldBlobUrl) {
+                    try { URL.revokeObjectURL(oldBlobUrl); } catch { /* ignore */ }
+                  }
                 }
               }
             }
@@ -1177,6 +1230,21 @@ export default function App() {
     }, 10);
   }, [updateQueueSafe, processQueueWorker]);
 
+  const handleRetryQueueItem = useCallback((id) => {
+    if (!id) return;
+    updateQueueSafe(prev => prev.map(item => item.id === id ? {
+      ...item,
+      status: 'pending',
+      scanStage: null,
+      error: null,
+      processedData: null
+    } : item));
+
+    setTimeout(() => {
+      processQueueWorker();
+    }, 10);
+  }, [updateQueueSafe, processQueueWorker]);
+
   const handleRotateQueueItem = async (id, degreesClockwise = 90) => {
     const currentList = queueRef.current || queue;
     const target = currentList.find(q => q.id === id);
@@ -1341,28 +1409,37 @@ export default function App() {
       }
     }
 
-    // 2. AI Flywheel: Harvest verified ground-truth training pair with Visual Fingerprint & Learned Corrections
-    const resolvedHash = imageHash || rawOcr?.imageHash || rawOcr?.rawScan?.imageHash || '';
-    const resolvedRawName = rawOcr?.initialOcrName || rawOcr?.leaveItems?.[0]?.initialOcrName || '';
-    const resolvedRawFinanceItems = type === 'finance'
-      ? (rawOcr?.initialFinanceItems || rawOcr?.rawScan?.result?.initialFinanceItems || rawOcr?.rawScan?.result?.financeItems || undefined)
-      : undefined;
-    const sample = {
-      id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      fileName: fileName || 'sample',
-      originalFileName: fileName || 'sample',
-      fileSize: fileSize || rawOcr?.rawScan?.fileSize || undefined,
-      imageHash: resolvedHash || undefined,
-      rawOcrName: resolvedRawName || undefined,
-      rawOcrFinanceItems: resolvedRawFinanceItems,
-      docType: type,
-      timestamp: new Date().toISOString(),
-      rawOcr: rawOcr || null,
-      groundTruth: finalItem,
-      imagePreview: imagePreview || null
-    };
-    const updatedDataset = saveTrainingSample(sample);
-    setTrainingCount(updatedDataset.length);
+    // 2. AI Flywheel: Harvest ONLY verified, non-blank ground-truth pairs (NEVER let failed/blank scans poison cloud memory!)
+    const isBlankFailedScan = Boolean(rawOcr?.isOfflineNoScan || rawOcr?.unrecognizedFormat);
+    const hasRealLeaveName = type === 'leave' && Boolean(finalItem?.name && String(finalItem.name).trim() && String(finalItem.name).trim() !== 'សមណសិស្ស');
+    const hasRealFinance = type === 'finance' && (
+      Array.isArray(finalItem?.items)
+        ? finalItem.items.some(f => (f?.desc && String(f.desc).trim()) || Number(f?.total) > 0)
+        : Boolean((finalItem?.desc && String(finalItem.desc).trim() && finalItem.desc !== 'ទំនិញ/សេវា') || Number(finalItem?.total) > 0)
+    );
+    if (!isBlankFailedScan && (hasRealLeaveName || hasRealFinance)) {
+      const resolvedHash = imageHash || rawOcr?.imageHash || rawOcr?.rawScan?.imageHash || '';
+      const resolvedRawName = rawOcr?.initialOcrName || rawOcr?.leaveItems?.[0]?.initialOcrName || '';
+      const resolvedRawFinanceItems = type === 'finance'
+        ? (rawOcr?.initialFinanceItems || rawOcr?.rawScan?.result?.initialFinanceItems || rawOcr?.rawScan?.result?.financeItems || undefined)
+        : undefined;
+      const sample = {
+        id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        fileName: fileName || 'sample',
+        originalFileName: fileName || 'sample',
+        fileSize: fileSize || rawOcr?.rawScan?.fileSize || undefined,
+        imageHash: resolvedHash || undefined,
+        rawOcrName: resolvedRawName || undefined,
+        rawOcrFinanceItems: resolvedRawFinanceItems,
+        docType: type,
+        timestamp: new Date().toISOString(),
+        rawOcr: rawOcr || null,
+        groundTruth: finalItem,
+        imagePreview: imagePreview || null
+      };
+      const updatedDataset = saveTrainingSample(sample);
+      setTrainingCount(updatedDataset.length);
+    }
 
     // 3. Remove approved item from queue safely
     updateQueueSafe(prev => {
@@ -1380,7 +1457,8 @@ export default function App() {
   };
 
   const handleApproveSingleItem = (qItem) => {
-    const type = qItem.processedData?.detectedType || qItem.docTypeHint || 'leave';
+    const rawType = qItem.processedData?.detectedType || qItem.docTypeHint || 'leave';
+    const type = rawType === 'auto' ? 'leave' : rawType;
     const itemHash = qItem.imageHash || qItem.processedData?.imageHash || qItem.processedData?.rawScan?.imageHash || '';
     if (type === 'leave') {
       const l = qItem.processedData?.leaveItems?.[0] || {};
@@ -1427,7 +1505,7 @@ export default function App() {
   };
 
   const handleApproveAllQueue = () => {
-    const readyItems = queue.filter(q => q.status === 'processed');
+    const readyItems = queue.filter(q => q.status === 'processed' && !q.processedData?.isOfflineNoScan && !q.processedData?.unrecognizedFormat);
     if (readyItems.length === 0) return;
 
     let newLeaves = [...currentLeaves];
@@ -1439,7 +1517,8 @@ export default function App() {
     const batchSamples = [];
 
     readyItems.forEach(qItem => {
-      const type = qItem.processedData?.detectedType || qItem.docTypeHint || 'leave';
+      const rawType = qItem.processedData?.detectedType || qItem.docTypeHint || 'leave';
+      const type = rawType === 'auto' ? 'leave' : rawType;
       const itemHash = qItem.imageHash || qItem.processedData?.imageHash || qItem.processedData?.rawScan?.imageHash || '';
       const resolvedRawName = qItem.processedData?.initialOcrName || qItem.processedData?.leaveItems?.[0]?.initialOcrName || '';
       if (type === 'leave') {
@@ -1462,17 +1541,19 @@ export default function App() {
           note: l.note || ''
         };
         newLeaves.push(leaveRecord);
-        batchSamples.push({
-          id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-          fileName: qItem.fileName,
-          originalFileName: qItem.fileName,
-          fileSize: qItem.fileSize,
-          imageHash: itemHash || undefined,
-          rawOcrName: resolvedRawName || undefined,
-          docType: 'leave',
-          timestamp: new Date().toISOString(),
-          groundTruth: leaveRecord
-        });
+        if (l.name && String(l.name).trim() && String(l.name).trim() !== 'សមណសិស្ស') {
+          batchSamples.push({
+            id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            fileName: qItem.fileName,
+            originalFileName: qItem.fileName,
+            fileSize: qItem.fileSize,
+            imageHash: itemHash || undefined,
+            rawOcrName: resolvedRawName || undefined,
+            docType: 'leave',
+            timestamp: new Date().toISOString(),
+            groundTruth: leaveRecord
+          });
+        }
       } else {
         const rawFinanceItems = qItem.processedData?.financeItems;
         if (Array.isArray(rawFinanceItems) && rawFinanceItems.length > 0) {
@@ -1490,27 +1571,34 @@ export default function App() {
             };
             newFinance[cat].push(finRecord);
           });
-          batchSamples.push({
-            id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            fileName: qItem.fileName,
-            originalFileName: qItem.fileName,
-            fileSize: qItem.fileSize,
-            imageHash: itemHash || undefined,
-            rawOcrFinanceItems: qItem.processedData?.initialFinanceItems || qItem.processedData?.rawScan?.result?.financeItems || undefined,
-            docType: 'finance',
-            timestamp: new Date().toISOString(),
-            groundTruth: { items: rawFinanceItems }
-          });
+          if (rawFinanceItems.some(f => (f?.desc && String(f.desc).trim()) || Number(f?.total) > 0)) {
+            batchSamples.push({
+              id: `train-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              fileName: qItem.fileName,
+              originalFileName: qItem.fileName,
+              fileSize: qItem.fileSize,
+              imageHash: itemHash || undefined,
+              rawOcrFinanceItems: qItem.processedData?.initialFinanceItems || qItem.processedData?.rawScan?.result?.financeItems || undefined,
+              docType: 'finance',
+              timestamp: new Date().toISOString(),
+              groundTruth: { items: rawFinanceItems }
+            });
+          }
         }
       }
     });
 
-    const updatedDataset = saveTrainingBatch(batchSamples);
+    if (batchSamples.length > 0) {
+      const updatedDataset = saveTrainingBatch(batchSamples);
+      setTrainingCount(updatedDataset.length);
+    }
     mutateLeaves(newLeaves);
     mutateFinance(newFinance);
-    setTrainingCount(updatedDataset.length);
-    updateQueueSafe(prev => prev.filter(q => q.status !== 'processed'));
-    setActiveTab('leave');
+    const approvedIds = new Set(readyItems.map(q => q.id));
+    updateQueueSafe(prev => prev.filter(q => !approvedIds.has(q.id)));
+    if (readyItems.length === queue.length) {
+      setActiveTab('leave');
+    }
   };
 
   // 4. Backup & Restore
@@ -1767,6 +1855,7 @@ export default function App() {
                 onSetAllLeaveDates={handleSetAllQueueLeaveDates}
                 onRotateQueueItem={handleRotateQueueItem}
                 onRetakeQueueItem={handleRetakeQueueItem}
+                onRetryQueueItem={handleRetryQueueItem}
                 onApproveItem={handleApproveSingleItem}
                 onApproveAll={handleApproveAllQueue}
                 isProcessing={isProcessing}

@@ -24,6 +24,7 @@ export default function UploadSection({
   onSetAllLeaveDates,
   onRotateQueueItem,
   onRetakeQueueItem,
+  onRetryQueueItem,
   onApproveItem,
   onApproveAll,
   isProcessing = false,
@@ -132,7 +133,7 @@ export default function UploadSection({
     }, 'image/jpeg');
   };
 
-  const processedItems = queue.filter(q => q.status === 'processed');
+  const processedItems = queue.filter(q => q.status === 'processed' && !q.processedData?.isOfflineNoScan && !q.processedData?.unrecognizedFormat);
   const hasActiveScanning = queue.some(q => q.status === 'pending' || q.status === 'processing');
 
   // Count processed leave items & date/month mismatches against active selected month (currentMonthKey)
@@ -653,6 +654,7 @@ export default function UploadSection({
                 }
                 const updated = {
                   ...item.processedData,
+                  isOfflineNoScan: false,
                   detectedType: 'leave',
                   leaveItems: [{ ...leaveItem, [field]: val }]
                 };
@@ -662,6 +664,7 @@ export default function UploadSection({
               const updateLeaveFields = (patch) => {
                 const updated = {
                   ...item.processedData,
+                  isOfflineNoScan: false,
                   detectedType: 'leave',
                   leaveItems: [{ ...leaveItem, ...patch }]
                 };
@@ -675,6 +678,7 @@ export default function UploadSection({
                 currentList[itemIdx] = { ...(currentList[itemIdx] || financeItem), [field]: val };
                 const updated = {
                   ...item.processedData,
+                  isOfflineNoScan: false,
                   detectedType: 'finance',
                   financeItems: currentList
                 };
@@ -1063,7 +1067,7 @@ export default function UploadSection({
                           </button>
                         </div>
 
-                        {resultData.isOfflineNoScan && resultData.scanError && !isUnrecognized && (
+                        {(resultData.isOfflineNoScan || item.status === 'error') && !isUnrecognized && (
                           <div style={{
                             background: '#fef2f2',
                             border: '1px solid #fecaca',
@@ -1072,9 +1076,35 @@ export default function UploadSection({
                             fontSize: 11,
                             color: '#991b1b',
                             lineHeight: 1.45,
-                            fontWeight: 600
+                            fontWeight: 600,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6
                           }}>
-                            ⚠️ {resultData.scanError}
+                            <div>⚠️ {resultData.scanError || item.error || 'ស្កេនមិនទាន់ចេញ — សូមសាកល្បងស្កេនម្ដងទៀត'}</div>
+                            {onRetryQueueItem && item.file && (
+                              <button
+                                type="button"
+                                onClick={() => onRetryQueueItem(item.id)}
+                                style={{
+                                  alignSelf: 'flex-start',
+                                  background: '#dc2626',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  padding: '5px 10px',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <RefreshCw size={11} />
+                                <span>ស្កេនម្ដងទៀត</span>
+                              </button>
+                            )}
                           </div>
                         )}
 
@@ -1942,41 +1972,43 @@ export default function UploadSection({
                         </div>
 
                         {/* Bottom Action Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleGuardedApproveItem(item, leaveDateCheck.requiresDoubleClick)}
-                          style={{
-                            width: '100%',
-                            background: isItemArmed
-                              ? '#dc2626'
-                              : leaveDateCheck.requiresDoubleClick
-                                ? '#c2410c'
-                                : '#0f766e',
-                            color: '#ffffff',
-                            border: leaveDateCheck.requiresDoubleClick ? '1.5px solid #dc2626' : 'none',
-                            padding: '11px 16px',
-                            borderRadius: 8,
-                            fontSize: 13.5,
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 6,
-                            cursor: 'pointer',
-                            touchAction: 'manipulation',
-                            boxShadow: isItemArmed
-                              ? '0 2px 10px rgba(220, 38, 38, 0.4)'
-                              : '0 2px 6px rgba(15,118,110,0.25)'
-                          }}
-                        >
-                          <span>
-                            {isItemArmed
-                              ? '⚠️ ខុសខែ! ចុចម្ដងទៀតដើម្បីបញ្ចូល'
-                              : leaveDateCheck.requiresDoubleClick
-                                ? '⚠️ បញ្ចូលក្នុងតារាង (ខុសខែ • ចុច ២ ដង)'
-                                : '✓ បញ្ចូលក្នុងតារាង'}
-                          </span>
-                        </button>
+                        {item.status !== 'error' && !isUnrecognized && (
+                          <button
+                            type="button"
+                            onClick={() => handleGuardedApproveItem(item, leaveDateCheck.requiresDoubleClick)}
+                            style={{
+                              width: '100%',
+                              background: isItemArmed
+                                ? '#dc2626'
+                                : leaveDateCheck.requiresDoubleClick
+                                  ? '#c2410c'
+                                  : '#0f766e',
+                              color: '#ffffff',
+                              border: leaveDateCheck.requiresDoubleClick ? '1.5px solid #dc2626' : 'none',
+                              padding: '11px 16px',
+                              borderRadius: 8,
+                              fontSize: 13.5,
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              cursor: 'pointer',
+                              touchAction: 'manipulation',
+                              boxShadow: isItemArmed
+                                ? '0 2px 10px rgba(220, 38, 38, 0.4)'
+                                : '0 2px 6px rgba(15,118,110,0.25)'
+                            }}
+                          >
+                            <span>
+                              {isItemArmed
+                                ? '⚠️ ខុសខែ! ចុចម្ដងទៀតដើម្បីបញ្ចូល'
+                                : leaveDateCheck.requiresDoubleClick
+                                  ? '⚠️ បញ្ចូលក្នុងតារាង (ខុសខែ • ចុច ២ ដង)'
+                                  : '✓ បញ្ចូលក្នុងតារាង'}
+                            </span>
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -3030,9 +3062,35 @@ export default function UploadSection({
                     )}
                   </div>
 
-                  {/* Column 3: Actions (Approve & Delete) */}
+                  {/* Column 3: Actions (Approve, Retry & Delete) */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%', justifyContent: 'center' }}>
-                    {!isPending && (
+                    {!isPending && (resultData.isOfflineNoScan || item.status === 'error') && onRetryQueueItem && item.file && (
+                      <button
+                        type="button"
+                        onClick={() => onRetryQueueItem(item.id)}
+                        style={{
+                          background: '#0284c7',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '9px 14px',
+                          borderRadius: 8,
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          boxShadow: '0 2px 6px rgba(2, 132, 199, 0.25)'
+                        }}
+                      >
+                        <RefreshCw size={13} />
+                        <span>ស្កេនម្ដងទៀត</span>
+                      </button>
+                    )}
+
+                    {!isPending && item.status !== 'error' && item.status !== 'unrecognized' && (
                       <button
                         type="button"
                         onClick={() => handleGuardedApproveItem(item, leaveDateCheck.requiresDoubleClick)}

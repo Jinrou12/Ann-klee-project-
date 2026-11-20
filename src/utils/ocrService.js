@@ -100,7 +100,7 @@ export async function classifyAndOrientDocument(dataUrl, apiKey = '') {
     parts,
     apiKey,
     thinkingBudget: 0,
-    timeoutMs: 18000,
+    timeoutMs: 12000,
     maxTimeoutAttempts: 2,
     models: GEMINI_ROUTER_MODELS
   });

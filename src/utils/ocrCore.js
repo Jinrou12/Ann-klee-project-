@@ -6,6 +6,11 @@ import {
   parseApiKeyList,
   ensureCloudApiKeyPoolLoaded
 } from './storage';
+import {
+  getOrderedHealthyKeys,
+  isKeyHealthyNow,
+  reportKeyRuntimeResult
+} from './geminiKeyMonitor';
 
 const sessionBadKeys = new Set();
 const sessionRateLimitedKeys = new Map(); // `${model}:${key}` -> { ts: number, ttl: number }
@@ -70,6 +75,7 @@ export const GEMINI_ROUTER_MODELS = [
 
 export function isKeyUsable(key, model = '') {
   if (!key || sessionBadKeys.has(key)) return false;
+  if (!isKeyHealthyNow(key)) return false;
   if (model) {
     const entry = sessionRateLimitedKeys.get(`${model}:${key}`);
     if (entry && typeof entry.ts === 'number') {
@@ -82,8 +88,6 @@ export function isKeyUsable(key, model = '') {
   return true;
 }
 
-let roundRobinKeyCursor = 0;
-
 export function getCandidateApiKeys(explicitApiKey = '', targetModel = '') {
   const pool = getGeminiKeyPool();
   const explicitList = parseApiKeyList(explicitApiKey);
@@ -95,19 +99,11 @@ export function getCandidateApiKeys(explicitApiKey = '', targetModel = '') {
     ...DEFAULT_GEMINI_KEYS
   ])).filter(k => k && !sessionBadKeys.has(k));
 
+  // Prioritize the pre-verified Healthy Pool first (0ms wait, skips quarantined/invalid keys)
+  const monitorOrdered = getOrderedHealthyKeys(merged);
   const primaryModel = targetModel || GEMINI_VISION_MODELS[0];
-  const readyKeys = merged.filter(k => isKeyUsable(k, primaryModel));
-  const coolingKeys = merged.filter(k => !isKeyUsable(k, primaryModel));
-
-  if (readyKeys.length > 1) {
-    const offset = roundRobinKeyCursor % readyKeys.length;
-    roundRobinKeyCursor = (roundRobinKeyCursor + 1) % readyKeys.length;
-    const rotatedReady = [
-      ...readyKeys.slice(offset),
-      ...readyKeys.slice(0, offset)
-    ];
-    return [...rotatedReady, ...coolingKeys];
-  }
+  const readyKeys = monitorOrdered.filter(k => isKeyUsable(k, primaryModel));
+  const coolingKeys = monitorOrdered.filter(k => !isKeyUsable(k, primaryModel));
 
   return [...readyKeys, ...coolingKeys];
 }
@@ -252,10 +248,14 @@ export async function callGeminiJsonWithResilience({
         };
 
     let transientRetriedOnModel = false;
+    let serverErrorFailovers = 0;
+    const maxServerErrorFailovers = Math.min(3, Math.max(1, keysToTry.length - 1));
 
     for (let kIdx = 0; kIdx < keysToTry.length; kIdx++) {
       const activeKey = keysToTry[kIdx];
-      if (!isKeyUsable(activeKey, model)) continue;
+      // Skip known-bad or cooling keys if healthier keys remain; allow fallback if we're at the tail
+      if (sessionBadKeys.has(activeKey)) continue;
+      if (!isKeyUsable(activeKey, model) && kIdx < keysToTry.length - 1) continue;
 
       const attemptStart = Date.now();
       try {
@@ -281,13 +281,24 @@ export async function callGeminiJsonWithResilience({
 
         if (!response.ok) {
           const errText = await response.text().catch(() => '');
+          const lowerErr = errText.toLowerCase();
           if (response.status === 429) {
             markKeyRateLimited(model, activeKey, errText);
+            const isDailyQuota =
+              lowerErr.includes('perday') ||
+              lowerErr.includes('per_day') ||
+              /retry in \d+h/i.test(lowerErr) ||
+              /retry in [5-9]\dm/i.test(lowerErr);
+            reportKeyRuntimeResult(activeKey, {
+              ok: false,
+              kind: isDailyQuota ? 'daily_quota' : 'quota',
+              statusCode: 429,
+              latencyMs: Date.now() - attemptStart
+            });
             lastError = new Error('429 Quota Exceeded');
             continue;
           }
           if (response.status === 400 || response.status === 401 || response.status === 403) {
-            const lowerErr = errText.toLowerCase();
             const isKeyProblem =
               response.status === 401 ||
               response.status === 403 ||
@@ -296,8 +307,14 @@ export async function callGeminiJsonWithResilience({
               lowerErr.includes('key not valid') ||
               lowerErr.includes('api key expired');
             if (isKeyProblem) {
-              // Only genuinely dead/revoked keys are blacklisted for the session
+              // Only genuinely dead/revoked keys are blacklisted for the session & alerted to Admin
               sessionBadKeys.add(activeKey);
+              reportKeyRuntimeResult(activeKey, {
+                ok: false,
+                kind: 'invalid',
+                statusCode: response.status,
+                latencyMs: Date.now() - attemptStart
+              });
               lastError = new Error(`${response.status} API Key error`);
               continue;
             }
@@ -313,7 +330,23 @@ export async function callGeminiJsonWithResilience({
             lastError = new Error(`Gemini API Error (${response.status})`);
             break;
           }
-          if (response.status === 404 || response.status === 503 || response.status >= 500) {
+          if (response.status === 503 || response.status >= 500) {
+            reportKeyRuntimeResult(activeKey, {
+              ok: false,
+              kind: 'server_error',
+              statusCode: response.status,
+              latencyMs: Date.now() - attemptStart
+            });
+            lastError = new Error(`Gemini API Error (${response.status})`);
+            if (serverErrorFailovers < maxServerErrorFailovers && kIdx < keysToTry.length - 1) {
+              serverErrorFailovers++;
+              console.warn(`🔁 [Key Failover] ${model} HTTP ${response.status} → switching to next healthy key (${serverErrorFailovers}/${maxServerErrorFailovers})...`);
+              await sleep(350);
+              continue;
+            }
+            break;
+          }
+          if (response.status === 404) {
             lastError = new Error(`Gemini API Error (${response.status})`);
             break;
           }
@@ -321,7 +354,12 @@ export async function callGeminiJsonWithResilience({
         }
 
         const result = await response.json();
-        return parseGeminiJsonCandidate(result);
+        const parsedOut = parseGeminiJsonCandidate(result);
+        reportKeyRuntimeResult(activeKey, {
+          ok: true,
+          latencyMs: Date.now() - attemptStart
+        });
+        return parsedOut;
       } catch (err) {
         lastError = err;
         const elapsed = Date.now() - attemptStart;
@@ -344,11 +382,21 @@ export async function callGeminiJsonWithResilience({
 
         if (isAbort) {
           timeoutCount++;
-          console.warn(`⏱️ [OCR Timeout] ${model} timed out after ${elapsed}ms (${timeoutCount}/${maxTimeoutAttempts})`);
+          reportKeyRuntimeResult(activeKey, {
+            ok: false,
+            kind: 'timeout',
+            statusCode: 0,
+            latencyMs: elapsed
+          });
+          console.warn(`⏱️ [OCR Timeout] ${model} timed out after ${elapsed}ms (${timeoutCount}/${maxTimeoutAttempts}) → failing over to next healthy key...`);
           if (timeoutCount >= maxTimeoutAttempts) {
             throw new Error(formatKhmerScanError(err));
           }
-          break; // Try 1 fallback model at most on slow/dead connection
+          // Immediately fail over to the NEXT healthy key instead of breaking out of a 1-model list!
+          if (kIdx < keysToTry.length - 1) {
+            continue;
+          }
+          break;
         }
 
         // Empty / malformed JSON response: retry once with the next key on the same model before falling back
