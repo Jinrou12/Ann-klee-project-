@@ -40,6 +40,11 @@ function parseCount(val) {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+function formatSpaceThousands(val) {
+  const n = Math.max(0, Math.round(Number(val) || 0));
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
 /**
  * Build the complete formatted School History model with mathematically auto-summed
  * row totals and column grand totals.
@@ -117,6 +122,7 @@ export function buildSchoolHistoryModel({
   });
 
   const yearCount = rows.length;
+  const fmtGrouped = (n) => fmt(formatSpaceThousands(n));
   const totals = {
     label: `សរុបទាំង${fmt(yearCount)}ឆ្នាំ`,
     gradeKindergarten: totalKg,
@@ -124,11 +130,11 @@ export function buildSchoolHistoryModel({
     grade2: totalG2,
     grade3: totalG3,
     grandTotal,
-    kgText: `${fmt(totalKg)}អង្គ/នាក់`,
-    g1Text: `${fmt(totalG1)}អង្គ/នាក់`,
-    g2Text: `${fmt(totalG2)}អង្គ/នាក់`,
-    g3Text: `${fmt(totalG3)}អង្គ/នាក់`,
-    grandTotalText: `${fmt(grandTotal)}អង្គ/នាក់`
+    kgText: `${fmtGrouped(totalKg)}អង្គ/នាក់`,
+    g1Text: `${fmtGrouped(totalG1)}អង្គ/នាក់`,
+    g2Text: `${fmtGrouped(totalG2)}អង្គ/នាក់`,
+    g3Text: `${fmtGrouped(totalG3)}អង្គ/នាក់`,
+    grandTotalText: `${fmtGrouped(grandTotal)}អង្គ/នាក់`
   };
 
   const lunarDateLine =

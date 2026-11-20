@@ -1,8 +1,20 @@
 import React from 'react';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
+import {
+  formatMinistryLunarDateLine,
+  formatMinistrySolarDateLine
+} from '../utils/ministryReportBuilder';
 
 const SIEMREAP_FONT = "'Khmer OS Siemreap', 'Siemreap', 'Battambang', sans-serif";
 const MOUL_FONT = "'Khmer OS Muol Light', 'Khmer OS Moul Light', 'Khmer OS Muol', 'Moul', serif";
+
+/**
+ * Normalize overly wide ellipsis/dot runs in blank doc-number lines
+ */
+function formatCompactDots(text = '', dotCount = 16) {
+  const dots = '.'.repeat(dotCount);
+  return String(text || '').replace(/[.…]{4,}/g, dots).trim();
+}
 
 /**
  * OfficialMinistrySummaryDocument:
@@ -15,8 +27,11 @@ export default function OfficialMinistrySummaryDocument({
 }) {
   if (!ministryModel) return null;
 
+  const compactLunarDate = formatMinistryLunarDateLine(ministryModel.lunarDateLine);
+  const compactSolarDate = formatMinistrySolarDateLine(ministryModel.solarDateLine);
+  const compactDocNo = formatCompactDots(ministryModel.docNumber || '..................', 16);
+
   const thStyle = {
-    border: '1px solid #000000',
     padding: '5px 8px',
     fontFamily: MOUL_FONT,
     fontWeight: 400,
@@ -28,13 +43,14 @@ export default function OfficialMinistrySummaryDocument({
   };
 
   const tdBase = {
-    border: '1px solid #000000',
     padding: '4.5px 10px',
     fontFamily: SIEMREAP_FONT,
+    fontWeight: 400,
     fontSize: 15,
     verticalAlign: 'middle',
     color: '#000000',
-    lineHeight: 1.58
+    lineHeight: 1.58,
+    background: '#ffffff'
   };
 
   return (
@@ -71,17 +87,30 @@ export default function OfficialMinistrySummaryDocument({
           padding: '38px 52px 48px 52px'
         }}
       >
-        {/* 1. Top Header: Left Provincial Dept & School | Right Kingdom & Motto */}
+        {/* 1. Top Header: Left Logo + Provincial Dept & School | Right Kingdom & Motto */}
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'flex-start',
-            marginBottom: 18
+            marginBottom: 14
           }}
         >
-          {/* Left Block */}
-          <div style={{ textAlign: 'center', lineHeight: 1.62, paddingTop: 18 }}>
+          {/* Left Block with Official School Logo (original 15/14.5 font sizes + airy lineHeight) */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+              lineHeight: 1.65
+            }}
+          >
+            <img
+              src="/logo.png?v=nobg1"
+              alt="Logo"
+              style={{ width: 50, height: 50, objectFit: 'contain', marginBottom: 5 }}
+            />
             <div style={{ fontFamily: MOUL_FONT, fontSize: 15, whiteSpace: 'nowrap' }}>
               មន្ទីរធម្មការ និងសាសនា ខេត្តកំពង់ចាម
             </div>
@@ -93,8 +122,8 @@ export default function OfficialMinistrySummaryDocument({
             </div>
           </div>
 
-          {/* Right Block */}
-          <div style={{ textAlign: 'center', lineHeight: 1.55 }}>
+          {/* Right Block (original 17.5/15.2 font sizes) */}
+          <div style={{ textAlign: 'center', lineHeight: 1.55, paddingTop: 10 }}>
             <div style={{ fontFamily: MOUL_FONT, fontSize: 17.5, whiteSpace: 'nowrap' }}>
               ព្រះរាជាណាចក្រកម្ពុជា
             </div>
@@ -107,26 +136,28 @@ export default function OfficialMinistrySummaryDocument({
           </div>
         </div>
 
-        {/* 2. Report Title */}
+        {/* 2. Report Title (kept at 14pt exact per user request) */}
         <div
           style={{
             textAlign: 'center',
             fontFamily: MOUL_FONT,
-            fontSize: 16,
+            fontSize: '14pt',
             marginTop: 6,
-            marginBottom: 16
+            marginBottom: 14
           }}
         >
           {ministryModel.summaryReportTitle}
         </div>
 
-        {/* 3. 10-Row Summary Table */}
+        {/* 3. 10-Row Summary Table (WYSIWYG single-edge hairline borders) */}
         <table
           style={{
             width: '100%',
-            borderCollapse: 'collapse',
+            borderCollapse: 'separate',
+            borderSpacing: 0,
             tableLayout: 'fixed',
-            marginBottom: 14
+            marginBottom: 16,
+            background: '#ffffff'
           }}
         >
           <thead>
@@ -163,35 +194,44 @@ export default function OfficialMinistrySummaryDocument({
           </tbody>
         </table>
 
-        {/* 4. Signature & Approval Block (matching summary2025.txt lines 20-25 without horizontal collision) */}
+        {/* 4. Side-by-Side Signature & Approval Block (+1pt => 16.5px with 14/11 lunar & 7/12 solar dots):
+            - Left (staggered 1 line below Right): លេខ .... (above បានឃើញ និងឯកភាព) + បានឃើញ និងឯកភាព + Lunar + Solar + ព្រះនាយក
+            - Right: Lunar Date + Solar Date + អ្នកធ្វើរបាយការណ៍ */}
         <div
+          className="signature-block"
           style={{
-            marginTop: 6,
-            fontSize: 15.2,
-            lineHeight: 1.7
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 10,
+            marginTop: 16,
+            marginLeft: -10,
+            marginRight: -10,
+            fontSize: 16.5,
+            lineHeight: 1.68
           }}
         >
-          {/* Top-Right Date & Doc Number Block */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ width: '60%', textAlign: 'center' }}>
-              <div style={{ whiteSpace: 'nowrap', marginBottom: 2 }}>
-                {ministryModel.lunarDateLine}
-              </div>
-              <div>
-                លេខ {ministryModel.docNumber || '.....................................'}
-              </div>
+          {/* Left Column: Approval & Principal (staggered slightly down per Cambodian administrative layout) */}
+          <div style={{ flex: '0 0 49.3%', maxWidth: '49.3%', textAlign: 'center', paddingTop: 22 }}>
+            <div style={{ whiteSpace: 'nowrap' }}>
+              លេខ {compactDocNo}
+            </div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 16.5, marginTop: 2 }}>
+              បានឃើញ និងឯកភាព
+            </div>
+            <div style={{ whiteSpace: 'nowrap', marginTop: 2 }}>{compactLunarDate}</div>
+            <div style={{ whiteSpace: 'nowrap' }}>{compactSolarDate}</div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 16.5, marginTop: 6 }}>
+              {ministryModel.signerTitle || 'ព្រះនាយក'}
             </div>
           </div>
 
-          {/* Bottom-Left Approval Block */}
-          <div style={{ width: '60%', textAlign: 'center', marginTop: 4 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 2 }}>
-              បានឃើញ និងឯកភាព
-            </div>
-            <div style={{ whiteSpace: 'nowrap' }}>{ministryModel.lunarDateLine}</div>
-            <div style={{ whiteSpace: 'nowrap' }}>{ministryModel.solarDateLine}</div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginTop: 4 }}>
-              {ministryModel.signerTitle || 'ព្រះនាយក'}
+          {/* Right Column: Reporter Date & Title */}
+          <div style={{ flex: '0 0 49.3%', maxWidth: '49.3%', textAlign: 'center' }}>
+            <div style={{ whiteSpace: 'nowrap' }}>{compactLunarDate}</div>
+            <div style={{ whiteSpace: 'nowrap' }}>{compactSolarDate}</div>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 16.5, marginTop: 6 }}>
+              {ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
             </div>
           </div>
         </div>

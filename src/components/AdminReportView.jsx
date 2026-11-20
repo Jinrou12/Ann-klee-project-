@@ -484,7 +484,13 @@ export default function AdminReportView({
     setEditDraft({
       docNumber: displayModel.docNumber || '......................',
       recipientTitle: displayModel.recipientTitle || '',
-      customSubjectText: displayModel.subjectText || raw.customSubjectText || '',
+      subjectIntroText: [
+        displayModel.subjectText || raw.customSubjectText || displayModel.defaultAutoSubject || '',
+        displayModel.introParagraph || displayModel.defaultAutoIntroParagraph || ''
+      ]
+        .map(s => String(s).trim())
+        .filter(Boolean)
+        .join('\n'),
       totalStudents: st.totalStudents ?? 81,
       gradeKindergarten: st.gradeKindergarten ?? 15,
       grade1: st.grade1 ?? 15,
@@ -710,9 +716,18 @@ export default function AdminReportView({
     const didUserCustomEditChallengeText =
       JSON.stringify(cleanedChallenges) !== JSON.stringify(autoSyncedChallenges);
 
-    const trimmedSubject = String(editDraft.customSubjectText || '').trim();
+    // Combined box: line 1 = កម្មវត្ថុ, following line(s) = សេចក្ដីដូចមានចែង... (intro paragraph)
+    const subjectIntroLines = String(editDraft.subjectIntroText || '')
+      .split(/\r?\n/)
+      .map(s => s.replace(/[ \t]+/g, ' ').trim())
+      .filter(Boolean);
+    const trimmedSubject = (subjectIntroLines[0] || '').replace(/^កម្មវត្ថុ[៖:]\s*/, '').trim();
+    const trimmedIntro = subjectIntroLines.slice(1).join(' ').trim();
     const isCustomSubjectEdited = Boolean(
       trimmedSubject && trimmedSubject !== String(displayModel.defaultAutoSubject || '').trim()
+    );
+    const isCustomIntroEdited = Boolean(
+      trimmedIntro && trimmedIntro !== String(displayModel.defaultAutoIntroParagraph || '').trim()
     );
 
     const updatedReport = {
@@ -725,6 +740,7 @@ export default function AdminReportView({
       recipientTitle: String(editDraft.recipientTitle || '').trim(),
       customSubjectText: isCustomSubjectEdited ? trimmedSubject : '',
       manualSubjectOverride: isCustomSubjectEdited,
+      customIntroParagraph: isCustomIntroEdited ? trimmedIntro : '',
       manualStudentStatsOverride: didManuallyChangeStudentStats
         ? true
         : Boolean(displayModel.rawReport?.manualStudentStatsOverride),
@@ -1616,7 +1632,7 @@ export default function AdminReportView({
             </div>
           </div>
 
-          {/* Editable Subject Box (កម្មវត្ថុ៖) */}
+          {/* Editable Combined Subject + Intro Box (កម្មវត្ថុ៖ + សេចក្ដីដូចមានចែង...) */}
           <div
             style={{
               marginBottom: 14,
@@ -1637,16 +1653,18 @@ export default function AdminReportView({
               }}
             >
               <label style={{ fontSize: 12.5, fontWeight: 700, color: '#92400e' }}>
-                កម្មវត្ថុ៖ (អាចកែប្រែបានតាមតម្រូវការ — ទុកទទេដើម្បីប្រើស្វ័យប្រវត្តិ)
+                កម្មវត្ថុ៖ និងសេចក្ដីផ្ដើម (បន្ទាត់ទី ១ = កម្មវត្ថុ • ចុច Enter ចុះបន្ទាត់ = សេចក្ដីដូចមានចែង... — ទុកទទេដើម្បីប្រើស្វ័យប្រវត្តិ)
               </label>
-              {editDraft.customSubjectText &&
-                String(editDraft.customSubjectText).trim() !== String(displayModel.defaultAutoSubject || '').trim() && (
+              {String(editDraft.subjectIntroText || '').trim() !==
+                `${String(displayModel.defaultAutoSubject || '').trim()}\n${String(displayModel.defaultAutoIntroParagraph || '').trim()}` && (
                   <button
                     type="button"
                     onClick={() =>
                       setEditDraft(prev => ({
                         ...prev,
-                        customSubjectText: displayModel.defaultAutoSubject || ''
+                        subjectIntroText: `${String(displayModel.defaultAutoSubject || '').trim()}\n${String(
+                          displayModel.defaultAutoIntroParagraph || ''
+                        ).trim()}`
                       }))
                     }
                     style={{
@@ -1665,10 +1683,10 @@ export default function AdminReportView({
                 )}
             </div>
             <textarea
-              rows={2}
-              value={editDraft.customSubjectText ?? ''}
-              onChange={e => setEditDraft({ ...editDraft, customSubjectText: e.target.value })}
-              placeholder={displayModel.defaultAutoSubject}
+              rows={5}
+              value={editDraft.subjectIntroText ?? ''}
+              onChange={e => setEditDraft({ ...editDraft, subjectIntroText: e.target.value })}
+              placeholder={`${displayModel.defaultAutoSubject || ''}\n${displayModel.defaultAutoIntroParagraph || ''}`}
               style={{
                 width: '100%',
                 padding: '8px 10px',
@@ -2578,7 +2596,7 @@ export default function AdminReportView({
                   }}
                 >
                   {schoolHistoryModel.tableIntro && (
-                    <div style={{ fontSize: 12.5, color: '#1e293b', lineHeight: 1.65, marginBottom: 10, textIndent: 24 }}>
+                    <div style={{ fontSize: 12.5, color: '#1e293b', lineHeight: 1.65, marginBottom: 10, textIndent: 24, textAlign: 'left' }}>
                       {schoolHistoryModel.tableIntro}
                     </div>
                   )}
@@ -2883,11 +2901,29 @@ export default function AdminReportView({
                 ))}
               </div>
 
-              {/* Combined Mode ONLY: Editable Table Intro + 16-Year Human Resource Training Table */}
+              <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 6 }}>
+                ខ. ការងារគ្រប់គ្រង លិខិតរដ្ឋបាល និងរបាយការណ៍
+              </div>
+              <div
+                style={{
+                  background: '#f0f9ff',
+                  border: '1px solid #bae6fd',
+                  borderRadius: 8,
+                  padding: 10,
+                  fontSize: 12.5,
+                  color: '#0c4a6e'
+                }}
+              >
+                {(displayModel.adminDocLines || []).map((line, i) => (
+                  <div key={i} style={{ marginBottom: 3 }}>- {line}</div>
+                ))}
+              </div>
+
+              {/* Combined Mode ONLY: Editable Table Intro + 16-Year Human Resource Training Table (placed after ខ) */}
               {displayModel.includeHistory && displayModel.schoolHistory && (
-                <div style={{ marginBottom: 12 }}>
+                <div style={{ marginTop: 12 }}>
                   {displayModel.schoolHistory.tableIntro && (
-                    <div style={{ fontSize: 12.5, color: '#1e293b', lineHeight: 1.65, marginBottom: 8, textIndent: 22 }}>
+                    <div style={{ fontSize: 12.5, color: '#1e293b', lineHeight: 1.65, marginBottom: 8, textIndent: 22, textAlign: 'left' }}>
                       {displayModel.schoolHistory.tableIntro}
                     </div>
                   )}
@@ -2933,24 +2969,6 @@ export default function AdminReportView({
                   </div>
                 </div>
               )}
-
-              <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 6 }}>
-                ខ. ការងារគ្រប់គ្រង លិខិតរដ្ឋបាល និងរបាយការណ៍
-              </div>
-              <div
-                style={{
-                  background: '#f0f9ff',
-                  border: '1px solid #bae6fd',
-                  borderRadius: 8,
-                  padding: 10,
-                  fontSize: 12.5,
-                  color: '#0c4a6e'
-                }}
-              >
-                {(displayModel.adminDocLines || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 3 }}>- {line}</div>
-                ))}
-              </div>
             </div>
 
             {/* Card IV: បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ */}

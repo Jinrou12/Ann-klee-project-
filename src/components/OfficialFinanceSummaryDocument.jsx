@@ -59,15 +59,15 @@ export default function OfficialFinanceSummaryDocument({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
-          marginBottom: 10
+          marginBottom: 12
         }}
       >
         {/* Left: Ministry & School with Centered Logo */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.5 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.85 }}>
           <img
             src="/logo.png?v=nobg1"
             alt="Logo"
-            style={{ width: 52, height: 52, objectFit: 'contain', marginBottom: 4 }}
+            style={{ width: 68, height: 68, objectFit: 'contain', marginBottom: 6 }}
           />
           <div className="font-moul" style={{ fontSize: '11pt', textAlign: 'center', whiteSpace: 'nowrap' }}>
             {metadata.ministry}
@@ -81,14 +81,16 @@ export default function OfficialFinanceSummaryDocument({
         </div>
 
         {/* Right: National Kingdom & Motto */}
-        <div style={{ textAlign: 'center', lineHeight: 1.5 }}>
+        <div style={{ textAlign: 'center', lineHeight: 1.8, paddingTop: 6 }}>
           <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
             ព្រះរាជាណាចក្រកម្ពុជា
           </div>
           <div className="font-moul" style={{ fontSize: '12pt', whiteSpace: 'nowrap' }}>
             ជាតិ សាសនា ព្រះមហាក្សត្រ
           </div>
-          <KhmerRoyalDivider />
+          <div style={{ marginTop: 4 }}>
+            <KhmerRoyalDivider />
+          </div>
         </div>
       </div>
 
@@ -100,7 +102,7 @@ export default function OfficialFinanceSummaryDocument({
         <div className="font-moul" style={{ fontSize: '14pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
           ស្ដីពី
         </div>
-        <div className="font-moul" style={{ fontSize: '14pt', whiteSpace: 'nowrap' }}>
+        <div className="font-moul" style={{ fontSize: '12pt', whiteSpace: 'nowrap' }}>
           {summaryModel.reportTitle}
         </div>
       </div>
@@ -308,21 +310,21 @@ export default function OfficialFinanceSummaryDocument({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
-          marginTop: 28,
-          fontSize: '11pt',
-          lineHeight: 1.6
+          marginTop: 26,
+          fontSize: '12pt',
+          lineHeight: 1.9
         }}
       >
         {/* Left Signature: School Director */}
         <div style={{ textAlign: 'center', flex: '0 0 46%', maxWidth: '46%' }}>
-          <div className="font-moul" style={{ fontSize: '11pt', marginBottom: 4, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginBottom: 6, whiteSpace: 'nowrap' }}>
             បានឃើញ និង……………..
           </div>
-          <div style={{ whiteSpace: 'nowrap' }}>
+          <div style={{ whiteSpace: 'nowrap', marginBottom: 4 }}>
             ថ្ងៃ………..…….ខែ………..….ឆ្នាំ{reportDates.zodiac || 'មមី'} {reportDates.sak || 'អដ្ឋស័ក'} ព.ស.{reportDates.beYear || '២៥៧០'}
           </div>
           <div style={{ whiteSpace: 'nowrap' }}>ថ្ងៃទី………. ខែ……….. ឆ្នាំ{reportDates.yearKhmer}</div>
-          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 8, paddingBottom: 24, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 10, paddingBottom: 24, whiteSpace: 'nowrap' }}>
             {(!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
               ? 'នាយកសាលា'
               : metadata.directorTitle}
@@ -331,9 +333,9 @@ export default function OfficialFinanceSummaryDocument({
 
         {/* Right Signature: Reporter */}
         <div style={{ textAlign: 'center', flex: '0 0 53%', maxWidth: '53%' }}>
-          <div style={{ whiteSpace: 'nowrap' }}>{reportDates.lunarDateText}</div>
+          <div style={{ whiteSpace: 'nowrap', marginBottom: 4 }}>{reportDates.lunarDateText}</div>
           <div style={{ whiteSpace: 'nowrap' }}>{reportDates.solarDateTextFinance}</div>
-          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 8, paddingBottom: 24, whiteSpace: 'nowrap' }}>
+          <div className="font-moul" style={{ fontSize: '12pt', marginTop: 10, paddingBottom: 24, whiteSpace: 'nowrap' }}>
             {metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
           </div>
         </div>

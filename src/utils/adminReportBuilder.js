@@ -1111,8 +1111,9 @@ export function buildAdminReportDisplayModel({
       ? rawCustomSubj
       : defaultAutoSubject;
 
-  const introParagraph = rawReport.customIntroParagraph ||
-    `សេចក្ដីដូចមានចែងក្នុងកម្មវត្ថុខាងលើ ខ្ញុំព្រះករុណាមានកិត្តិយស សូមអនុញ្ញាតប្រគេន ព្រះធម្មសាលវង្ស ព្រះអនុគណ មេត្តាជ្រាបដ៏ខ្ពង់ខ្ពស់នូវរបាយការណ៍${inPeriodPhrase}កន្លងទៅនេះ គណៈគ្រប់គ្រងសាលាបានបំពេញការងារសម្រេចបានជាលទ្ធផលដូចខាងក្រោម៖`;
+  const defaultAutoIntroParagraph = `សេចក្ដីដូចមានចែងក្នុងកម្មវត្ថុខាងលើ ខ្ញុំព្រះករុណាមានកិត្តិយស សូមអនុញ្ញាតប្រគេន ព្រះធម្មសាលវង្ស ព្រះអនុគណ មេត្តាជ្រាបដ៏ខ្ពង់ខ្ពស់នូវរបាយការណ៍${inPeriodPhrase}កន្លងទៅនេះ គណៈគ្រប់គ្រងសាលាបានបំពេញការងារសម្រេចបានជាលទ្ធផលដូចខាងក្រោម៖`;
+  const rawCustomIntro = String(rawReport.customIntroParagraph || '').trim();
+  const introParagraph = rawCustomIntro || defaultAutoIntroParagraph;
 
   // Format Section II Student Stats lines
   const st = rawReport.studentStats || {};
@@ -1215,6 +1216,7 @@ export function buildAdminReportDisplayModel({
     recipientTitle: rawReport.recipientTitle || DEFAULT_RECIPIENT_TITLE,
     defaultAutoSubject,
     subjectText,
+    defaultAutoIntroParagraph,
     introParagraph,
     section1Intro: rawReport.section1Intro || DEFAULT_SECTION1_INTRO,
     managementRoles: rawReport.managementRoles || DEFAULT_MANAGEMENT_ROLES,

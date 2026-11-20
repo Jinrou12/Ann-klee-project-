@@ -3,6 +3,31 @@ import { jsPDF } from 'jspdf';
 import { isFileCaptureActive, recordCapturedFile } from './openXmlZip.js';
 
 /**
+ * Permanent WYSIWYG Table Border Guard:
+ * Enforces single-edge 0.55px hairline borders on every cloned table before html2canvas rasterizes it,
+ * guaranteeing Screen Preview === Downloaded PDF (never double-drawn thick black borders).
+ */
+function enforceWysiwygTableHairlines(rootEl) {
+  if (!rootEl || typeof rootEl.querySelectorAll !== 'function') return;
+  const tables = rootEl.querySelectorAll('table:not(.borderless-table)');
+  tables.forEach(tbl => {
+    tbl.style.setProperty('border-collapse', 'separate', 'important');
+    tbl.style.setProperty('border-spacing', '0', 'important');
+    tbl.style.setProperty('border-top', '0.55px solid #4b5563', 'important');
+    tbl.style.setProperty('border-left', '0.55px solid #4b5563', 'important');
+    tbl.style.setProperty('border-right', 'none', 'important');
+    tbl.style.setProperty('border-bottom', 'none', 'important');
+    const cells = tbl.querySelectorAll('th:not(.no-print), td:not(.no-print)');
+    cells.forEach(cell => {
+      cell.style.setProperty('border-top', 'none', 'important');
+      cell.style.setProperty('border-left', 'none', 'important');
+      cell.style.setProperty('border-right', '0.55px solid #4b5563', 'important');
+      cell.style.setProperty('border-bottom', '0.55px solid #4b5563', 'important');
+    });
+  });
+}
+
+/**
  * High-definition PDF Exporter for Khmer Administrative Documents (A4 Standard)
  * Uses jsPDF margin coordinates to guarantee exact Ministry 25mm top margin,
  * 16mm left/right, and 20mm bottom margins regardless of device screen size.
@@ -125,6 +150,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
                 curr = curr.parentElement;
               }
 
+              clonedEl.classList.add('pdf-rendering-active');
               clonedEl.style.position = 'fixed';
               clonedEl.style.left = '0px';
               clonedEl.style.top = '0px';
@@ -142,6 +168,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
               clonedEl.style.zIndex = '99999';
               clonedEl.style.webkitTextSizeAdjust = '100%';
               clonedEl.style.textSizeAdjust = '100%';
+              enforceWysiwygTableHairlines(clonedEl);
             }
           });
 
@@ -263,6 +290,7 @@ export async function exportElementToPdf(elementOrSelector, filename = 'document
         if (!clonedEl) return;
 
         // 1. Neutralize any ancestor CSS transforms/clipping (e.g. A4SheetScaler on mobile/narrow viewports or offscreen containers)
+        enforceWysiwygTableHairlines(clonedEl);
         let curr = clonedEl.parentElement;
         while (curr && curr !== clonedDoc.body && curr !== clonedDoc.documentElement) {
           curr.style.transform = 'none';

@@ -9,44 +9,48 @@ const MAX_PAGE_CONTENT_PX = 1035;
 
 export const SCHOOL_HISTORY_TABLE_COLS = [
   { key: 'no', label: 'ល.រ', width: '5.5%' },
-  { key: 'academicYearDisplay', label: 'ឆ្នាំសិក្សា', width: '17%' },
+  { key: 'academicYearDisplay', label: 'ឆ្នាំសិក្សា', width: '16.5%' },
   { key: 'kgText', label: 'ថ្នាក់មត្តេយ្យ', width: '14%' },
   { key: 'g1Text', label: 'ថ្នាក់ទី១', width: '13.5%' },
   { key: 'g2Text', label: 'ថ្នាក់ទី២', width: '13.5%' },
   { key: 'g3Text', label: 'ថ្នាក់ទី៣', width: '13.5%' },
-  { key: 'totalText', label: 'សរុប', width: '14%' },
-  { key: 'note', label: 'ផ្សេងៗ', width: '9%' }
+  { key: 'totalText', label: 'សរុប', width: '15%' },
+  { key: 'note', label: 'ផ្សេងៗ', width: '8.5%' }
 ];
 
 const thStyle = {
-  border: '1px solid #000000',
-  padding: '6px 3px',
+  padding: '5px 2px',
   textAlign: 'center',
   verticalAlign: 'middle',
   fontFamily: MOUL_FONT,
   fontWeight: 400,
-  fontSize: 12.2,
+  fontSize: 12.8,
   lineHeight: 1.45,
   color: '#000000',
-  background: '#ffffff'
+  background: '#ffffff',
+  overflow: 'hidden',
+  boxSizing: 'border-box'
 };
 
 const tdStyle = {
-  border: '1px solid #000000',
-  padding: '5px 3px',
+  padding: '4.5px 3px',
   textAlign: 'center',
   verticalAlign: 'middle',
   fontFamily: SIEMREAP_FONT,
-  fontSize: 13.5,
+  fontWeight: 400,
+  fontSize: 13.8,
   lineHeight: 1.45,
-  color: '#000000'
+  color: '#000000',
+  background: '#ffffff',
+  overflow: 'hidden',
+  boxSizing: 'border-box'
 };
 
 const tdTotalStyle = {
   ...tdStyle,
   fontWeight: 700,
-  fontSize: 12.6,
-  padding: '6px 2px',
+  fontSize: 13,
+  padding: '5.5px 2px',
   whiteSpace: 'nowrap'
 };
 
@@ -65,9 +69,11 @@ export function renderSchoolHistoryTableChunk({
   return (
     <div key={keyPrefix} style={{ marginTop, marginBottom, width: '100%' }}>
       <table
+        className="school-history-grid"
         style={{
           width: '100%',
-          borderCollapse: 'collapse',
+          borderCollapse: 'separate',
+          borderSpacing: 0,
           tableLayout: 'fixed',
           background: '#ffffff'
         }}
@@ -102,7 +108,7 @@ export function renderSchoolHistoryTableChunk({
           {includeTotalsRow && totals && (
             <tr>
               <td style={tdTotalStyle}></td>
-              <td style={{ ...tdTotalStyle, fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 11.6 }}>
+              <td style={{ ...tdTotalStyle, fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 12.2 }}>
                 {totals.label}
               </td>
               <td style={tdTotalStyle}>{totals.kgText}</td>
@@ -140,10 +146,10 @@ export default function OfficialSchoolHistoryDocument({
     if (!historyModel) return [];
     const blocks = [];
 
-    // 1. Official Top Header (Left: Logo + Ministry + School | Right: Kingdom + Motto)
+    // 1. Official Top Header (Left: Logo + Ministry + School | Right: Kingdom + Motto — standardized to match other official docs)
     blocks.push({
       id: 'hist-header',
-      estPx: 148,
+      estPx: 156,
       node: (
         <div
           key="hist-header"
@@ -151,57 +157,57 @@ export default function OfficialSchoolHistoryDocument({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'flex-start',
-            marginBottom: 8
+            marginBottom: 10
           }}
         >
           <div
             style={{
-              width: '54%',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               textAlign: 'center',
               color: NAVY_HEADER_COLOR,
-              lineHeight: 1.55
+              lineHeight: 1.62
             }}
           >
             <img
               src="/logo.png?v=nobg1"
               alt="Logo"
               style={{
-                width: 54,
-                height: 54,
+                width: 52,
+                height: 52,
                 objectFit: 'contain',
                 marginBottom: 4
               }}
             />
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 13.5, whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15, whiteSpace: 'nowrap' }}>
               មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម
             </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 13.2, whiteSpace: 'nowrap' }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, whiteSpace: 'nowrap' }}>
               សាលាពុទ្ធិកបឋមសិក្សា កម្រង ហ៊ុន ណេង
             </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 13.2 }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, whiteSpace: 'nowrap' }}>
               ក្រុងកំពង់ចាម
             </div>
           </div>
 
           <div
             style={{
-              width: '44%',
               textAlign: 'center',
               color: '#000000',
-              lineHeight: 1.58,
-              paddingTop: 6
+              lineHeight: 1.55,
+              paddingTop: 10
             }}
           >
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 16.5 }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 17.5, whiteSpace: 'nowrap' }}>
               ព្រះរាជាណាចក្រកម្ពុជា
             </div>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5 }}>
+            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, whiteSpace: 'nowrap' }}>
               ជាតិ{'\u00A0\u00A0'}សាសនា{'\u00A0\u00A0'}ព្រះមហាក្សត្រ
             </div>
-            <KhmerRoyalDivider width={118} height={8} color="#000000" />
+            <div style={{ marginTop: 2 }}>
+              <KhmerRoyalDivider width={120} height={8} color="#000000" />
+            </div>
           </div>
         </div>
       )
@@ -210,21 +216,21 @@ export default function OfficialSchoolHistoryDocument({
     // 2. Document Title
     blocks.push({
       id: 'hist-title',
-      estPx: 92,
+      estPx: 96,
       node: (
         <div
           key="hist-title"
           style={{
             textAlign: 'center',
             color: NAVY_HEADER_COLOR,
-            lineHeight: 1.62,
+            lineHeight: 1.64,
             marginTop: 2,
             marginBottom: 10
           }}
         >
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 16.2 }}>របាយការណ៍</div>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>ស្ដីពី</div>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 17 }}>របាយការណ៍</div>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.5 }}>ស្ដីពី</div>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.5 }}>
             {historyModel.title}
           </div>
         </div>
@@ -234,13 +240,13 @@ export default function OfficialSchoolHistoryDocument({
     // 3. Section ១.១. សាវតារ
     blocks.push({
       id: 'hist-sec-heading',
-      estPx: 32,
+      estPx: 34,
       node: (
         <div
           key="hist-sec-heading"
           style={{
             fontFamily: MOUL_FONT,
-            fontSize: 14.2,
+            fontSize: 15.2,
             color: NAVY_HEADER_COLOR,
             paddingLeft: 18,
             marginBottom: 4
@@ -255,7 +261,7 @@ export default function OfficialSchoolHistoryDocument({
     (historyModel.backgroundParagraphs || []).forEach((para, idx) => {
       blocks.push({
         id: `hist-bg-${idx}`,
-        estPx: Math.max(40, Math.ceil(para.length / 66) * 26),
+        estPx: Math.max(42, Math.ceil(para.length / 62) * 27),
         node: (
           <div
             key={`hist-bg-${idx}`}
@@ -265,7 +271,7 @@ export default function OfficialSchoolHistoryDocument({
               textIndent: 46,
               lineHeight: 1.78,
               marginBottom: 6,
-              fontSize: 14.4
+              fontSize: 15.2
             }}
           >
             {para}
@@ -278,7 +284,7 @@ export default function OfficialSchoolHistoryDocument({
     if (historyModel.tableIntro) {
       blocks.push({
         id: 'hist-table-intro',
-        estPx: 62,
+        estPx: 66,
         node: (
           <div
             key="hist-table-intro"
@@ -288,7 +294,7 @@ export default function OfficialSchoolHistoryDocument({
               textIndent: 46,
               lineHeight: 1.78,
               marginBottom: 8,
-              fontSize: 14.4
+              fontSize: 15.2
             }}
           >
             {historyModel.tableIntro}
@@ -313,9 +319,9 @@ export default function OfficialSchoolHistoryDocument({
         }}
       >
         <div style={{ width: '58%', textAlign: 'center', lineHeight: 1.75 }}>
-          <div style={{ fontSize: 14.4 }}>{historyModel.lunarDateLine}</div>
-          <div style={{ fontSize: 14.4, marginBottom: 6 }}>{historyModel.solarDateLine}</div>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 14.8, marginTop: 2 }}>
+          <div style={{ fontSize: 15.2 }}>{historyModel.lunarDateLine}</div>
+          <div style={{ fontSize: 15.2, marginBottom: 6 }}>{historyModel.solarDateLine}</div>
+          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginTop: 2 }}>
             {historyModel.signerTitle || 'នាយកសាលា'}
           </div>
         </div>
@@ -489,6 +495,7 @@ export default function OfficialSchoolHistoryDocument({
       {/* Hidden exact-width measurement probe */}
       <div
         ref={measureRef}
+        className="admin-a4-measure-probe"
         aria-hidden="true"
         style={{
           position: 'fixed',
@@ -500,7 +507,7 @@ export default function OfficialSchoolHistoryDocument({
           visibility: 'hidden',
           pointerEvents: 'none',
           fontFamily: SIEMREAP_FONT,
-          fontSize: 14.4,
+          fontSize: 15.2,
           lineHeight: 1.78,
           color: '#000000'
         }}
@@ -510,7 +517,10 @@ export default function OfficialSchoolHistoryDocument({
             {b.node}
           </div>
         ))}
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <table
+          className="school-history-grid"
+          style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}
+        >
           <colgroup>
             {SCHOOL_HISTORY_TABLE_COLS.map(col => (
               <col key={col.key} style={{ width: col.width }} />
@@ -541,7 +551,7 @@ export default function OfficialSchoolHistoryDocument({
             {historyModel.totals && (
               <tr data-measure-total="true">
                 <td style={tdTotalStyle}></td>
-                <td style={{ ...tdTotalStyle, fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 11.6 }}>
+                <td style={{ ...tdTotalStyle, fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 12.2 }}>
                   {historyModel.totals.label}
                 </td>
                 <td style={tdTotalStyle}>{historyModel.totals.kgText}</td>
@@ -578,7 +588,7 @@ export default function OfficialSchoolHistoryDocument({
             borderRadius: 2,
             boxSizing: 'border-box',
             fontFamily: SIEMREAP_FONT,
-            fontSize: 14.4,
+            fontSize: 15.2,
             lineHeight: 1.78,
             wordSpacing: 'normal',
             letterSpacing: 0,

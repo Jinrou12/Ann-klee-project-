@@ -1,10 +1,18 @@
 import React, { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 import { toKhmerDigits } from '../utils/khmerNumerals';
+import {
+  formatMinistryLunarDateLine,
+  formatMinistrySolarDateLine
+} from '../utils/ministryReportBuilder';
 
-const SIEMREAP_FONT = "'Khmer OS Siemreap', 'Siemreap', 'Battambang', sans-serif";
 const MOUL_FONT = "'Khmer OS Muol Light', 'Khmer OS Moul Light', 'Khmer OS Muol', 'Moul', serif";
-const MAX_PAGE_CONTENT_PX = 1025;
+const BATTAMBANG_FONT = "'Khmer OS Battambang', 'Kh Battambang', 'Battambang', 'Khmer OS Siemreap', sans-serif";
+const RUNNING_HF_TEXT =
+  'របាយការណ៍ ប្រចាំឆ្នាំ សាលាពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម ខេត្តកំពង់ចាម';
+const RUNNING_HF_BORDER_COLOR = '#823B0B';
+// Content box height inside 1123px A4 sheet (1123 - 62px top header area - 64px bottom footer area = 997px; 15px safety buffer)
+const MAX_PAGE_CONTENT_PX = 982;
 
 function normalizeSingleSpaces(str = '') {
   return String(str || '')
@@ -63,9 +71,13 @@ function getDescVisualUnits(str = '') {
       units += 0.65;
       continue;
     }
-    // Base Khmer consonants & digits
+    // Base Khmer consonants, digits & Riel sign (៛)
     if ((code >= 0x1780 && code <= 0x17b3) || (code >= 0x17e0 && code <= 0x17e9)) {
       units += 1.12;
+      continue;
+    }
+    if (code === 0x17db) {
+      units += 1.0;
       continue;
     }
     // Uppercase ASCII
@@ -85,24 +97,45 @@ function getDescVisualUnits(str = '') {
 }
 
 /**
- * Render description cell content:
- * - Short/medium items (<= maxSingleLineUnits) stay strictly on 1 line (scaling font slightly if needed)
- * - Longer items wrap cleanly into at most 2 lines (never 3+ lines) with adaptive font size
+ * Auto-fit table cell content inside an exact pixel budget (`innerPx`) so:
+ * - Numeric/short values NEVER break onto 2 lines and NEVER bleed across cell borders
+ * - Descriptions/notes stay on 1 crisp line up to generous length by scaling font smoothly,
+ *   and only wrap cleanly inside their own cell (max 2 lines) when genuinely very long.
  */
-function renderAdaptiveDescContent(text, maxSingleLineUnits = 19.0) {
+function renderFitTableCell(
+  text,
+  innerPx,
+  {
+    baseFont = 13.8,
+    minFont = 10.2,
+    bold = false,
+    moul = false,
+    allowWrap = false,
+    align = 'center'
+  } = {}
+) {
   const clean = normalizeSingleSpaces(text);
-  const units = getDescVisualUnits(clean);
+  if (!clean) return '';
 
-  if (units <= maxSingleLineUnits) {
-    const fontSize = units <= 14.5 ? 14.2 : units <= 16.8 ? 13.4 : 12.4;
+  const units = getDescVisualUnits(clean);
+  // Empirically calibrated px-per-unit ratios for Khmer OS Battambang / Muol Light with ~10% safety headroom
+  const ratio = moul ? 0.94 : bold ? 0.82 : 0.78;
+  const maxFitFont = units > 0 ? innerPx / (units * ratio) : baseFont;
+
+  if (maxFitFont >= minFont || !allowWrap) {
+    const floorMin = allowWrap ? minFont : Math.min(9.4, minFont);
+    const computedFont = Math.min(baseFont, Math.max(floorMin, Math.floor(maxFitFont * 5) / 5));
     return (
       <div
         style={{
           whiteSpace: 'nowrap',
           overflow: 'hidden',
-          textOverflow: 'clip',
-          fontSize,
-          lineHeight: 1.45
+          textOverflow: 'ellipsis',
+          fontSize: computedFont,
+          lineHeight: 1.45,
+          textAlign: align,
+          width: '100%',
+          maxWidth: '100%'
         }}
       >
         {clean}
@@ -110,7 +143,8 @@ function renderAdaptiveDescContent(text, maxSingleLineUnits = 19.0) {
     );
   }
 
-  const twoLineFontSize = units <= 30 ? 13.2 : units <= 38 ? 12.2 : 11.4;
+  // Only genuinely long text (when allowWrap === true and text exceeds single-line minFont capacity) wraps inside cell
+  const twoLineFont = Math.min(12.6, Math.max(10.6, Math.floor((maxFitFont * 1.85) * 5) / 5));
   return (
     <div
       style={{
@@ -119,8 +153,12 @@ function renderAdaptiveDescContent(text, maxSingleLineUnits = 19.0) {
         WebkitBoxOrient: 'vertical',
         overflow: 'hidden',
         wordBreak: 'break-word',
-        fontSize: twoLineFontSize,
-        lineHeight: 1.42
+        overflowWrap: 'anywhere',
+        fontSize: twoLineFont,
+        lineHeight: 1.38,
+        textAlign: align,
+        width: '100%',
+        maxWidth: '100%'
       }}
     >
       {clean}
@@ -129,27 +167,32 @@ function renderAdaptiveDescContent(text, maxSingleLineUnits = 19.0) {
 }
 
 const thCellStyle = {
-  border: '1px solid #000000',
-  padding: '4px 5px',
+  padding: '4px 3px',
   fontFamily: MOUL_FONT,
   fontWeight: 400,
-  fontSize: 13.5,
+  fontSize: 13,
   textAlign: 'center',
   verticalAlign: 'middle',
   background: '#ffffff',
   color: '#000000',
-  lineHeight: 1.5,
-  whiteSpace: 'nowrap'
+  lineHeight: 1.45,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'clip',
+  boxSizing: 'border-box'
 };
 
 const tdCellStyle = {
-  border: '1px solid #000000',
-  padding: '4px 6px',
-  fontFamily: SIEMREAP_FONT,
-  fontSize: 14.2,
+  padding: '4px 4px',
+  fontFamily: BATTAMBANG_FONT,
+  fontWeight: 400,
+  fontSize: 13.8,
   verticalAlign: 'middle',
+  background: '#ffffff',
   color: '#000000',
-  lineHeight: 1.6
+  lineHeight: 1.5,
+  overflow: 'hidden',
+  boxSizing: 'border-box'
 };
 
 /**
@@ -183,7 +226,8 @@ export default function OfficialMinistryReportDocument({
               paddingTop: topPad,
               marginBottom: 3,
               fontFamily: MOUL_FONT,
-              fontSize: 15.2,
+              fontWeight: 400,
+              fontSize: 16,
               color: '#000000'
             }}
           >
@@ -205,8 +249,9 @@ export default function OfficialMinistryReportDocument({
               paddingLeft: indent,
               paddingTop: 3,
               marginBottom: 2,
-              fontFamily: MOUL_FONT,
-              fontSize: 14.5,
+              fontFamily: BATTAMBANG_FONT,
+              fontWeight: 700,
+              fontSize: 16,
               color: '#000000'
             }}
           >
@@ -222,7 +267,7 @@ export default function OfficialMinistryReportDocument({
         if (!line) return;
         blocks.push({
           id: `${prefixKey}-${idx}`,
-          estPx: Math.max(29, Math.ceil(line.length / 58) * 28),
+          estPx: Math.max(29, Math.ceil(line.length / 54) * 28),
           node: (
             <div
               key={`${prefixKey}-${idx}`}
@@ -232,7 +277,7 @@ export default function OfficialMinistryReportDocument({
                 alignItems: 'baseline',
                 textAlign: 'left',
                 marginBottom: 2,
-                lineHeight: 1.78
+                lineHeight: 1.72
               }}
             >
               <span style={{ width: 14, flexShrink: 0 }}>-</span>
@@ -246,7 +291,7 @@ export default function OfficialMinistryReportDocument({
     // 1. Header + Report Title + Section ក.ព័ត៌មានទូទៅ
     blocks.push({
       id: 'header-and-sec-a',
-      estPx: 495,
+      estPx: 548,
       node: (
         <div key="header-and-sec-a" style={{ marginBottom: 6 }}>
           {/* Kingdom Header Centered */}
@@ -260,9 +305,14 @@ export default function OfficialMinistryReportDocument({
             </div>
           </div>
 
-          {/* Left Provincial Dept & School (aligned cleanly to left block like OfficialAdminReportDocument) */}
-          <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 4, marginBottom: 10 }}>
-            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', lineHeight: 1.58, minWidth: 265 }}>
+          {/* Left Provincial Dept & School with Official Logo (original 15/14.5 font sizes + airy lineHeight) */}
+          <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 6, marginBottom: 12 }}>
+            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', lineHeight: 1.65, minWidth: 265 }}>
+              <img
+                src="/logo.png?v=nobg1"
+                alt="Logo"
+                style={{ width: 50, height: 50, objectFit: 'contain', marginBottom: 5 }}
+              />
               <div style={{ fontFamily: MOUL_FONT, fontSize: 15, whiteSpace: 'nowrap' }}>
                 មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម
               </div>
@@ -283,7 +333,7 @@ export default function OfficialMinistryReportDocument({
           </div>
 
           {/* ក. ព័ត៌មានទូទៅ */}
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 4 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 16, marginBottom: 4 }}>
             ក.ព័ត៌មានទូទៅ
           </div>
           <div style={{ paddingLeft: 18 }}>
@@ -294,16 +344,18 @@ export default function OfficialMinistryReportDocument({
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
-                    maxWidth: 640,
-                    lineHeight: 1.78,
+                    alignItems: 'baseline',
+                    gap: 12,
+                    width: '100%',
+                    lineHeight: 1.72,
                     marginBottom: 2
                   }}
                 >
                   <span style={{ whiteSpace: 'nowrap' }}>-{row.label}</span>
-                  <span style={{ minWidth: 155, textAlign: 'left', whiteSpace: 'nowrap' }}>{row.value}</span>
+                  <span style={{ minWidth: 165, textAlign: 'left', whiteSpace: 'nowrap' }}>{row.value}</span>
                 </div>
               ) : (
-                <div key={`gen-${idx}`} style={{ lineHeight: 1.78, marginBottom: 2 }}>
+                <div key={`gen-${idx}`} style={{ lineHeight: 1.72, marginBottom: 2 }}>
                   -{row.label}
                 </div>
               )
@@ -339,7 +391,7 @@ export default function OfficialMinistryReportDocument({
     pushSubHeading('sec-e2', 'ង.២. ការទទួលជំនួយពីសប្បុរសជន');
     pushBulletList('e2', ministryModel.donationLines, 28);
 
-    // Helper for Hourly Teacher Tables (ច & ច.១)
+    // Helper for Hourly Teacher Tables (ច & ច.១) — tableWidth = 694px
     const renderHourlySemesterTableBlock = (key, title, tableData) => {
       const rowCount = (tableData?.rows || []).length || 5;
       blocks.push({
@@ -347,38 +399,52 @@ export default function OfficialMinistryReportDocument({
         estPx: 110 + rowCount * 34,
         node: (
           <div key={key} style={{ marginTop: 8, marginBottom: 10 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>{title}</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <div style={{ fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 16, marginBottom: 6 }}>{title}</div>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', background: '#ffffff' }}>
               <colgroup>
                 <col style={{ width: '6%' }} />
+                <col style={{ width: '16%' }} />
                 <col style={{ width: '18%' }} />
-                <col style={{ width: '19%' }} />
-                <col style={{ width: '19%' }} />
-                <col style={{ width: '14%' }} />
+                <col style={{ width: '18%' }} />
                 <col style={{ width: '15%' }} />
-                <col style={{ width: '9%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '11%' }} />
               </colgroup>
               <thead>
                 <tr>
                   <th style={{ ...thCellStyle, width: '6%' }}>ល.រ</th>
-                  <th style={{ ...thCellStyle, width: '18%' }}>បរិយាយ</th>
-                  <th style={{ ...thCellStyle, width: '19%' }}>ចំណូលរួម</th>
-                  <th style={{ ...thCellStyle, width: '19%' }}>ចំណាយ</th>
-                  <th style={{ ...thCellStyle, width: '14%' }}>ចំនួនម៉ោង</th>
-                  <th style={{ ...thCellStyle, width: '15%' }}>សមតុល្យ</th>
-                  <th style={{ ...thCellStyle, width: '9%' }}>ផ្សេងៗ</th>
+                  <th style={{ ...thCellStyle, width: '16%' }}>បរិយាយ</th>
+                  <th style={{ ...thCellStyle, width: '18%' }}>ចំណូលរួម</th>
+                  <th style={{ ...thCellStyle, width: '18%' }}>ចំណាយ</th>
+                  <th style={{ ...thCellStyle, width: '15%' }}>ចំនួនម៉ោង</th>
+                  <th style={{ ...thCellStyle, width: '16%' }}>សមតុល្យ</th>
+                  <th style={{ ...thCellStyle, width: '11%' }}>ផ្សេងៗ</th>
                 </tr>
               </thead>
               <tbody>
                 {(tableData?.rows || []).map((r, i) => (
                   <tr key={i}>
-                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.no}</td>
-                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.label}</td>
-                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.incomeText}</td>
-                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.expenseText}</td>
-                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.hoursText}</td>
-                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.balanceText}</td>
-                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.note || ''}</td>
+                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      {renderFitTableCell(r.no, 33)}
+                    </td>
+                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      {renderFitTableCell(r.label, 102)}
+                    </td>
+                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      {renderFitTableCell(r.incomeText, 116)}
+                    </td>
+                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      {renderFitTableCell(r.expenseText, 116)}
+                    </td>
+                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      {renderFitTableCell(r.hoursText, 95)}
+                    </td>
+                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      {renderFitTableCell(r.balanceText, 102)}
+                    </td>
+                    <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                      {renderFitTableCell(r.note || '', 68, { baseFont: 13.4, minFont: 7.5, allowWrap: false })}
+                    </td>
                   </tr>
                 ))}
                 <tr>
@@ -387,23 +453,24 @@ export default function OfficialMinistryReportDocument({
                     style={{
                       ...tdCellStyle,
                       fontFamily: MOUL_FONT,
-                      fontSize: 13.2,
+                      fontSize: 12.2,
+                      lineHeight: 1.42,
                       textAlign: 'center'
                     }}
                   >
                     សមតុល្យសាច់ប្រាក់ចំណូល និងចំណាយនៅសល់
                   </td>
                   <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                    {tableData?.sumIncomeText}
+                    {renderFitTableCell(tableData?.sumIncomeText, 116, { bold: true })}
                   </td>
                   <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                    {tableData?.sumExpenseText}
+                    {renderFitTableCell(tableData?.sumExpenseText, 116, { bold: true })}
                   </td>
                   <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                    {tableData?.sumHoursText}
+                    {renderFitTableCell(tableData?.sumHoursText, 95, { bold: true })}
                   </td>
                   <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                    {tableData?.totalBalanceText}
+                    {renderFitTableCell(tableData?.totalBalanceText, 102, { bold: true })}
                   </td>
                   <td style={{ ...tdCellStyle, textAlign: 'center' }}></td>
                 </tr>
@@ -431,57 +498,69 @@ export default function OfficialMinistryReportDocument({
       estPx: 180,
       node: (
         <div key="tbl-hourly-annual" style={{ marginTop: 8, marginBottom: 10 }}>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 16, marginBottom: 6 }}>
             ច.{fmtNum(2)} ចំណូលចំណាយប្រាក់ម៉ោងប្រចាំឆ្នាំ {ministryModel.yearKhmer}
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', background: '#ffffff' }}>
             <colgroup>
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '14%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '21%' }} />
+              <col style={{ width: '19%' }} />
+              <col style={{ width: '19%' }} />
               <col style={{ width: '16%' }} />
+              <col style={{ width: '18%' }} />
             </colgroup>
             <thead>
               <tr>
-                <th style={{ ...thCellStyle, width: '8%' }}>ល.រ</th>
-                <th style={{ ...thCellStyle, width: '22%' }}>បរិយាយ</th>
-                <th style={{ ...thCellStyle, width: '20%' }}>ចំណូល</th>
-                <th style={{ ...thCellStyle, width: '20%' }}>ចំណាយ</th>
-                <th style={{ ...thCellStyle, width: '14%' }}>ចំនួនម៉ោង</th>
-                <th style={{ ...thCellStyle, width: '16%' }}>សមតុល្យ</th>
+                <th style={{ ...thCellStyle, width: '7%' }}>ល.រ</th>
+                <th style={{ ...thCellStyle, width: '21%' }}>បរិយាយ</th>
+                <th style={{ ...thCellStyle, width: '19%' }}>ចំណូល</th>
+                <th style={{ ...thCellStyle, width: '19%' }}>ចំណាយ</th>
+                <th style={{ ...thCellStyle, width: '16%' }}>ចំនួនម៉ោង</th>
+                <th style={{ ...thCellStyle, width: '18%' }}>សមតុល្យ</th>
               </tr>
             </thead>
             <tbody>
               {(ministryModel.hourlyAnnual?.rows || []).map((r, i) => (
                 <tr key={i}>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.no}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.label}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.incomeText}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.expenseText}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.hoursText}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.balanceText}</td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                    {renderFitTableCell(r.no, 40)}
+                  </td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                    {renderFitTableCell(r.label, 136)}
+                  </td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                    {renderFitTableCell(r.incomeText, 123)}
+                  </td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                    {renderFitTableCell(r.expenseText, 123)}
+                  </td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                    {renderFitTableCell(r.hoursText, 102)}
+                  </td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                    {renderFitTableCell(r.balanceText, 116)}
+                  </td>
                 </tr>
               ))}
               <tr>
                 <td
                   colSpan={2}
-                  style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 13.2, textAlign: 'center' }}
+                  style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 12.5, lineHeight: 1.42, textAlign: 'center' }}
                 >
                   សមតុល្យសាច់ប្រាក់ចំណូល និងចំណាយនៅសល់
                 </td>
                 <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                  {ministryModel.hourlyAnnual?.sumIncomeText}
+                  {renderFitTableCell(ministryModel.hourlyAnnual?.sumIncomeText, 123, { bold: true })}
                 </td>
                 <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                  {ministryModel.hourlyAnnual?.sumExpenseText}
+                  {renderFitTableCell(ministryModel.hourlyAnnual?.sumExpenseText, 123, { bold: true })}
                 </td>
                 <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                  {ministryModel.hourlyAnnual?.sumHoursText}
+                  {renderFitTableCell(ministryModel.hourlyAnnual?.sumHoursText, 102, { bold: true })}
                 </td>
                 <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                  {ministryModel.hourlyAnnual?.totalBalanceText}
+                  {renderFitTableCell(ministryModel.hourlyAnnual?.totalBalanceText, 116, { bold: true })}
                 </td>
               </tr>
             </tbody>
@@ -502,79 +581,90 @@ export default function OfficialMinistryReportDocument({
             {isFirstChunk && (
               <div
                 data-part="title"
-                style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}
+                style={{ fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 16, marginBottom: 6 }}
               >
                 {title}
               </div>
             )}
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', background: '#ffffff' }}>
               <colgroup>
-                <col style={{ width: '5.5%' }} />
-                <col style={{ width: '36.5%' }} />
-                <col style={{ width: '12.5%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '10.5%' }} />
-                <col style={{ width: '9%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '40%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '12%' }} />
               </colgroup>
               <thead data-part="thead">
                 <tr>
-                  <th colSpan={7} style={{ ...thCellStyle, fontSize: 14 }}>
+                  <th colSpan={6} style={{ ...thCellStyle, fontSize: 14 }}>
                     {isFirstChunk ? 'តារាងចំណាយ' : 'តារាងចំណាយ (បន្ត)'}
                   </th>
                 </tr>
                 <tr>
-                  <th style={{ ...thCellStyle, width: '5.5%' }}>ល.រ</th>
-                  <th style={{ ...thCellStyle, width: '36.5%' }}>បរិយាយ</th>
-                  <th style={{ ...thCellStyle, width: '12.5%' }}>ចំណូលរួម</th>
-                  <th style={{ ...thCellStyle, width: '15%' }}>ចំណាយ</th>
-                  <th style={{ ...thCellStyle, width: '11%' }}>ចំនួន</th>
-                  <th style={{ ...thCellStyle, width: '10.5%' }}>សមតុល្យ</th>
-                  <th style={{ ...thCellStyle, width: '9%' }}>ផ្សេងៗ</th>
+                  <th style={{ ...thCellStyle, width: '6%' }}>ល.រ</th>
+                  <th style={{ ...thCellStyle, width: '40%' }}>បរិយាយ</th>
+                  <th style={{ ...thCellStyle, width: '13%' }}>ចំណូលរួម</th>
+                  <th style={{ ...thCellStyle, width: '16%' }}>ចំណាយ</th>
+                  <th style={{ ...thCellStyle, width: '13%' }}>ចំនួន</th>
+                  <th style={{ ...thCellStyle, width: '12%' }}>ផ្សេងៗ</th>
                 </tr>
               </thead>
               <tbody>
                 {chunkRows.length === 0 ? (
                   <tr data-row-idx={0}>
-                    <td colSpan={7} style={{ ...tdCellStyle, textAlign: 'center' }}>
+                    <td colSpan={6} style={{ ...tdCellStyle, textAlign: 'center' }}>
                       គ្មាន
                     </td>
                   </tr>
                 ) : (
                   chunkRows.map((r, i) => (
                     <tr key={i} data-row-idx={i}>
-                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.no}</td>
-                      <td style={{ ...tdCellStyle, textAlign: 'left', padding: '3px 6px' }}>
-                        {renderAdaptiveDescContent(r.desc, 19.0)}
-                      </td>
-                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.source}</td>
-                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.amountText}</td>
-                      <td
-                        style={{
-                          ...tdCellStyle,
-                          textAlign: 'center',
-                          whiteSpace: 'nowrap',
-                          fontSize: String(r.qty || '').length > 9 ? 12.6 : 14.2
-                        }}
-                      >
-                        {r.qty}
-                      </td>
-                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.balance}</td>
                       <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                        {r.note ? renderAdaptiveDescContent(r.note, 8) : ''}
+                        {renderFitTableCell(r.no, 33)}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'left', padding: '3px 5px' }}>
+                        {renderFitTableCell(r.desc, 266, {
+                          baseFont: 13.8,
+                          minFont: 11.2,
+                          allowWrap: true,
+                          align: 'left'
+                        })}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                        {renderFitTableCell(r.source, 82, { baseFont: 13.8, minFont: 10.2 })}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                        {renderFitTableCell(r.amountText, 102, { baseFont: 13.8, minFont: 10.2 })}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                        {renderFitTableCell(r.qty, 82, { baseFont: 13.8, minFont: 10.2 })}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                        {r.note
+                          ? renderFitTableCell(r.note, 74, {
+                              baseFont: 13.4,
+                              minFont: 7.5,
+                              allowWrap: false
+                            })
+                          : ''}
                       </td>
                     </tr>
                   ))
                 )}
                 {isLastChunk && (
                   <tr data-part="total">
-                    <td colSpan={3} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
+                    <td colSpan={3} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 13.5, textAlign: 'center' }}>
                       ចំណាយសរុប
                     </td>
-                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      {semData?.totalExpenseText}
+                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
+                      {renderFitTableCell(semData?.totalExpenseText, 102, {
+                        baseFont: 13.8,
+                        minFont: 10,
+                        bold: true
+                      })}
                     </td>
-                    <td colSpan={3} style={tdCellStyle}></td>
+                    <td colSpan={2} style={tdCellStyle}></td>
                   </tr>
                 )}
               </tbody>
@@ -584,7 +674,7 @@ export default function OfficialMinistryReportDocument({
       };
 
       const estExpRowHeights = rawExpRows.map(r =>
-        getDescVisualUnits(r.desc) > 19.0 ? 48 : 30
+        getDescVisualUnits(r.desc) > 30 ? 48 : 30
       );
 
       blocks.push({
@@ -609,12 +699,12 @@ export default function OfficialMinistryReportDocument({
         const segKey = `${keyPrefix}-inc-seg-${chunkIdx}`;
         return (
           <div key={segKey} style={{ marginTop: 4, marginBottom: isLastChunk ? 10 : 6 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', background: '#ffffff' }}>
               <colgroup>
                 <col style={{ width: '7%' }} />
-                <col style={{ width: '43%' }} />
+                <col style={{ width: '42%' }} />
                 <col style={{ width: '18%' }} />
-                <col style={{ width: '12%' }} />
+                <col style={{ width: '13%' }} />
                 <col style={{ width: '20%' }} />
               </colgroup>
               <thead data-part="thead">
@@ -627,10 +717,10 @@ export default function OfficialMinistryReportDocument({
                   <th rowSpan={2} style={{ ...thCellStyle, width: '7%' }}>
                     ល.រ
                   </th>
-                  <th rowSpan={2} style={{ ...thCellStyle, width: '43%' }}>
+                  <th rowSpan={2} style={{ ...thCellStyle, width: '42%' }}>
                     បរិយាយ
                   </th>
-                  <th colSpan={2} style={{ ...thCellStyle, width: '30%' }}>
+                  <th colSpan={2} style={{ ...thCellStyle, width: '31%' }}>
                     ថវិកា
                   </th>
                   <th rowSpan={2} style={{ ...thCellStyle, width: '20%' }}>
@@ -639,7 +729,7 @@ export default function OfficialMinistryReportDocument({
                 </tr>
                 <tr>
                   <th style={{ ...thCellStyle, width: '18%' }}>រៀល</th>
-                  <th style={{ ...thCellStyle, width: '12%' }}>ដុល្លារ</th>
+                  <th style={{ ...thCellStyle, width: '13%' }}>ដុល្លារ</th>
                 </tr>
               </thead>
               <tbody>
@@ -652,31 +742,54 @@ export default function OfficialMinistryReportDocument({
                 ) : (
                   chunkRows.map((r, i) => (
                     <tr key={i} data-row-idx={i}>
-                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.no}</td>
-                      <td style={{ ...tdCellStyle, textAlign: 'left', padding: '3px 6px' }}>
-                        {renderAdaptiveDescContent(r.desc, 19.5)}
-                      </td>
-                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.khrText}</td>
-                      <td style={{ ...tdCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.usdText}</td>
                       <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                        {r.note ? renderAdaptiveDescContent(r.note, 11) : ''}
+                        {renderFitTableCell(r.no, 40)}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'left', padding: '3px 5px' }}>
+                        {renderFitTableCell(r.desc, 280, {
+                          baseFont: 13.8,
+                          minFont: 11.2,
+                          allowWrap: true,
+                          align: 'left'
+                        })}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                        {renderFitTableCell(r.khrText, 116)}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                        {renderFitTableCell(r.usdText, 82)}
+                      </td>
+                      <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                        {r.note
+                          ? renderFitTableCell(r.note, 130, {
+                              baseFont: 13.4,
+                              minFont: 7.5,
+                              allowWrap: false
+                            })
+                          : ''}
                       </td>
                     </tr>
                   ))
                 )}
                 {isLastChunk && (
                   <tr data-part="total">
-                    <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
+                    <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 13.5, textAlign: 'center' }}>
                       សរុបចំណូល
                     </td>
-                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      {semData?.totalIncomeKHRText}
+                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
+                      {renderFitTableCell(semData?.totalIncomeKHRText, 116, { bold: true })}
                     </td>
-                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      {semData?.totalIncomeUSDText}
+                    <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
+                      {renderFitTableCell(semData?.totalIncomeUSDText, 82, { bold: true })}
                     </td>
                     <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                      {semData?.inKindSummary ? renderAdaptiveDescContent(semData.inKindSummary, 11) : ''}
+                      {semData?.inKindSummary
+                        ? renderFitTableCell(semData.inKindSummary, 130, {
+                            baseFont: 13.4,
+                            minFont: 7.5,
+                            allowWrap: false
+                          })
+                        : ''}
                     </td>
                   </tr>
                 )}
@@ -687,7 +800,7 @@ export default function OfficialMinistryReportDocument({
       };
 
       const estIncRowHeights = rawIncRows.map(r =>
-        getDescVisualUnits(r.desc) > 19.5 ? 48 : 30
+        getDescVisualUnits(r.desc) > 32 ? 48 : 30
       );
 
       blocks.push({
@@ -726,43 +839,56 @@ export default function OfficialMinistryReportDocument({
       estPx: 170,
       node: (
         <div key="tbl-office-annual" style={{ marginTop: 8, marginBottom: 10 }}>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 16, marginBottom: 6 }}>
             ច.{fmtNum(5)} ចំណូល ចំណាយ លើសម្ភារៈការិយាល័យ ប្រចាំឆ្នាំ {ministryModel.yearKhmer}
           </div>
           <table
-            style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}
+            style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', background: '#ffffff' }}
           >
+            <colgroup>
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '21%' }} />
+              <col style={{ width: '25%' }} />
+              <col style={{ width: '25%' }} />
+              <col style={{ width: '22%' }} />
+            </colgroup>
             <thead>
               <tr>
-                <th style={{ ...thCellStyle, width: '8%' }}>ល.រ</th>
-                <th style={{ ...thCellStyle, width: '24%' }}>បរិយាយ</th>
-                <th style={{ ...thCellStyle, width: '23%' }}>ចំណូល</th>
-                <th style={{ ...thCellStyle, width: '23%' }}>ចំណាយ</th>
+                <th style={{ ...thCellStyle, width: '7%' }}>ល.រ</th>
+                <th style={{ ...thCellStyle, width: '21%' }}>បរិយាយ</th>
+                <th style={{ ...thCellStyle, width: '25%' }}>ចំណូល</th>
+                <th style={{ ...thCellStyle, width: '25%' }}>ចំណាយ</th>
                 <th style={{ ...thCellStyle, width: '22%' }}>ផ្សេងៗ</th>
               </tr>
             </thead>
             <tbody>
               {(ministryModel.officeAnnual?.rows || []).map((r, i) => (
                 <tr key={i}>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.no}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.label}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.incomeText}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.expenseText}</td>
-                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{r.note || ''}</td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(r.no, 40)}</td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(r.label, 136)}</td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(r.incomeText, 164)}</td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(r.expenseText, 164)}</td>
+                  <td style={{ ...tdCellStyle, textAlign: 'center' }}>
+                    {renderFitTableCell(r.note || '', 144, { baseFont: 13.4, minFont: 7.5, allowWrap: false })}
+                  </td>
                 </tr>
               ))}
               <tr>
-                <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
+                <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 13.2, textAlign: 'center' }}>
                   សរុបទាំងពីរឆមាស
                 </td>
                 <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                  {ministryModel.officeAnnual?.totalIncomeText}
+                  {renderFitTableCell(ministryModel.officeAnnual?.totalIncomeText, 164, { bold: true })}
                 </td>
                 <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                  {ministryModel.officeAnnual?.totalExpenseText}
+                  {renderFitTableCell(ministryModel.officeAnnual?.totalExpenseText, 164, { bold: true })}
                 </td>
                 <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                  {ministryModel.officeAnnual?.inKindSummary || ''}
+                  {renderFitTableCell(ministryModel.officeAnnual?.inKindSummary || '', 144, {
+                    baseFont: 13.4,
+                    minFont: 7.5,
+                    allowWrap: false
+                  })}
                 </td>
               </tr>
             </tbody>
@@ -777,44 +903,50 @@ export default function OfficialMinistryReportDocument({
       estPx: 165,
       node: (
         <div key="tbl-award-ceremony" style={{ marginTop: 8, marginBottom: 10 }}>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 16, marginBottom: 6 }}>
             ចំណូល ចំណាយ កម្មវិធីចែកបណ្ណសរសើរ
           </div>
           <table
-            style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}
+            style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', background: '#ffffff' }}
           >
+            <colgroup>
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '48%' }} />
+              <col style={{ width: '25%' }} />
+              <col style={{ width: '20%' }} />
+            </colgroup>
             <tbody>
               <tr>
-                <td style={{ ...tdCellStyle, width: '8%', textAlign: 'center' }}>{fmtNum(1)}</td>
+                <td style={{ ...tdCellStyle, width: '7%', textAlign: 'center' }}>{renderFitTableCell(fmtNum(1), 40)}</td>
                 <td style={{ ...tdCellStyle, width: '48%' }}>ចំណូលពីការចែកបណ្ណសរសើរ</td>
-                <td style={{ ...tdCellStyle, width: '24%', textAlign: 'center' }}>
-                  {ministryModel.awardCeremonyTable?.income1Text}
+                <td style={{ ...tdCellStyle, width: '25%', textAlign: 'center' }}>
+                  {renderFitTableCell(ministryModel.awardCeremonyTable?.income1Text, 164)}
                 </td>
                 <td style={{ ...tdCellStyle, width: '20%' }}></td>
               </tr>
               <tr>
-                <td style={{ ...tdCellStyle, textAlign: 'center' }}>{fmtNum(2)}</td>
+                <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(fmtNum(2), 40)}</td>
                 <td style={tdCellStyle}>ចំណូលពីវត្ត</td>
                 <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                  {ministryModel.awardCeremonyTable?.income2Text}
+                  {renderFitTableCell(ministryModel.awardCeremonyTable?.income2Text, 164)}
                 </td>
                 <td style={tdCellStyle}></td>
               </tr>
               <tr>
-                <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
+                <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 13.2, textAlign: 'center' }}>
                   ចំណូលសរុបក្នុងកម្មវិធីចែកបណ្ណសរសើរ
                 </td>
                 <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                  {ministryModel.awardCeremonyTable?.totalIncomeText}
+                  {renderFitTableCell(ministryModel.awardCeremonyTable?.totalIncomeText, 164, { bold: true })}
                 </td>
                 <td style={tdCellStyle}></td>
               </tr>
               <tr>
-                <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
+                <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 13.2, textAlign: 'center' }}>
                   ចំណាយសរុបក្នុងកម្មវិធីចែកបណ្ណសរសើរ
                 </td>
                 <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
-                  {ministryModel.awardCeremonyTable?.totalExpenseText}
+                  {renderFitTableCell(ministryModel.awardCeremonyTable?.totalExpenseText, 164, { bold: true })}
                 </td>
                 <td style={tdCellStyle}></td>
               </tr>
@@ -830,26 +962,26 @@ export default function OfficialMinistryReportDocument({
       estPx: 195,
       node: (
         <div key="tbl-grand-annual" style={{ marginTop: 8, marginBottom: 10 }}>
-          <div style={{ fontFamily: MOUL_FONT, fontSize: 15.2, marginBottom: 6 }}>
+          <div style={{ fontFamily: MOUL_FONT, fontWeight: 400, fontSize: 16, marginBottom: 6 }}>
             ចំណូល ចំណាយ សរុបរួមប្រចាំឆ្នាំ{ministryModel.yearKhmer}
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', background: '#ffffff' }}>
             <colgroup>
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '36%' }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '14%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '34%' }} />
+              <col style={{ width: '24%' }} />
+              <col style={{ width: '15%' }} />
               <col style={{ width: '20%' }} />
             </colgroup>
             <thead>
               <tr>
-                <th rowSpan={2} style={{ ...thCellStyle, width: '8%' }}>
+                <th rowSpan={2} style={{ ...thCellStyle, width: '7%' }}>
                   ល.រ
                 </th>
-                <th rowSpan={2} style={{ ...thCellStyle, width: '36%' }}>
+                <th rowSpan={2} style={{ ...thCellStyle, width: '34%' }}>
                   បរិយាយ
                 </th>
-                <th colSpan={2} style={{ ...thCellStyle, width: '36%' }}>
+                <th colSpan={2} style={{ ...thCellStyle, width: '39%' }}>
                   ថវិកា
                 </th>
                 <th rowSpan={2} style={{ ...thCellStyle, width: '20%' }}>
@@ -857,45 +989,57 @@ export default function OfficialMinistryReportDocument({
                 </th>
               </tr>
               <tr>
-                <th style={{ ...thCellStyle, width: '22%' }}>រៀល</th>
-                <th style={{ ...thCellStyle, width: '14%' }}>ដុល្លារ</th>
+                <th style={{ ...thCellStyle, width: '24%' }}>រៀល</th>
+                <th style={{ ...thCellStyle, width: '15%' }}>ដុល្លារ</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td style={{ ...tdCellStyle, textAlign: 'center' }}>{fmtNum(1)}</td>
+                <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(fmtNum(1), 40)}</td>
                 <td style={tdCellStyle}>ចំណូលរួមប្រចាំឆ្នាំ</td>
                 <td style={{ ...tdCellStyle, textAlign: 'center', fontWeight: 700 }}>
-                  {ministryModel.grandAnnualTable?.incomeKHRText}
+                  {renderFitTableCell(ministryModel.grandAnnualTable?.incomeKHRText, 158, { bold: true })}
                 </td>
                 <td style={{ ...tdCellStyle, textAlign: 'center', fontWeight: 700 }}>
-                  {ministryModel.grandAnnualTable?.incomeUSDText}
+                  {renderFitTableCell(ministryModel.grandAnnualTable?.incomeUSDText, 95, { bold: true })}
                 </td>
                 <td style={tdCellStyle}></td>
               </tr>
               <tr>
-                <td style={{ ...tdCellStyle, textAlign: 'center' }}>{fmtNum(2)}</td>
+                <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(fmtNum(2), 40)}</td>
                 <td style={tdCellStyle}>ចំណាយរួមប្រចាំឆ្នាំ</td>
                 <td style={{ ...tdCellStyle, textAlign: 'center', fontWeight: 700 }}>
-                  {ministryModel.grandAnnualTable?.expenseKHRText}
+                  {renderFitTableCell(ministryModel.grandAnnualTable?.expenseKHRText, 158, { bold: true })}
                 </td>
                 <td style={{ ...tdCellStyle, textAlign: 'center', fontWeight: 700 }}>
-                  {ministryModel.grandAnnualTable?.expenseUSDText}
+                  {renderFitTableCell(ministryModel.grandAnnualTable?.expenseUSDText, 95, { bold: true })}
                 </td>
                 <td style={tdCellStyle}></td>
               </tr>
               <tr>
-                <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
+                <td colSpan={2} style={{ ...tdCellStyle, fontFamily: MOUL_FONT, fontSize: 13.5, textAlign: 'center' }}>
                   សមតុល្យ
                 </td>
                 <td style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
-                  {ministryModel.grandAnnualTable?.balanceKHRText}
+                  {renderFitTableCell(ministryModel.grandAnnualTable?.balanceKHRText, 158, {
+                    baseFont: 13.5,
+                    minFont: 10.5,
+                    moul: true
+                  })}
                 </td>
                 <td style={{ ...tdCellStyle, fontFamily: MOUL_FONT, textAlign: 'center' }}>
-                  {ministryModel.grandAnnualTable?.balanceUSDText}
+                  {renderFitTableCell(ministryModel.grandAnnualTable?.balanceUSDText, 95, {
+                    baseFont: 13.5,
+                    minFont: 10.5,
+                    moul: true
+                  })}
                 </td>
                 <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                  {ministryModel.grandAnnualTable?.balanceNote}
+                  {renderFitTableCell(ministryModel.grandAnnualTable?.balanceNote, 130, {
+                    baseFont: 13.4,
+                    minFont: 7.5,
+                    allowWrap: false
+                  })}
                 </td>
               </tr>
             </tbody>
@@ -941,38 +1085,53 @@ export default function OfficialMinistryReportDocument({
     pushBulletList('da', ministryModel.requests, 28);
 
     // 8. Closing Signatures & ចម្លងប្រគេនជូន (CC List)
+    const compactFullLunar = formatMinistryLunarDateLine(ministryModel.lunarDateLine);
+    const compactFullSolar = formatMinistrySolarDateLine(ministryModel.solarDateLine);
+    const compactFullDocNo = String(ministryModel.docNumber || '................').replace(/[.…]{4,}/g, '................').trim();
     blocks.push({
       id: 'closing-sig-and-cc',
-      estPx: 270,
+      estPx: 265,
       node: (
-        <div key="closing-sig-and-cc" style={{ marginTop: 10 }}>
-          {/* Right-aligned Date & Reporter */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ width: '58%', textAlign: 'center', lineHeight: 1.72 }}>
-              <div>{ministryModel.lunarDateLine}</div>
-              <div>{ministryModel.solarDateLine}</div>
-              <div style={{ marginTop: 2 }}>
-                លេខ {ministryModel.docNumber || '.....................................'}{' '}
-                <span style={{ fontFamily: MOUL_FONT }}>{ministryModel.reporterTitle}</span>
+        <div key="closing-sig-and-cc" className="signature-block" style={{ marginTop: 18 }}>
+          {/* Side-by-Side Left Approval & Right Reporter (+1pt => 16.5px with 14/11 lunar & 7/12 solar dots) */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 10,
+              marginLeft: -8,
+              marginRight: -8,
+              fontSize: 16.5,
+              lineHeight: 1.7
+            }}
+          >
+            {/* Left: លេខ .... above បានឃើញ និងឯកភាព + ព្រះនាយក */}
+            <div style={{ flex: '0 0 47%', maxWidth: '47%', textAlign: 'center', paddingTop: 22 }}>
+              <div style={{ whiteSpace: 'nowrap' }}>លេខ {compactFullDocNo}</div>
+              <div style={{ fontFamily: MOUL_FONT, marginTop: 2 }}>បានឃើញ និងឯកភាព</div>
+              <div style={{ fontFamily: MOUL_FONT, marginTop: 6 }}>
+                {ministryModel.signerTitle || 'ព្រះនាយក'}
+              </div>
+            </div>
+
+            {/* Right: Lunar + Solar + អ្នកធ្វើរបាយការណ៍ */}
+            <div style={{ flex: '0 0 51%', maxWidth: '51%', textAlign: 'center' }}>
+              <div style={{ whiteSpace: 'nowrap' }}>{compactFullLunar}</div>
+              <div style={{ whiteSpace: 'nowrap' }}>{compactFullSolar}</div>
+              <div style={{ fontFamily: MOUL_FONT, marginTop: 6 }}>
+                {ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}
               </div>
             </div>
           </div>
 
-          {/* Center-left Approval & Principal */}
-          <div style={{ width: '52%', textAlign: 'center', marginTop: 6, lineHeight: 1.75 }}>
-            <div style={{ fontFamily: MOUL_FONT }}>បានឃើញ និងឯកភាព</div>
-            <div style={{ fontFamily: MOUL_FONT, marginTop: 4 }}>
-              {ministryModel.signerTitle || 'ព្រះនាយក'}
-            </div>
-          </div>
-
-          {/* Bottom-left ចម្លងប្រគេនជូន */}
-          <div style={{ marginTop: 28, lineHeight: 1.72 }}>
-            <div style={{ fontFamily: MOUL_FONT, fontSize: 14.5, marginBottom: 2 }}>
+          {/* Bottom-left ចម្លងប្រគេនជូន (Original .docx: Khmer OS Battambang 10pt heading / 9.5-10pt items) */}
+          <div style={{ marginTop: 34, lineHeight: 1.68 }}>
+            <div style={{ fontFamily: BATTAMBANG_FONT, fontWeight: 700, fontSize: 14, marginBottom: 2 }}>
               ចម្លងប្រគេនជូន
             </div>
             {(ministryModel.ccList || []).map((cc, idx) => (
-              <div key={idx} style={{ fontSize: 14.5 }}>
+              <div key={idx} style={{ fontFamily: BATTAMBANG_FONT, fontSize: 13.3 }}>
                 -{normalizeSingleSpaces(cc)}
               </div>
             ))}
@@ -1211,9 +1370,9 @@ export default function OfficialMinistryReportDocument({
           maxWidth: 694,
           visibility: 'hidden',
           pointerEvents: 'none',
-          fontFamily: SIEMREAP_FONT,
-          fontSize: 15.2,
-          lineHeight: 1.78,
+          fontFamily: BATTAMBANG_FONT,
+          fontSize: 16,
+          lineHeight: 1.72,
           wordSpacing: 'normal',
           letterSpacing: 0,
           WebkitTextSizeAdjust: '100%',
@@ -1245,19 +1404,53 @@ export default function OfficialMinistryReportDocument({
             boxShadow: '0 10px 28px rgba(15, 23, 42, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.06)',
             borderRadius: 2,
             boxSizing: 'border-box',
-            fontFamily: SIEMREAP_FONT,
-            fontSize: 15.2,
-            lineHeight: 1.78,
+            fontFamily: BATTAMBANG_FONT,
+            fontSize: 16,
+            lineHeight: 1.72,
             color: '#000000',
             margin: '0 auto',
             flexShrink: 0
           }}
         >
+          {/* Running Top Header (Original .docx: Khmer OS Battambang 10pt Italic + thickThinSmallGap 3pt #823B0B) */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 20,
+              left: 52,
+              right: 48,
+              zIndex: 2,
+              pointerEvents: 'none'
+            }}
+          >
+            <div
+              style={{
+                fontFamily: BATTAMBANG_FONT,
+                fontSize: 13.3,
+                fontStyle: 'italic',
+                lineHeight: 1.45,
+                color: '#000000',
+                textAlign: 'left',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                paddingBottom: 3
+              }}
+            >
+              {RUNNING_HF_TEXT}
+            </div>
+            <div style={{ width: '100%' }}>
+              <div style={{ height: 3, background: RUNNING_HF_BORDER_COLOR }} />
+              <div style={{ height: 1.5 }} />
+              <div style={{ height: 1, background: RUNNING_HF_BORDER_COLOR }} />
+            </div>
+          </div>
+
           <div
             style={{
               position: 'relative',
               zIndex: 1,
-              padding: '36px 48px 50px 52px',
+              padding: '62px 48px 64px 52px',
               width: '100%',
               height: '100%',
               boxSizing: 'border-box'
@@ -1266,22 +1459,56 @@ export default function OfficialMinistryReportDocument({
             {pageBlocks.map(b => b.node)}
           </div>
 
-          {/* Bottom-Center Khmer Page Number */}
+          {/* Running Bottom Footer (Original .docx: thinThickSmallGap 3pt #823B0B + Left Italic Title + Right "ទំព័រ ១") */}
           <div
             style={{
               position: 'absolute',
-              bottom: 16,
-              left: 0,
-              right: 0,
-              textAlign: 'center',
-              fontFamily: MOUL_FONT,
-              fontSize: 13.5,
-              color: '#000000',
+              bottom: 20,
+              left: 52,
+              right: 48,
               zIndex: 2,
               pointerEvents: 'none'
             }}
           >
-            {fmtNum(idx + 1)}
+            <div style={{ width: '100%', marginBottom: 4 }}>
+              <div style={{ height: 1, background: RUNNING_HF_BORDER_COLOR }} />
+              <div style={{ height: 1.5 }} />
+              <div style={{ height: 3, background: RUNNING_HF_BORDER_COLOR }} />
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                gap: 12,
+                lineHeight: 1.45,
+                color: '#000000'
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: BATTAMBANG_FONT,
+                  fontSize: 13.3,
+                  fontStyle: 'italic',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}
+              >
+                {RUNNING_HF_TEXT}
+              </span>
+              <span
+                style={{
+                  fontFamily: BATTAMBANG_FONT,
+                  fontSize: 13.3,
+                  fontStyle: 'normal',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0
+                }}
+              >
+                {`ទំព័រ ${fmtNum(idx + 1)}`}
+              </span>
+            </div>
           </div>
         </div>
       ))}

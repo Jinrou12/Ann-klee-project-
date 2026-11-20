@@ -990,6 +990,20 @@ export default function FinanceMobileView({
           useKhmerNumerals={useKhmerNumerals}
           monthKey={monthKey}
         />
+      </div>
+      <div
+        className="no-print"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: -9999,
+          width: 1123,
+          minWidth: 1123,
+          maxWidth: 1123,
+          pointerEvents: 'none'
+        }}
+        aria-hidden="true"
+      >
         <OfficialFinanceSummaryDocument
           id="printable-mobile-finance-summary-document"
           financeData={financeData}

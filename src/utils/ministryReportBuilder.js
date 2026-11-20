@@ -126,6 +126,45 @@ export const DEFAULT_MINISTRY_CC_LIST = [
 ];
 
 /**
+ * Standardize blank dot runs in Ministry Lunar date lines to handwriting-friendly widths:
+ * ថ្ងៃ..............ខែ...........ឆ្នាំមមី អដ្ឋស័ក ព.ស.២៥៧០ (14 dots after ថ្ងៃ, 11 dots after ខែ)
+ */
+export function formatMinistryLunarDateLine(text = '') {
+  let out = String(text || '').trim();
+  if (!out) return '';
+  let idx = 0;
+  out = out.replace(/[.…]{3,}/g, () => {
+    idx += 1;
+    if (idx === 1) return '.'.repeat(14);
+    if (idx === 2) return '.'.repeat(11);
+    return '.'.repeat(11);
+  });
+  out = out.replace(/(\.{11})\s+(?=ឆ្នាំ)/, '$1');
+  return out;
+}
+
+/**
+ * Standardize blank dot runs & ត្រូវនឹង prefix in Ministry Solar date lines:
+ * ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ២០២៦ (7 dots after ថ្ងៃទី, 12 dots after ខែ)
+ */
+export function formatMinistrySolarDateLine(text = '') {
+  let out = String(text || '').trim();
+  if (!out) return '';
+  let idx = 0;
+  out = out.replace(/[.…]{3,}/g, () => {
+    idx += 1;
+    if (idx === 1) return '.'.repeat(7);
+    if (idx === 2) return '.'.repeat(12);
+    return '.'.repeat(10);
+  });
+  out = out.replace(/(\.{7})(?=ខែ)/, '$1 ').replace(/(\.{12})(?=ឆ្នាំ)/, '$1 ');
+  if (/^ថ្ងៃទី/.test(out)) {
+    out = `ត្រូវនឹង${out}`;
+  }
+  return out;
+}
+
+/**
  * Format a KHR integer with space-separated thousands and ៛ symbol (matching the 2025 Ministry report style, e.g. "៤៣៥ ០០០៛")
  */
 export function formatSpaceRiel(amount, useKhmerNumerals = true) {
@@ -667,15 +706,15 @@ export function buildMinistryReportModel({
       : DEFAULT_MINISTRY_CC_LIST;
 
   const docNumber = String(savedOverride.docNumber || synthesizedAnnual.docNumber || '.....................................').trim();
-  const lunarDateLine = String(
+  const lunarDateLine = formatMinistryLunarDateLine(
     savedOverride.lunarDateLine ||
       synthesizedAnnual.lunarDateLine ||
-      `ថ្ងៃ…………………..ខែ………………… ឆ្នាំមមី អដ្ឋស័ក ព.ស.${fmt(2570)}`
-  ).trim();
-  const solarDateLine = String(
+      `ថ្ងៃ..............ខែ...........ឆ្នាំមមី អដ្ឋស័ក ព.ស.${fmt(2570)}`
+  );
+  const solarDateLine = formatMinistrySolarDateLine(
     savedOverride.solarDateLine ||
-      `ថ្ងៃទី…………. ខែ…………… ឆ្នាំ${fmt(year)}`
-  ).trim();
+      `ត្រូវនឹងថ្ងៃទី....... ខែ............ ឆ្នាំ${fmt(year)}`
+  );
   const signerTitle = String(savedOverride.signerTitle || 'ព្រះនាយក').trim();
   const reporterTitle = String(savedOverride.reporterTitle || 'អ្នកធ្វើរបាយការណ៍').trim();
 

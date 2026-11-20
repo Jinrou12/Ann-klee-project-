@@ -13,10 +13,15 @@ import {
 } from './khmerNumerals.js';
 import { getMonthEndReportDates } from './khmerCalendar.js';
 import { buildFinanceSummaryModel } from './financeSummaryBuilder.js';
+import {
+  formatMinistryLunarDateLine,
+  formatMinistrySolarDateLine
+} from './ministryReportBuilder.js';
 import { buildZipArchive, escapeXml, triggerBlobDownload, loadOfficialLogoBytes } from './openXmlZip.js';
 
 const FONT_MOUL = 'Khmer OS Muol Light';
 const FONT_SIEMREAP = 'Khmer OS Siemreap';
+const FONT_BATTAMBANG = 'Khmer OS Battambang';
 const FONT_TACTEING = 'Tacteing';
 
 /**
@@ -60,6 +65,7 @@ function wParagraph(text, {
   spaceBefore = 0,
   spaceAfter = 0,
   indentLeft = 0,
+  firstLine = 0,
   keepNext = false
 } = {}) {
   const halfPts = Math.round(sizePt * 2);
@@ -68,7 +74,11 @@ function wParagraph(text, {
     ? `<w:u w:val="${underline === 'double' ? 'double' : 'single'}"/>`
     : '';
   const colorXml = color && color !== '000000' ? `<w:color w:val="${color}"/>` : '';
-  const indXml = indentLeft > 0 ? `<w:ind w:left="${indentLeft}"/>` : '';
+  const indAttrs = [
+    indentLeft > 0 ? `w:left="${indentLeft}"` : '',
+    firstLine > 0 ? `w:firstLine="${firstLine}"` : ''
+  ].filter(Boolean).join(' ');
+  const indXml = indAttrs ? `<w:ind ${indAttrs}/>` : '';
   const keepXml = keepNext ? '<w:keepNext/><w:keepLines/>' : '<w:keepLines/>';
 
   return `<w:p>
@@ -223,21 +233,29 @@ const OFFICIAL_PAGE_MARGINS = { top: 709, right: 567, bottom: 568, left: 567 };
  * Build the 2-column Official Ministry & Kingdom Header Table
  * (school name printed exactly as in the original template, without an extra 'សាលា' prefix)
  */
-function buildWordOfficialHeader(metadata = {}, _includeSalaPrefix = false, hasLogo = false, totalWidthDxa = OFFICIAL_CONTENT_DXA) {
+function buildWordOfficialHeader(
+  metadata = {},
+  _includeSalaPrefix = false,
+  hasLogo = false,
+  totalWidthDxa = OFFICIAL_CONTENT_DXA,
+  headerOpts = {}
+) {
   const ministry = metadata.ministry || 'មន្ទីរធម្មការ និងសាសនា ខេត្តកំពង់ចាម';
   const school = String(metadata.school || 'ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង').replace(/^សាលា(?=ពុទ្ធិក)/, '');
   const location = metadata.location || 'ក្រុងកំពង់ចាម';
+  const logoEmu = headerOpts.logoEmu || 420000;
+  const lineSpaceAfter = headerOpts.lineSpaceAfter || 0;
 
   const leftParas = [
-    ...(hasLogo ? [wLogoParagraph(420000)] : []),
-    wParagraph(ministry, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
-    wParagraph(school, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
-    wParagraph(location, { font: FONT_MOUL, sizePt: 11, align: 'center' })
+    ...(hasLogo ? [wLogoParagraph(logoEmu)] : []),
+    wParagraph(ministry, { font: FONT_MOUL, sizePt: 11, align: 'center', spaceAfter: lineSpaceAfter }),
+    wParagraph(school, { font: FONT_MOUL, sizePt: 11, align: 'center', spaceAfter: lineSpaceAfter }),
+    wParagraph(location, { font: FONT_MOUL, sizePt: 11, align: 'center', spaceAfter: lineSpaceAfter })
   ].join('');
 
   const rightParas = [
-    wParagraph('ព្រះរាជាណាចក្រកម្ពុជា', { font: FONT_MOUL, sizePt: 14, align: 'center' }),
-    wParagraph('ជាតិ សាសនា ព្រះមហាក្សត្រ', { font: FONT_MOUL, sizePt: 12, align: 'center' }),
+    wParagraph('ព្រះរាជាណាចក្រកម្ពុជា', { font: FONT_MOUL, sizePt: 14, align: 'center', spaceAfter: lineSpaceAfter }),
+    wParagraph('ជាតិ សាសនា ព្រះមហាក្សត្រ', { font: FONT_MOUL, sizePt: 12, align: 'center', spaceAfter: lineSpaceAfter }),
     wTacteingDividerParagraph({ color: '000000', sizePt: 28 })
   ].join('');
 
@@ -254,22 +272,35 @@ function buildWordOfficialHeader(metadata = {}, _includeSalaPrefix = false, hasL
 /**
  * Build the 3-line official report title (របាយការណ៍ / ស្ដីពី / title) used by every original template
  */
-function buildWordReportTitle(titleText) {
+function buildWordReportTitle(titleText, titleOpts = {}) {
+  const line1Pt = titleOpts.line1Pt || 14;
+  const line2Pt = titleOpts.line2Pt || 14;
+  const line3Pt = titleOpts.line3Pt || 14;
   return [
-    wParagraph('របាយការណ៍', { font: FONT_MOUL, sizePt: 14, align: 'center', spaceBefore: 120 }),
-    wParagraph('ស្ដីពី', { font: FONT_MOUL, sizePt: 14, align: 'center' }),
-    wParagraph(titleText, { font: FONT_MOUL, sizePt: 14, align: 'center', spaceAfter: 120 })
+    wParagraph('របាយការណ៍', { font: FONT_MOUL, sizePt: line1Pt, align: 'center', spaceBefore: 120 }),
+    wParagraph('ស្ដីពី', { font: FONT_MOUL, sizePt: line2Pt, align: 'center' }),
+    wParagraph(titleText, { font: FONT_MOUL, sizePt: line3Pt, align: 'center', spaceAfter: 120 })
   ].join('');
 }
 
 /**
  * Build the 2-column Official Director & Reporter Signatures Block Table
  */
-function buildWordOfficialSignatures(metadata = {}, reportDates = {}, isFinance = false, totalWidthDxa = OFFICIAL_CONTENT_DXA) {
+function buildWordOfficialSignatures(
+  metadata = {},
+  reportDates = {},
+  isFinance = false,
+  totalWidthDxa = OFFICIAL_CONTENT_DXA,
+  sigOpts = {}
+) {
   const directorTitle = (!metadata.directorTitle || metadata.directorTitle === 'ព្រះចៅអធិការ' || metadata.directorTitle === 'ព្រះនាយក')
     ? 'នាយកសាលា'
     : metadata.directorTitle;
   const reporterTitle = metadata.reporterTitle || 'អ្នកធ្វើរបាយការណ៍';
+  const approvalSizePt = sigOpts.approvalSizePt || 11;
+  const dateSizePt = sigOpts.dateSizePt || 11;
+  const dateSpaceAfter = sigOpts.dateSpaceAfter || 0;
+  const titleSpaceBefore = sigOpts.titleSpaceBefore ?? 30;
 
   const leftLunar = isFinance
     ? `ថ្ងៃ………..…….ខែ………..….ឆ្នាំ${reportDates.zodiac || 'មមី'} ${reportDates.sak || 'អដ្ឋស័ក'} ព.ស.${reportDates.beYear || '២៥៧០'}`
@@ -282,16 +313,16 @@ function buildWordOfficialSignatures(metadata = {}, reportDates = {}, isFinance 
   const rightSolar = isFinance ? (reportDates.solarDateTextFinance || '') : (reportDates.solarDateTextLeave || '');
 
   const leftParas = [
-    wParagraph('បានឃើញ និង……………..', { font: FONT_MOUL, sizePt: 11, align: 'center', keepNext: true }),
-    wParagraph(leftLunar, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', keepNext: true }),
-    wParagraph(leftSolar, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', keepNext: true }),
-    wParagraph(directorTitle, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: 30, spaceAfter: 0 })
+    wParagraph('បានឃើញ និង……………..', { font: FONT_MOUL, sizePt: approvalSizePt, align: 'center', spaceAfter: dateSpaceAfter, keepNext: true }),
+    wParagraph(leftLunar, { font: FONT_SIEMREAP, sizePt: dateSizePt, align: 'center', spaceAfter: dateSpaceAfter, keepNext: true }),
+    wParagraph(leftSolar, { font: FONT_SIEMREAP, sizePt: dateSizePt, align: 'center', spaceAfter: dateSpaceAfter, keepNext: true }),
+    wParagraph(directorTitle, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: titleSpaceBefore, spaceAfter: 0 })
   ].join('');
 
   const rightParas = [
-    wParagraph(rightLunar, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', keepNext: true }),
-    wParagraph(rightSolar, { font: FONT_SIEMREAP, sizePt: 11, align: 'center', keepNext: true }),
-    wParagraph(reporterTitle, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: 30, spaceAfter: 0 })
+    wParagraph(rightLunar, { font: FONT_SIEMREAP, sizePt: dateSizePt, align: 'center', spaceAfter: dateSpaceAfter, keepNext: true }),
+    wParagraph(rightSolar, { font: FONT_SIEMREAP, sizePt: dateSizePt, align: 'center', spaceAfter: dateSpaceAfter, keepNext: true }),
+    wParagraph(reporterTitle, { font: FONT_MOUL, sizePt: 12, align: 'center', spaceBefore: titleSpaceBefore, spaceAfter: 0 })
   ].join('');
 
   const leftW = Math.round((5000 / OFFICIAL_CONTENT_DXA) * totalWidthDxa);
@@ -430,6 +461,13 @@ function downloadDocxDocument(bodyContentXml, fileName = 'Report.docx', logoByte
     <w:pitch w:val="variable"/>
     <w:sig w:usb0="A00000EF" w:usb1="5000204A" w:usb2="00010000" w:usb3="00000000" w:csb0="00000111" w:csb1="00000000"/>
   </w:font>
+  <w:font w:name="Khmer OS Battambang">
+    <w:panose1 w:val="02000500000000020004"/>
+    <w:charset w:val="00"/>
+    <w:family w:val="auto"/>
+    <w:pitch w:val="variable"/>
+    <w:sig w:usb0="A00000EF" w:usb1="5000204A" w:usb2="00010000" w:usb3="00000000" w:csb0="00000111" w:csb1="00000000"/>
+  </w:font>
   <w:font w:name="Tacteing">
     <w:panose1 w:val="00000000000000000000"/>
     <w:charset w:val="00"/>
@@ -503,14 +541,14 @@ function downloadDocxDocument(bodyContentXml, fileName = 'Report.docx', logoByte
   ${options.headerXml}
 </w:hdr>`
     });
-    entries.push({
-      path: 'word/_rels/header1.xml.rels',
-      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  ${headerMedia ? `<Relationship Id="rIdBg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${headerMedia.path}"/>` : ''}
-</Relationships>`
-    });
     if (headerMedia) {
+      entries.push({
+        path: 'word/_rels/header1.xml.rels',
+        data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdBg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${headerMedia.path}"/>
+</Relationships>`
+      });
       entries.push({ path: `word/${headerMedia.path}`, data: headerMedia.bytes });
     }
   }
@@ -563,9 +601,9 @@ export async function exportLeaveToWord(records = [], monthLabel = 'កក្ក
 
   const headerRowXml = `<w:tr>
     ${headers.map((h, i) => wCell(
-      wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
-      { widthDxa: colWidths[i] }
-    )).join('')}
+    wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
+    { widthDxa: colWidths[i] }
+  )).join('')}
   </w:tr>`;
 
   const dataRowsXml = sortedRecords.length === 0
@@ -633,9 +671,9 @@ export async function exportIdCardToWord(records = [], monthLabel = 'កក្�
 
   const headerRowXml = `<w:tr>
     ${headers.map((h, i) => wCell(
-      wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
-      { widthDxa: colWidths[i] }
-    )).join('')}
+    wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
+    { widthDxa: colWidths[i] }
+  )).join('')}
   </w:tr>`;
 
   const dataRowsXml = sortedRecords.length === 0
@@ -727,9 +765,9 @@ export async function exportFinanceToWord(financeData = { income: [], expense: [
 
   const buildHeaderRow = () => `<w:tr>
     ${tableHeaders.map((h, i) => wCell(
-      wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
-      { widthDxa: colWidths[i] }
-    )).join('')}
+    wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center' }),
+    { widthDxa: colWidths[i] }
+  )).join('')}
   </w:tr>`;
 
   const buildItemRows = (list) => list.map((item, idx) => {
@@ -839,9 +877,9 @@ export async function exportFinanceSummaryReportToWord(
 
   const headerRowXml = `<w:tr>
     ${headers.map((h, i) => wCell(
-      wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center', spaceBefore: 30, spaceAfter: 30 }),
-      { widthDxa: colWidths[i] }
-    )).join('')}
+    wParagraph(h, { font: FONT_MOUL, sizePt: 11, align: 'center', spaceBefore: 30, spaceAfter: 30 }),
+    { widthDxa: colWidths[i] }
+  )).join('')}
   </w:tr>`;
 
   const buildDataRowXml = (row) => {
@@ -860,47 +898,47 @@ export async function exportFinanceSummaryReportToWord(
 
   const subtotalIncRowXml = `<w:tr>
     ${wCell(
-      wParagraph(summaryModel.totalIncomeLabel, { font: FONT_SIEMREAP, sizePt: 11.5, bold: true, align: 'center', spaceBefore: 30, spaceAfter: 30 }),
-      { widthDxa: mergedLabelWidth, gridSpan: 3 }
-    )}
+    wParagraph(summaryModel.totalIncomeLabel, { font: FONT_SIEMREAP, sizePt: 11.5, bold: true, align: 'center', spaceBefore: 30, spaceAfter: 30 }),
+    { widthDxa: mergedLabelWidth, gridSpan: 3 }
+  )}
     ${wCell(
-      wParagraph(summaryModel.totalIncomeText, { font: FONT_MOUL, sizePt: 11.5, underline: 'single', align: 'right', spaceBefore: 30, spaceAfter: 30 }),
-      { widthDxa: colWidths[3] }
-    )}
+    wParagraph(summaryModel.totalIncomeText, { font: FONT_MOUL, sizePt: 11.5, underline: 'single', align: 'right', spaceBefore: 30, spaceAfter: 30 }),
+    { widthDxa: colWidths[3] }
+  )}
     ${wCell(
-      wParagraph(summaryModel.inKindNotes || '', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
-      { widthDxa: colWidths[4] }
-    )}
+    wParagraph(summaryModel.inKindNotes || '', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
+    { widthDxa: colWidths[4] }
+  )}
   </w:tr>`;
 
   const subtotalExpRowXml = `<w:tr>
     ${wCell(
-      wParagraph(summaryModel.totalExpenseLabel, { font: FONT_SIEMREAP, sizePt: 11.5, bold: true, align: 'center', color: deficitColor, spaceBefore: 30, spaceAfter: 30 }),
-      { widthDxa: mergedLabelWidth, gridSpan: 3 }
-    )}
+    wParagraph(summaryModel.totalExpenseLabel, { font: FONT_SIEMREAP, sizePt: 11.5, bold: true, align: 'center', color: deficitColor, spaceBefore: 30, spaceAfter: 30 }),
+    { widthDxa: mergedLabelWidth, gridSpan: 3 }
+  )}
     ${wCell(
-      wParagraph(summaryModel.totalExpenseText, { font: FONT_MOUL, sizePt: 11.5, underline: 'single', align: 'right', color: deficitColor, spaceBefore: 30, spaceAfter: 30 }),
-      { widthDxa: colWidths[3] }
-    )}
+    wParagraph(summaryModel.totalExpenseText, { font: FONT_MOUL, sizePt: 11.5, underline: 'single', align: 'right', color: deficitColor, spaceBefore: 30, spaceAfter: 30 }),
+    { widthDxa: colWidths[3] }
+  )}
     ${wCell(
-      wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
-      { widthDxa: colWidths[4] }
-    )}
+    wParagraph('', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
+    { widthDxa: colWidths[4] }
+  )}
   </w:tr>`;
 
   const balanceRowXml = `<w:tr>
     ${wCell(
-      wParagraph(summaryModel.balanceLabel, { font: FONT_MOUL, sizePt: 11.5, align: 'center', color: deficitColor, spaceBefore: 40, spaceAfter: 40 }),
-      { widthDxa: mergedLabelWidth, gridSpan: 3 }
-    )}
+    wParagraph(summaryModel.balanceLabel, { font: FONT_MOUL, sizePt: 11.5, align: 'center', color: deficitColor, spaceBefore: 40, spaceAfter: 40 }),
+    { widthDxa: mergedLabelWidth, gridSpan: 3 }
+  )}
     ${wCell(
-      wParagraph(summaryModel.balanceText, { font: FONT_MOUL, sizePt: 11.5, underline: 'double', align: 'right', color: deficitColor, spaceBefore: 40, spaceAfter: 40 }),
-      { widthDxa: colWidths[3] }
-    )}
+    wParagraph(summaryModel.balanceText, { font: FONT_MOUL, sizePt: 11.5, underline: 'double', align: 'right', color: deficitColor, spaceBefore: 40, spaceAfter: 40 }),
+    { widthDxa: colWidths[3] }
+  )}
     ${wCell(
-      wParagraph(summaryModel.inKindNotes || '', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
-      { widthDxa: colWidths[4] }
-    )}
+    wParagraph(summaryModel.inKindNotes || '', { font: FONT_SIEMREAP, sizePt: 11, align: 'center', spaceAfter: 0 }),
+    { widthDxa: colWidths[4] }
+  )}
   </w:tr>`;
 
   const allTableRowsXml = [
@@ -913,11 +951,19 @@ export async function exportFinanceSummaryReportToWord(
   ];
 
   const bodyXml = [
-    buildWordOfficialHeader(metadata, false, hasLogo, LANDSCAPE_CONTENT_DXA),
-    buildWordReportTitle(summaryModel.reportTitle),
+    buildWordOfficialHeader(metadata, false, hasLogo, LANDSCAPE_CONTENT_DXA, {
+      logoEmu: 560000,
+      lineSpaceAfter: 60
+    }),
+    buildWordReportTitle(summaryModel.reportTitle, { line1Pt: 14, line2Pt: 14, line3Pt: 12 }),
     wTable(colWidths, allTableRowsXml, { bordered: true }),
     wParagraph('', { sizePt: 10, spaceAfter: 120 }),
-    buildWordOfficialSignatures(metadata, reportDates, true, LANDSCAPE_CONTENT_DXA)
+    buildWordOfficialSignatures(metadata, reportDates, true, LANDSCAPE_CONTENT_DXA, {
+      approvalSizePt: 12,
+      dateSizePt: 12,
+      dateSpaceAfter: 80,
+      titleSpaceBefore: 80
+    })
   ].join('');
 
   downloadDocxDocument(
@@ -1118,7 +1164,7 @@ const ADMIN_PAGE_NUMBER_FOOTER_XML = (() => {
  * Shared 8-column School History Training Table XML builder with auto-repeating header (<w:tblHeader/>)
  */
 function buildSchoolHistoryTableXml(historyModel, contentWidth) {
-  const cols = fitColumns([620, 1850, 1520, 1460, 1460, 1460, 1560, 985], contentWidth);
+  const cols = fitColumns([620, 1850, 1520, 1460, 1460, 1460, 1720, 825], contentWidth);
   const headers = ['ល.រ', 'ឆ្នាំសិក្សា', 'ថ្នាក់មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'];
   const hdrRow = `<w:tr><w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>${headers
     .map((h, i) =>
@@ -1212,9 +1258,9 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
   const subHeading = (text, spaceBefore = 0) =>
     wParagraph(text, { font: FONT_SIEMREAP, sizePt: SZ, bold: true, align: 'left', indentLeft: SUB_INDENT * 2, spaceBefore });
   const listItem = (text, bullet = '-') =>
-    wParagraph(`${bullet} ${text}`, { font: FONT_SIEMREAP, sizePt: SZ, align: 'left', indentLeft: BODY_INDENT + SUB_INDENT });
+    wParagraph(`${bullet} ${text}`, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', indentLeft: BODY_INDENT + SUB_INDENT });
   const bodyPara = (text, boldPhrases = []) =>
-    wMultiRunParagraph(buildHighlightedRuns(text, boldPhrases, SZ), { align: 'left', firstLine: FIRST_LINE });
+    wMultiRunParagraph(buildHighlightedRuns(text, boldPhrases, SZ), { align: 'both', firstLine: FIRST_LINE });
 
   const roleTabPos = 4680;
   const includeHist = Boolean(displayModel.includeHistory && displayModel.schoolHistory);
@@ -1233,13 +1279,13 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     leftSchoolTableXml,
     wParagraph('សូមក្រាបថ្វាយបង្គំ', { font: FONT_MOUL, sizePt: 14, color: NAVY, align: 'center', spaceBefore: 60 }),
     wParagraph(displayModel.recipientTitle, { font: FONT_MOUL, sizePt: SZ, color: NAVY, align: 'center' }),
-    wParagraph('ជាទីគោរពសក្ការៈដ៏ខ្ពង់ខ្ពស់!', { font: FONT_SIEMREAP, sizePt: SZ, bold: true, align: 'center', spaceAfter: 120 }),
+    wParagraph('ជាទីគោរពសក្ការៈដ៏ខ្ពង់ខ្ពស់!', { font: FONT_SIEMREAP, sizePt: SZ, bold: true, align: 'right', spaceAfter: 120 }),
 
     // Subject (កម្មវត្ថុ) — period phrase bold, monastic titles in Muol Light
     wMultiRunParagraph([
       { text: 'កម្មវត្ថុ៖ ', font: FONT_MOUL, sizePt: SZ },
       ...buildHighlightedRuns(displayModel.subjectText, [displayModel.periodTitlePhrase], SZ)
-    ], { align: 'left', indentLeft: 0, spaceAfter: 60 }),
+    ], { align: 'both', indentLeft: 0, spaceAfter: 60 }),
 
     // Intro Paragraph
     bodyPara(displayModel.introParagraph, [displayModel.inPeriodPhrase]),
@@ -1247,11 +1293,11 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     // Optional I. សាវតារ (Semester 1 + School History Combined Mode)
     ...(includeHist
       ? [
-          sectionHeading('I. សាវតារ'),
-          ...(displayModel.schoolHistory.backgroundParagraphs || []).map(p =>
-            wParagraph(p, { font: FONT_SIEMREAP, sizePt: SZ, align: 'left', firstLine: FIRST_LINE, spaceAfter: 40 })
-          )
-        ]
+        sectionHeading('I. សាវតារ'),
+        ...(displayModel.schoolHistory.backgroundParagraphs || []).map(p =>
+          wParagraph(p, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', firstLine: FIRST_LINE, spaceAfter: 40 })
+        )
+      ]
       : []),
 
     // I (or II). តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
@@ -1282,28 +1328,29 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     subHeading(displayModel.section3SubAHeading),
     ...(displayModel.activities || []).map(line => listItem(line, '❖')),
 
-    // Optional School History Intro + 16-Year Training Table under IV. ក
-    ...(includeHist
-      ? [
-          ...(displayModel.schoolHistory.tableIntro
-            ? [
-                wParagraph(displayModel.schoolHistory.tableIntro, {
-                  font: FONT_SIEMREAP,
-                  sizePt: SZ,
-                  align: 'left',
-                  firstLine: FIRST_LINE,
-                  spaceBefore: 60,
-                  spaceAfter: 60
-                })
-              ]
-            : []),
-          buildSchoolHistoryTableXml(displayModel.schoolHistory, contentWidth),
-          wParagraph('', { sizePt: 6, spaceAfter: 40 })
-        ]
-      : []),
-
     subHeading('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍'),
     ...(displayModel.adminDocLines || []).map(line => listItem(line)),
+
+    // Optional School History Intro + 16-Year Training Table placed between ខ and គ
+    ...(includeHist
+      ? [
+        ...(displayModel.schoolHistory.tableIntro
+          ? [
+            wParagraph(displayModel.schoolHistory.tableIntro, {
+              font: FONT_SIEMREAP,
+              sizePt: SZ,
+              align: 'both',
+              firstLine: FIRST_LINE,
+              spaceBefore: 60,
+              spaceAfter: 60
+            })
+          ]
+          : []),
+        buildSchoolHistoryTableXml(displayModel.schoolHistory, contentWidth),
+        wParagraph('', { sizePt: 6, spaceAfter: 40 })
+      ]
+      : []),
+
     subHeading(displayModel.section3SubCHeading),
     subHeading(displayModel.section3SubDHeading),
     ...(displayModel.appendixItems || []).map(line => listItem(line)),
@@ -1350,14 +1397,18 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
  */
 export async function exportMinistrySummaryToWord(ministryModel) {
   if (!ministryModel) return;
-  const tacteingOdttf = await loadTacteingOdttfBytes();
+  const [logoBytes, tacteingOdttf] = await Promise.all([
+    loadOfficialLogoBytes(),
+    loadTacteingOdttfBytes()
+  ]);
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
 
   // Letter Portrait (12240 x 15840 dxa) with margins matching 2025 template
-  const pageMargins = { top: 568, right: 1134, bottom: 900, left: 1134 };
-  const contentWidth = 12240 - pageMargins.left - pageMargins.right; // 9972 dxa
+  const pageMargins = { top: 568, right: 920, bottom: 820, left: 920 };
+  const contentWidth = 12240 - pageMargins.left - pageMargins.right; // 10400 dxa
 
   const leftHeaderParas = [
-    wParagraph('', { sizePt: 8 }),
+    ...(hasLogo ? [wLogoParagraph(440000)] : []),
     wParagraph('មន្ទីរធម្មការ និងសាសនា ខេត្តកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
     wParagraph('ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
     wParagraph('ក្រុងកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, align: 'center' })
@@ -1414,24 +1465,36 @@ export async function exportMinistrySummaryToWord(ministryModel) {
     </w:tr>`;
   });
 
+  const compactLunar = formatMinistryLunarDateLine(ministryModel.lunarDateLine);
+  const compactSolar = formatMinistrySolarDateLine(ministryModel.solarDateLine);
+  const compactDocNo = String(ministryModel.docNumber || '................').replace(/[.…]{4,}/g, '................').trim();
+
   const leftSigParas = [
-    wParagraph('', { sizePt: 10 }),
-    wParagraph('បានឃើញ និងឯកភាព', { font: FONT_MOUL, sizePt: 11.5, align: 'center', keepNext: true }),
-    wParagraph(ministryModel.lunarDateLine || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
-    wParagraph(ministryModel.solarDateLine || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
-    wParagraph(ministryModel.signerTitle || 'ព្រះនាយក', { font: FONT_MOUL, sizePt: 11.5, align: 'center', spaceBefore: 40 })
+    wParagraph('', { sizePt: 11.5 }),
+    wParagraph(`លេខ ${compactDocNo}`, {
+      font: FONT_SIEMREAP,
+      sizePt: 11.5,
+      align: 'center',
+      keepNext: true
+    }),
+    wParagraph('បានឃើញ និងឯកភាព', { font: FONT_MOUL, sizePt: 12, align: 'center', keepNext: true }),
+    wParagraph(compactLunar, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(compactSolar, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.signerTitle || 'ព្រះនាយក', { font: FONT_MOUL, sizePt: 12.5, align: 'center', spaceBefore: 60 })
   ].join('');
 
   const rightSigParas = [
-    wParagraph(ministryModel.lunarDateLine || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
-    wParagraph(`លេខ ${ministryModel.docNumber || '.....................................'}`, {
-      font: FONT_SIEMREAP,
-      sizePt: 11.5,
-      align: 'center'
+    wParagraph(compactLunar, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(compactSolar, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍', {
+      font: FONT_MOUL,
+      sizePt: 12.5,
+      align: 'center',
+      spaceBefore: 60
     })
   ].join('');
 
-  const sigWidths = [5300, contentWidth - 5300];
+  const sigWidths = [5160, contentWidth - 5160];
   const sigTableXml = wTable(
     sigWidths,
     [
@@ -1448,21 +1511,70 @@ export async function exportMinistrySummaryToWord(ministryModel) {
     headerTableXml,
     wParagraph(ministryModel.summaryReportTitle, {
       font: FONT_MOUL,
-      sizePt: 13,
+      sizePt: 14,
       align: 'center',
-      spaceBefore: 100,
-      spaceAfter: 140
+      spaceBefore: 160,
+      spaceAfter: 180
     }),
     wTable(colWidths, [headerRowXml, ...bodyRowsXml], { bordered: true }),
-    wParagraph('', { sizePt: 8, spaceAfter: 80 }),
+    wParagraph('', { sizePt: 10, spaceAfter: 140 }),
     sigTableXml
   ].join('');
 
-  downloadDocxDocument(bodyXml, `របាយការណ៍_${ministryModel.shortSummaryFileNameTag}.docx`, null, {
+  downloadDocxDocument(bodyXml, `របាយការណ៍_${ministryModel.shortSummaryFileNameTag}.docx`, logoBytes, {
     tacteingOdttf,
     pageSize: { w: 12240, h: 15840 },
     pageMargins
   });
+}
+
+const MINISTRY_FULL_RUNNING_HF_TEXT =
+  'របាយការណ៍ ប្រចាំឆ្នាំ សាលាពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម ខេត្តកំពង់ចាម';
+
+// Authentic running header for Ministry Full Annual Report
+// (Khmer OS Battambang 10pt Italic + thickThinSmallGap 3pt #823B0B bottom border)
+const MINISTRY_FULL_HEADER_XML = `<w:p>
+  <w:pPr>
+    <w:pBdr>
+      <w:bottom w:val="thickThinSmallGap" w:sz="24" w:space="1" w:color="823B0B"/>
+    </w:pBdr>
+    <w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>
+    <w:jc w:val="left"/>
+  </w:pPr>
+  <w:r>
+    <w:rPr>
+      <w:rFonts w:ascii="${FONT_BATTAMBANG}" w:hAnsi="${FONT_BATTAMBANG}" w:cs="${FONT_BATTAMBANG}" w:eastAsia="${FONT_BATTAMBANG}"/>
+      <w:i/><w:iCs/>
+      <w:sz w:val="20"/><w:szCs w:val="20"/>
+    </w:rPr>
+    <w:t>${escapeXml(MINISTRY_FULL_RUNNING_HF_TEXT)}</w:t>
+  </w:r>
+</w:p>`;
+
+// Authentic running footer for Ministry Full Annual Report
+// (thinThickSmallGap 3pt #823B0B top border + left italic title + right "ទំព័រ ១")
+function buildMinistryFullFooterXml(contentWidthDxa = 10206) {
+  const leftRPr = `<w:rPr><w:rFonts w:ascii="${FONT_BATTAMBANG}" w:hAnsi="${FONT_BATTAMBANG}" w:cs="${FONT_BATTAMBANG}" w:eastAsia="${FONT_BATTAMBANG}"/><w:i/><w:iCs/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>`;
+  const rightRPr = `<w:rPr><w:rFonts w:ascii="${FONT_BATTAMBANG}" w:hAnsi="${FONT_BATTAMBANG}" w:cs="${FONT_BATTAMBANG}" w:eastAsia="${FONT_BATTAMBANG}"/><w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="km-KH" w:bidi="km-KH"/></w:rPr>`;
+  return `<w:p>
+  <w:pPr>
+    <w:pBdr>
+      <w:top w:val="thinThickSmallGap" w:sz="24" w:space="1" w:color="823B0B"/>
+    </w:pBdr>
+    <w:tabs>
+      <w:tab w:val="right" w:pos="${contentWidthDxa}"/>
+    </w:tabs>
+    <w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>
+  </w:pPr>
+  <w:r>${leftRPr}<w:t>${escapeXml(MINISTRY_FULL_RUNNING_HF_TEXT)}</w:t></w:r>
+  <w:r>${rightRPr}<w:tab/></w:r>
+  <w:r>${rightRPr}<w:t xml:space="preserve">ទំព័រ </w:t></w:r>
+  <w:r>${rightRPr}<w:fldChar w:fldCharType="begin"/></w:r>
+  <w:r>${rightRPr}<w:instrText xml:space="preserve"> PAGE \\* MERGEFORMAT </w:instrText></w:r>
+  <w:r>${rightRPr}<w:fldChar w:fldCharType="separate"/></w:r>
+  <w:r>${rightRPr}<w:t>១</w:t></w:r>
+  <w:r>${rightRPr}<w:fldChar w:fldCharType="end"/></w:r>
+</w:p>`;
 }
 
 /**
@@ -1470,11 +1582,15 @@ export async function exportMinistrySummaryToWord(ministryModel) {
  */
 export async function exportMinistryReportToWord(ministryModel) {
   if (!ministryModel) return;
-  const tacteingOdttf = await loadTacteingOdttfBytes();
+  const [logoBytes, tacteingOdttf] = await Promise.all([
+    loadOfficialLogoBytes(),
+    loadTacteingOdttfBytes()
+  ]);
+  const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
 
-  const pageMargins = { top: 567, right: 850, bottom: 720, left: 850, header: 567, footer: 284 };
+  const pageMargins = { top: 1020, right: 850, bottom: 980, left: 850, header: 420, footer: 420 };
   const contentWidth = 11906 - pageMargins.left - pageMargins.right; // 10206 dxa
-  const SZ = 11.5;
+  const SZ = 12;
 
   const hCell = (text, widthDxa, extra = {}) =>
     wCell(wParagraph(text, { font: FONT_MOUL, sizePt: 10.5, align: 'center', spaceBefore: 24, spaceAfter: 24 }), {
@@ -1485,8 +1601,8 @@ export async function exportMinistryReportToWord(ministryModel) {
   const dCell = (text, widthDxa, align = 'center', extra = {}) =>
     wCell(
       wParagraph(text || '', {
-        font: extra.moul ? FONT_MOUL : FONT_SIEMREAP,
-        sizePt: extra.sizePt || 10.5,
+        font: extra.moul ? FONT_MOUL : FONT_BATTAMBANG,
+        sizePt: extra.sizePt || 11,
         bold: Boolean(extra.bold),
         align,
         spaceBefore: 20,
@@ -1497,7 +1613,7 @@ export async function exportMinistryReportToWord(ministryModel) {
 
   // Build Hourly Semester Table XML (ច & ច.១)
   const buildHourlySemTableXml = (tblData) => {
-    const cols = fitColumns([700, 1800, 1950, 1950, 1400, 1550, 856], contentWidth);
+    const cols = fitColumns([612, 1633, 1837, 1837, 1531, 1633, 1123], contentWidth);
     const hdrRow = `<w:tr>${['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួនម៉ោង', 'សមតុល្យ', 'ផ្សេងៗ']
       .map((h, i) => hCell(h, cols[i]))
       .join('')}</w:tr>`;
@@ -1544,28 +1660,28 @@ export async function exportMinistryReportToWord(ministryModel) {
 
   // Build Office Supplies Semester Tables XML (ច.៣ & ច.៤)
   const buildOfficeSemTablesXml = (semData) => {
-    const expCols = fitColumns([560, 3725, 1276, 1531, 1123, 1071, 920], contentWidth);
-    const expBanner = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${hCell('តារាងចំណាយ', contentWidth, { gridSpan: 7 })}</w:tr>`;
-    const expHdr = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'សមតុល្យ', 'ផ្សេងៗ']
+    const expCols = fitColumns([612, 4082, 1327, 1633, 1327, 1225], contentWidth);
+    const expBanner = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${hCell('តារាងចំណាយ', contentWidth, { gridSpan: 6 })}</w:tr>`;
+    const expHdr = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'ផ្សេងៗ']
       .map((h, i) => hCell(h, expCols[i]))
       .join('')}</w:tr>`;
     const expRows =
       (semData?.expenseRows || []).length === 0
-        ? [`<w:tr>${dCell('គ្មាន', contentWidth, 'center', { gridSpan: 7 })}</w:tr>`]
+        ? [`<w:tr>${dCell('គ្មាន', contentWidth, 'center', { gridSpan: 6 })}</w:tr>`]
         : semData.expenseRows.map(
-            r =>
-              `<w:tr>${dCell(r.no, expCols[0])}${dCell(r.desc, expCols[1], 'left')}${dCell(
-                r.source,
-                expCols[2]
-              )}${dCell(r.amountText, expCols[3])}${dCell(r.qty, expCols[4])}${dCell(
-                r.balance,
-                expCols[5]
-              )}${dCell(r.note, expCols[6])}</w:tr>`
-          );
+          r =>
+            `<w:tr>${dCell(r.no, expCols[0])}${dCell(r.desc, expCols[1], 'left')}${dCell(
+              r.source,
+              expCols[2]
+            )}${dCell(r.amountText, expCols[3])}${dCell(r.qty, expCols[4])}${dCell(
+              r.note,
+              expCols[5]
+            )}</w:tr>`
+        );
     const expTotal = `<w:tr>
       ${dCell('ចំណាយសរុប', expCols[0] + expCols[1] + expCols[2], 'center', { gridSpan: 3, moul: true })}
       ${dCell(semData?.totalExpenseText, expCols[3], 'center', { bold: true })}
-      ${dCell('', expCols[4] + expCols[5] + expCols[6], 'center', { gridSpan: 3 })}
+      ${dCell('', expCols[4] + expCols[5], 'center', { gridSpan: 2 })}
     </w:tr>`;
 
     const incCols = fitColumns([800, 4100, 1850, 1450, 2006], contentWidth);
@@ -1587,12 +1703,12 @@ export async function exportMinistryReportToWord(ministryModel) {
       (semData?.incomeRows || []).length === 0
         ? [`<w:tr>${dCell('គ្មាន', contentWidth, 'center', { gridSpan: 5 })}</w:tr>`]
         : semData.incomeRows.map(
-            r =>
-              `<w:tr>${dCell(r.no, incCols[0])}${dCell(r.desc, incCols[1], 'left')}${dCell(
-                r.khrText,
-                incCols[2]
-              )}${dCell(r.usdText, incCols[3])}${dCell(r.note, incCols[4])}</w:tr>`
-          );
+          r =>
+            `<w:tr>${dCell(r.no, incCols[0])}${dCell(r.desc, incCols[1], 'left')}${dCell(
+              r.khrText,
+              incCols[2]
+            )}${dCell(r.usdText, incCols[3])}${dCell(r.note, incCols[4])}</w:tr>`
+        );
     const incTotal = `<w:tr>
       ${dCell('សរុបចំណូល', incCols[0] + incCols[1], 'center', { gridSpan: 2, moul: true })}
       ${dCell(semData?.totalIncomeKHRText, incCols[2], 'center', { bold: true })}
@@ -1661,7 +1777,7 @@ export async function exportMinistryReportToWord(ministryModel) {
   );
 
   // Grand Annual Table
-  const grandCols = fitColumns([800, 3600, 2200, 1500, 2106], contentWidth);
+  const grandCols = fitColumns([714, 3470, 2450, 1531, 2041], contentWidth);
   const grandXml = wTable(
     grandCols,
     [
@@ -1712,15 +1828,16 @@ export async function exportMinistryReportToWord(ministryModel) {
 
   const secHead = (txt) => wParagraph(txt, { font: FONT_MOUL, sizePt: SZ, align: 'left', spaceBefore: 80, spaceAfter: 30 });
   const subHead = (txt) =>
-    wParagraph(txt, { font: FONT_MOUL, sizePt: 11, align: 'left', indentLeft: 280, spaceBefore: 40, spaceAfter: 20 });
+    wParagraph(txt, { font: FONT_BATTAMBANG, sizePt: SZ, bold: true, align: 'left', indentLeft: 280, spaceBefore: 40, spaceAfter: 20 });
   const bulletPara = (txt) =>
-    wParagraph(`-${txt}`, { font: FONT_SIEMREAP, sizePt: SZ, align: 'left', indentLeft: 360, spaceAfter: 16 });
+    wParagraph(`-${txt}`, { font: FONT_BATTAMBANG, sizePt: SZ, align: 'left', indentLeft: 360, spaceAfter: 16 });
 
   const leftSchoolTableXml = wTable(
     [5500, contentWidth - 5500],
     [
       `<w:tr>${wCell(
         [
+          ...(hasLogo ? [wLogoParagraph(450000)] : []),
           wParagraph('មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
           wParagraph('ពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង', { font: FONT_MOUL, sizePt: 11, align: 'center' }),
           wParagraph('ក្រុងកំពង់ចាម', { font: FONT_MOUL, sizePt: 11, align: 'center' })
@@ -1735,33 +1852,36 @@ export async function exportMinistryReportToWord(ministryModel) {
     { bordered: false }
   );
 
+  const compactFullLunar = formatMinistryLunarDateLine(ministryModel.lunarDateLine);
+  const compactFullSolar = formatMinistrySolarDateLine(ministryModel.solarDateLine);
+  const compactFullDocNo = String(ministryModel.docNumber || '................').replace(/[.…]{4,}/g, '................').trim();
+
   const sigRightParas = [
-    wParagraph(ministryModel.lunarDateLine || '', { font: FONT_SIEMREAP, sizePt: SZ, align: 'center', keepNext: true }),
-    wParagraph(ministryModel.solarDateLine || '', { font: FONT_SIEMREAP, sizePt: SZ, align: 'center', keepNext: true }),
-    wMultiRunParagraph(
-      [
-        { text: `លេខ ${ministryModel.docNumber || '.....................................'} `, font: FONT_SIEMREAP, sizePt: SZ },
-        { text: ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍', font: FONT_MOUL, sizePt: SZ }
-      ],
-      { align: 'center' }
-    )
+    wParagraph(compactFullLunar, { font: FONT_BATTAMBANG, sizePt: 12, align: 'center', keepNext: true }),
+    wParagraph(compactFullSolar, { font: FONT_BATTAMBANG, sizePt: 12, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍', { font: FONT_MOUL, sizePt: 12.5, align: 'center', spaceBefore: 60 })
   ].join('');
 
   const sigLeftParas = [
-    wParagraph('', { sizePt: 10 }),
-    wParagraph('', { sizePt: 10 }),
-    wParagraph('បានឃើញ និងឯកភាព', { font: FONT_MOUL, sizePt: SZ, align: 'center', keepNext: true }),
-    wParagraph(ministryModel.signerTitle || 'ព្រះនាយក', { font: FONT_MOUL, sizePt: SZ, align: 'center', spaceBefore: 40 })
+    wParagraph('', { sizePt: 11.5 }),
+    wParagraph(`លេខ ${compactFullDocNo}`, {
+      font: FONT_BATTAMBANG,
+      sizePt: 12,
+      align: 'center',
+      keepNext: true
+    }),
+    wParagraph('បានឃើញ និងឯកភាព', { font: FONT_MOUL, sizePt: 12.5, align: 'center', keepNext: true }),
+    wParagraph(ministryModel.signerTitle || 'ព្រះនាយក', { font: FONT_MOUL, sizePt: 12.5, align: 'center', spaceBefore: 60 })
   ].join('');
 
   const sigTableXml = wTable(
-    [4800, contentWidth - 4800],
+    [4600, contentWidth - 4600],
     [
       `<w:tr><w:trPr><w:cantSplit/></w:trPr>${wCell(sigLeftParas, {
-        widthDxa: 4800,
+        widthDxa: 4600,
         vAlign: 'top',
         marginsDxa: ZERO_MARGINS
-      })}${wCell(sigRightParas, { widthDxa: contentWidth - 4800, vAlign: 'top', marginsDxa: ZERO_MARGINS })}</w:tr>`
+      })}${wCell(sigRightParas, { widthDxa: contentWidth - 4600, vAlign: 'top', marginsDxa: ZERO_MARGINS })}</w:tr>`
     ],
     { bordered: false }
   );
@@ -1780,13 +1900,13 @@ export async function exportMinistryReportToWord(ministryModel) {
     ...(ministryModel.generalInfoLines || []).map(row =>
       row.value
         ? wMultiRunParagraph(
-            [
-              { text: `-${row.label}`, font: FONT_SIEMREAP, sizePt: SZ },
-              { tab: true },
-              { text: row.value, font: FONT_SIEMREAP, sizePt: SZ }
-            ],
-            { align: 'left', indentLeft: 280, tabStops: [6200] }
-          )
+          [
+            { text: `-${row.label}`, font: FONT_BATTAMBANG, sizePt: SZ },
+            { tab: true },
+            { text: row.value, font: FONT_BATTAMBANG, sizePt: SZ }
+          ],
+          { align: 'left', indentLeft: 280, tabStops: [6600] }
+        )
         : bulletPara(row.label)
     ),
 
@@ -1841,24 +1961,25 @@ export async function exportMinistryReportToWord(ministryModel) {
     ...(ministryModel.solutions || []).map(bulletPara),
     secHead('ញ.សេចក្ដីសន្និដ្ឋាន'),
     ...(ministryModel.conclusionParas || []).map(p =>
-      wParagraph(p, { font: FONT_SIEMREAP, sizePt: SZ, align: 'left', firstLine: 720, spaceAfter: 40 })
+      wParagraph(p, { font: FONT_BATTAMBANG, sizePt: SZ, align: 'left', firstLine: 720, spaceAfter: 40 })
     ),
     secHead('ដ.សំណូមពរ'),
     ...(ministryModel.requests || []).map(bulletPara),
     wParagraph('', { sizePt: 8, spaceAfter: 60 }),
     sigTableXml,
     wParagraph('', { sizePt: 8, spaceAfter: 80 }),
-    wParagraph('ចម្លងប្រគេនជូន', { font: FONT_MOUL, sizePt: 11, align: 'left' }),
+    wParagraph('ចម្លងប្រគេនជូន', { font: FONT_BATTAMBANG, sizePt: 10, bold: true, align: 'left' }),
     ...(ministryModel.ccList || []).map(cc =>
-      wParagraph(`-${cc}`, { font: FONT_SIEMREAP, sizePt: 11, align: 'left' })
+      wParagraph(`-${cc}`, { font: FONT_BATTAMBANG, sizePt: 9.5, align: 'left' })
     )
   ];
 
-  downloadDocxDocument(bodyParts.join(''), `របាយការណ៍_${ministryModel.shortFullFileNameTag}.docx`, null, {
+  downloadDocxDocument(bodyParts.join(''), `របាយការណ៍_${ministryModel.shortFullFileNameTag}.docx`, logoBytes, {
     tacteingOdttf,
     pageSize: { w: 11906, h: 16838 },
     pageMargins,
-    footerXml: ADMIN_PAGE_NUMBER_FOOTER_XML
+    headerXml: MINISTRY_FULL_HEADER_XML,
+    footerXml: buildMinistryFullFooterXml(contentWidth)
   });
 }
 
@@ -1932,10 +2053,10 @@ export async function exportSchoolHistoryToWord(historyModel) {
     }),
     wParagraph('១.១. សាវតារ', { font: FONT_MOUL, sizePt: 11.5, color: NAVY, align: 'left', indentLeft: 280, spaceAfter: 40 }),
     ...(historyModel.backgroundParagraphs || []).map(p =>
-      wParagraph(p, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'left', firstLine: 720, spaceAfter: 60 })
+      wParagraph(p, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 60 })
     ),
     ...(historyModel.tableIntro
-      ? [wParagraph(historyModel.tableIntro, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'left', firstLine: 720, spaceAfter: 80 })]
+      ? [wParagraph(historyModel.tableIntro, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'both', firstLine: 720, spaceAfter: 80 })]
       : []),
     buildSchoolHistoryTableXml(historyModel, contentWidth),
     wParagraph('', { sizePt: 8, spaceAfter: 120 }),

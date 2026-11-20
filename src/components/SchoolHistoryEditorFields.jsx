@@ -8,6 +8,11 @@ function parseNum(val) {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+function formatSpaceThousands(val) {
+  const n = Math.max(0, Math.round(Number(val) || 0));
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
 function suggestNextAcademicYear(rows = []) {
   if (!rows.length) return '2026-2027';
   const last = String(rows[rows.length - 1]?.academicYear || '');
@@ -325,19 +330,19 @@ export default function SchoolHistoryEditorFields({
                   សរុបទាំង{fmtNum(rows.length)}ឆ្នាំ
                 </td>
                 <td style={{ padding: '7px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  {fmtNum(sumKg)}
+                  {fmtNum(formatSpaceThousands(sumKg))}
                 </td>
                 <td style={{ padding: '7px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  {fmtNum(sumG1)}
+                  {fmtNum(formatSpaceThousands(sumG1))}
                 </td>
                 <td style={{ padding: '7px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  {fmtNum(sumG2)}
+                  {fmtNum(formatSpaceThousands(sumG2))}
                 </td>
                 <td style={{ padding: '7px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  {fmtNum(sumG3)}
+                  {fmtNum(formatSpaceThousands(sumG3))}
                 </td>
                 <td style={{ padding: '7px 4px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#b45309' }}>
-                  {fmtNum(grandTotal)}
+                  {fmtNum(formatSpaceThousands(grandTotal))}
                 </td>
                 <td colSpan={2} style={{ padding: '7px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontSize: 11.5 }}>
                   អង្គ/នាក់

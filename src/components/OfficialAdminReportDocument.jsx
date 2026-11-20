@@ -250,7 +250,7 @@ export default function OfficialAdminReportDocument({
               fontStyle: 'italic',
               color: '#000000',
               textAlign: 'right',
-              paddingRight: 10
+              paddingRight: 0
             }}
           >
             ជាទីគោរពសក្ការៈដ៏ខ្ពង់ខ្ពស់!
@@ -278,7 +278,7 @@ export default function OfficialAdminReportDocument({
           >
             កម្មវត្ថុ៖
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, textAlign: 'left' }}>
             {renderParagraphWithMuolHighlights(displayModel.subjectText, [
               displayModel.periodTitlePhrase
             ])}
@@ -669,49 +669,13 @@ export default function OfficialAdminReportDocument({
             }}
           >
             <span style={{ width: 22, flexShrink: 0, fontSize: 13 }}>❖</span>
-            <span style={{ flex: 1 }}>{line}</span>
+            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
           </div>
         )
       });
     });
 
-    // Combined Mode ONLY: Editable Table Intro Paragraph + 16-Year Human Resource Training Table
-    if (includeHist) {
-      const introStr = normalizeSingleSpaces(displayModel.schoolHistory.tableIntro || '');
-      if (introStr) {
-        blocks.push({
-          id: 'hist-tbl-intro',
-          isHeading: true,
-          estPx: estimateVisualHeightPx(introStr, 60, 10),
-          node: (
-            <div
-              key="hist-tbl-intro"
-              style={{
-                paddingTop: 6,
-                marginBottom: 6,
-                textAlign: 'left',
-                wordSpacing: 'normal',
-                textIndent: 52,
-                lineHeight: 1.78
-              }}
-            >
-              {introStr}
-            </div>
-          )
-        });
-      }
-
-      blocks.push({
-        id: 'hist-16yr-table',
-        isSplittableHistoryTable: true,
-        rows: displayModel.schoolHistory.rows || [],
-        totals: displayModel.schoolHistory.totals || null,
-        estPx: 600,
-        node: null
-      });
-    }
-
-    // Section III (ខ) Admin Docs
+    // Section III/IV (ខ) Admin Docs (placed directly after ក, before 16-year history table)
     blocks.push({
       id: 'sec3-subB',
       isHeading: true,
@@ -753,6 +717,42 @@ export default function OfficialAdminReportDocument({
         )
       });
     });
+
+    // Combined Mode ONLY: Editable Table Intro Paragraph + 16-Year Human Resource Training Table (between ខ and គ)
+    if (includeHist) {
+      const introStr = normalizeSingleSpaces(displayModel.schoolHistory.tableIntro || '');
+      if (introStr) {
+        blocks.push({
+          id: 'hist-tbl-intro',
+          isHeading: true,
+          estPx: estimateVisualHeightPx(introStr, 60, 10),
+          node: (
+            <div
+              key="hist-tbl-intro"
+              style={{
+                paddingTop: 6,
+                marginBottom: 6,
+                textAlign: 'left',
+                wordSpacing: 'normal',
+                textIndent: 52,
+                lineHeight: 1.78
+              }}
+            >
+              {introStr}
+            </div>
+          )
+        });
+      }
+
+      blocks.push({
+        id: 'hist-16yr-table',
+        isSplittableHistoryTable: true,
+        rows: displayModel.schoolHistory.rows || [],
+        totals: displayModel.schoolHistory.totals || null,
+        estPx: 600,
+        node: null
+      });
+    }
 
     // Section III (គ & ឃ) Appendix
     blocks.push({
@@ -835,7 +835,7 @@ export default function OfficialAdminReportDocument({
             }}
           >
             <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <span style={{ flex: 1 }}>{line}</span>
+            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
           </div>
         )
       });
@@ -880,7 +880,7 @@ export default function OfficialAdminReportDocument({
             }}
           >
             <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <span style={{ flex: 1 }}>{line}</span>
+            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
           </div>
         )
       });
@@ -925,7 +925,7 @@ export default function OfficialAdminReportDocument({
             }}
           >
             <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <span style={{ flex: 1 }}>{line}</span>
+            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
           </div>
         )
       });
@@ -965,7 +965,7 @@ export default function OfficialAdminReportDocument({
             }}
           >
             <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <span style={{ flex: 1 }}>{line}</span>
+            <span style={{ flex: 1, textAlign: 'left' }}>{line}</span>
           </div>
         )
       });

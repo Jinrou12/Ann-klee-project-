@@ -1594,6 +1594,20 @@ export default function SummaryMobileView({
           isDeficitOverride={isOverallDeficit}
           categoryFilter={financeCategoryFilter}
         />
+      </div>
+      <div
+        className="no-print"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: -9999,
+          width: 1123,
+          minWidth: 1123,
+          maxWidth: 1123,
+          pointerEvents: 'none'
+        }}
+        aria-hidden="true"
+      >
         <OfficialFinanceSummaryDocument
           id="printable-mobile-summary-finance-brief-document"
           financeData={fullPeriodFinanceDataForSummary}

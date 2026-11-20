@@ -955,7 +955,7 @@ export async function exportFinanceSummaryReportToExcel(
   merges.push(`${cellRef(rTitle2, 0)}:${cellRef(rTitle2, numCols - 1)}`);
 
   const rTitle3 = rows.length + 1;
-  rows.push({ height: 26, cells: [{ v: summaryModel.reportTitle, s: 2 }] });
+  rows.push({ height: 24, cells: [{ v: summaryModel.reportTitle, s: 25 }] });
   merges.push(`${cellRef(rTitle3, 0)}:${cellRef(rTitle3, numCols - 1)}`);
 
   rows.push(makeTableTopSpacerRow(numCols, 10));
@@ -1152,7 +1152,12 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
     pushFullRow(`- ${line}`, 0, ht);
   });
 
-  // Optional 16-Year Human Resource Training Table under IV. ក
+  pushFullRow('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍', 12, 24);
+  (displayModel.adminDocLines || []).forEach(line => {
+    pushFullRow(`- ${line}`, 0, 24);
+  });
+
+  // Optional 16-Year Human Resource Training Table placed between ខ and គ
   if (includeHist) {
     if (displayModel.schoolHistory.tableIntro) {
       pushFullRow(displayModel.schoolHistory.tableIntro, 0, 42);
@@ -1195,10 +1200,6 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
     rows.push({ height: 8, cells: [] });
   }
 
-  pushFullRow('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍', 12, 24);
-  (displayModel.adminDocLines || []).forEach(line => {
-    pushFullRow(`- ${line}`, 0, 24);
-  });
   pushFullRow(displayModel.section3SubCHeading, 12, 24);
   pushFullRow(displayModel.section3SubDHeading, 12, 24);
   (displayModel.appendixItems || []).forEach((line, idx) => {
@@ -1310,7 +1311,8 @@ export async function exportMinistrySummaryToExcel(ministryModel, metadata = {})
   };
 
   pushSigRow('', 13, ministryModel.lunarDateLine || '', 13);
-  pushSigRow('បានឃើញ និងឯកភាព', 1, `លេខ ${ministryModel.docNumber || '.....................................'}`, 13);
+  pushSigRow(`លេខ ${ministryModel.docNumber || '.....................................'}`, 13, ministryModel.solarDateLine || '', 13);
+  pushSigRow('បានឃើញ និងឯកភាព', 1, ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍', 1);
   pushSigRow(ministryModel.lunarDateLine || '', 13, '', 13);
   pushSigRow(ministryModel.solarDateLine || '', 13, '', 13);
   pushSigRow(ministryModel.signerTitle || 'ព្រះនាយក', 1, '', 13);
@@ -1464,10 +1466,12 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
     });
     merges.push(`${cellRef(expHdrR, 0)}:${cellRef(expHdrR, numCols - 1)}`);
 
+    const expColHdrR = rows.length + 1;
     rows.push({
       height: 26,
-      cells: ['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'សមតុល្យ', 'ផ្សេងៗ'].map(h => ({ v: h, s: 4 }))
+      cells: ['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'ផ្សេងៗ', ''].map(h => ({ v: h, s: 4 }))
     });
+    merges.push(`${cellRef(expColHdrR, 5)}:${cellRef(expColHdrR, 6)}`);
 
     if ((semData?.expenseRows || []).length === 0) {
       const emptyR = rows.length + 1;
@@ -1478,6 +1482,7 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
       merges.push(`${cellRef(emptyR, 0)}:${cellRef(emptyR, numCols - 1)}`);
     } else {
       (semData.expenseRows || []).forEach(r => {
+        const expRowIdx = rows.length + 1;
         rows.push({
           height: 24,
           cells: [
@@ -1486,10 +1491,11 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
             { v: r.source, s: 5 },
             { v: r.amountText, s: 5 },
             { v: r.qty, s: 5 },
-            { v: r.balance || '', s: 5 },
-            { v: r.note || '', s: 5 }
+            { v: r.note || '', s: 5 },
+            { v: '', s: 5 }
           ]
         });
+        merges.push(`${cellRef(expRowIdx, 5)}:${cellRef(expRowIdx, 6)}`);
       });
     }
 
@@ -1507,6 +1513,7 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
       ]
     });
     merges.push(`${cellRef(expTotR, 0)}:${cellRef(expTotR, 2)}`);
+    merges.push(`${cellRef(expTotR, 4)}:${cellRef(expTotR, 6)}`);
 
     const incHdrR = rows.length + 1;
     rows.push({
@@ -1720,7 +1727,8 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
   rows.push({ height: 12, cells: [] });
   pushFullRow(ministryModel.lunarDateLine || '', 13, 22);
   pushFullRow(ministryModel.solarDateLine || '', 13, 22);
-  pushFullRow(`លេខ ${ministryModel.docNumber || '.....................................'} ${ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍'}`, 13, 24);
+  pushFullRow(ministryModel.reporterTitle || 'អ្នកធ្វើរបាយការណ៍', 1, 24);
+  pushFullRow(`លេខ ${ministryModel.docNumber || '.....................................'}`, 13, 22);
   pushFullRow('បានឃើញ និងឯកភាព', 1, 24);
   pushFullRow(ministryModel.signerTitle || 'ព្រះនាយក', 1, 26);
 
