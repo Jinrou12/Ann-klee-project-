@@ -50,7 +50,7 @@ export default function OfficialMinistrySummaryDocument({
     padding: '4.5px 10px',
     fontFamily: SIEMREAP_FONT,
     fontWeight: 400,
-    fontSize: 15,
+    fontSize: '12pt',
     verticalAlign: 'middle',
     color: '#000000',
     lineHeight: 1.58,

@@ -1077,18 +1077,33 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   const logoBytes = await loadOfficialLogoBytes();
   const hasLogo = Boolean(logoBytes && logoBytes.length > 0);
   const includeHist = Boolean(displayModel.includeHistory && displayModel.schoolHistory);
+  const resolvedOrder = displayModel.resolvedOrder || {
+    top: includeHist
+      ? ['background', 'management', 'stats', 'progress', 'challenges', 'directions', 'conclusion']
+      : ['management', 'stats', 'progress', 'challenges', 'directions', 'conclusion'],
+    progressSub: includeHist
+      ? ['activities', 'admin_docs', 'history_table', 'appendix']
+      : ['activities', 'admin_docs', 'appendix'],
+    challengesSub: ['challenges', 'solutions', 'requests']
+  };
   const secNums = displayModel.sectionNumbers || {
-    background: null,
-    management: 'I',
-    stats: 'II',
-    progress: 'III',
-    challenges: 'IV',
-    directions: 'V',
-    conclusion: 'VI'
+    background: includeHist ? 'I' : null,
+    management: includeHist ? 'II' : 'I',
+    stats: includeHist ? 'III' : 'II',
+    progress: includeHist ? 'IV' : 'III',
+    challenges: includeHist ? 'V' : 'IV',
+    directions: includeHist ? 'VI' : 'V',
+    conclusion: includeHist ? 'VII' : 'VI'
+  };
+  const chalHeadings = displayModel.challengesSubHeadings || {
+    challenges: '១-បញ្ហាប្រឈម',
+    solutions: '២-ដំណោះស្រាយ',
+    requests: '៣-សំណូមពរ'
   };
   const rows = [];
   const merges = [];
   const numCols = includeHist ? 8 : 5;
+  const fmtNum = (n) => toKhmerDigits(n);
 
   const pushFullRow = (text, styleIdx = 0, height = 24) => {
     const rNum = rows.length + 1;
@@ -1113,135 +1128,139 @@ export async function exportAdminReportToExcel(displayModel, metadata = {}) {
   pushFullRow(displayModel.introParagraph, 0, 42);
   rows.push({ height: 10, cells: [] });
 
-  // Optional I. សាវតារ (Combined Mode)
-  if (includeHist) {
-    pushFullRow('I. សាវតារ', 12, 26);
-    (displayModel.schoolHistory.backgroundParagraphs || []).forEach(p => {
-      const ht = Math.max(42, Math.ceil(String(p || '').length / 100) * 20);
-      pushFullRow(p, 0, ht);
-    });
-    rows.push({ height: 8, cells: [] });
-  }
-
-  // I (or II). តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
-  pushFullRow(`${secNums.management}.តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា`, 12, 26);
-  pushFullRow(displayModel.section1Intro, 0, 38);
-  const fmtNum = (n) => toKhmerDigits(n);
-  (displayModel.managementRoles || []).forEach((m, idx) => {
-    pushFullRow(`${fmtNum(idx + 1)}. ${m.name}     ${m.role}`, 0, 24);
-  });
-  rows.push({ height: 8, cells: [] });
-
-  // II (or III). ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
-  pushFullRow(`${secNums.stats}.ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`, 12, 26);
-  pushFullRow('ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ', 12, 24);
-  (displayModel.staffStats || []).forEach(line => {
-    pushFullRow(`❖ ${line}`, 0, 24);
-  });
-  pushFullRow('ខ-ចំនួនថ្នាក់ សមណសិស្ស', 12, 24);
-  (displayModel.studentStatLines || []).forEach(line => {
-    pushFullRow(`❖ ${line}`, 0, 24);
-  });
-  rows.push({ height: 8, cells: [] });
-
-  // III (or IV). វឌ្ឍនភាពការងារ
-  pushFullRow(displayModel.section3Heading, 12, 26);
-  pushFullRow(displayModel.section3SubAHeading, 12, 24);
-  (displayModel.activities || []).forEach(line => {
-    const ht = line.length > 95 ? 42 : 24;
-    pushFullRow(`- ${line}`, 0, ht);
-  });
-
-  pushFullRow('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍', 12, 24);
-  (displayModel.adminDocLines || []).forEach(line => {
-    pushFullRow(`- ${line}`, 0, 24);
-  });
-
-  // Optional 16-Year Human Resource Training Table placed between ខ and គ
-  if (includeHist) {
-    if (displayModel.schoolHistory.tableIntro) {
-      const rawIntro = String(displayModel.schoolHistory.tableIntro || '').trim();
-      const excelIntro = rawIntro.startsWith('គ.') ? rawIntro : `គ. ${rawIntro}`;
-      pushFullRow(excelIntro, 0, 42);
-    }
-    rows.push({
-      height: 26,
-      cells: ['ល.រ', 'ឆ្នាំសិក្សា', 'ថ្នាក់មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'].map(h => ({ v: h, s: 4 }))
-    });
-    (displayModel.schoolHistory.rows || []).forEach(r => {
-      rows.push({
-        height: 24,
-        cells: [
-          { v: r.no, s: 5 },
-          { v: r.academicYearDisplay, s: 5 },
-          { v: r.kgText, s: 5 },
-          { v: r.g1Text, s: 5 },
-          { v: r.g2Text, s: 5 },
-          { v: r.g3Text, s: 5 },
-          { v: r.totalText, s: 5 },
-          { v: r.note || '', s: 5 }
-        ]
+  // Dynamic Option-B Ordered Sections (I..VII, ក..ង, ១-..៣-)
+  (resolvedOrder.top || []).forEach(topKey => {
+    if (topKey === 'background' && includeHist && displayModel.schoolHistory) {
+      pushFullRow(`${secNums.background || 'I'}. សាវតារ`, 12, 26);
+      (displayModel.schoolHistory.backgroundParagraphs || []).forEach(p => {
+        const ht = Math.max(42, Math.ceil(String(p || '').length / 100) * 20);
+        pushFullRow(p, 0, ht);
       });
-    });
-    if (displayModel.schoolHistory.totals) {
-      const t = displayModel.schoolHistory.totals;
-      rows.push({
-        height: 26,
-        cells: [
-          { v: '', s: 9 },
-          { v: t.label, s: 9 },
-          { v: t.kgText, s: 9 },
-          { v: t.g1Text, s: 9 },
-          { v: t.g2Text, s: 9 },
-          { v: t.g3Text, s: 9 },
-          { v: t.grandTotalText, s: 9 },
-          { v: '', s: 9 }
-        ]
+      rows.push({ height: 8, cells: [] });
+    } else if (topKey === 'management') {
+      pushFullRow(`${secNums.management}.តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា`, 12, 26);
+      pushFullRow(displayModel.section1Intro, 0, 38);
+      (displayModel.managementRoles || []).forEach((m, idx) => {
+        pushFullRow(`${fmtNum(idx + 1)}. ${m.name}     ${m.role}`, 0, 24);
       });
+      rows.push({ height: 8, cells: [] });
+    } else if (topKey === 'stats') {
+      pushFullRow(`${secNums.stats}.ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`, 12, 26);
+      pushFullRow('ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ', 12, 24);
+      (displayModel.staffStats || []).forEach(line => {
+        pushFullRow(`❖ ${line}`, 0, 24);
+      });
+      pushFullRow('ខ-ចំនួនថ្នាក់ សមណសិស្ស', 12, 24);
+      (displayModel.studentStatLines || []).forEach(line => {
+        pushFullRow(`❖ ${line}`, 0, 24);
+      });
+      rows.push({ height: 8, cells: [] });
+    } else if (topKey === 'progress') {
+      pushFullRow(displayModel.section3Heading, 12, 26);
+      (resolvedOrder.progressSub || []).forEach(subKey => {
+        if (subKey === 'activities') {
+          pushFullRow(displayModel.section3SubAHeading, 12, 24);
+          (displayModel.activities || []).forEach(line => {
+            const ht = line.length > 95 ? 42 : 24;
+            pushFullRow(`- ${line}`, 0, ht);
+          });
+        } else if (subKey === 'admin_docs') {
+          pushFullRow(
+            displayModel.section3SubBHeading ||
+              'ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍',
+            12,
+            24
+          );
+          (displayModel.adminDocLines || []).forEach(line => {
+            pushFullRow(`- ${line}`, 0, 24);
+          });
+        } else if (subKey === 'history_table' && includeHist && displayModel.schoolHistory) {
+          if (displayModel.schoolHistory.tableIntro) {
+            const rawIntro = String(displayModel.schoolHistory.tableIntro || '')
+              .trim()
+              .replace(/^[ក-អ]\.\s*/, '');
+            const prefix = displayModel.section3HistoryPrefix || 'គ.';
+            pushFullRow(`${prefix} ${rawIntro}`, 0, 42);
+          }
+          rows.push({
+            height: 26,
+            cells: ['ល.រ', 'ឆ្នាំសិក្សា', 'ថ្នាក់មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'].map(h => ({ v: h, s: 4 }))
+          });
+          (displayModel.schoolHistory.rows || []).forEach(r => {
+            rows.push({
+              height: 24,
+              cells: [
+                { v: r.no, s: 5 },
+                { v: r.academicYearDisplay, s: 5 },
+                { v: r.kgText, s: 5 },
+                { v: r.g1Text, s: 5 },
+                { v: r.g2Text, s: 5 },
+                { v: r.g3Text, s: 5 },
+                { v: r.totalText, s: 5 },
+                { v: r.note || '', s: 5 }
+              ]
+            });
+          });
+          if (displayModel.schoolHistory.totals) {
+            const t = displayModel.schoolHistory.totals;
+            rows.push({
+              height: 26,
+              cells: [
+                { v: '', s: 9 },
+                { v: t.label, s: 9 },
+                { v: t.kgText, s: 9 },
+                { v: t.g1Text, s: 9 },
+                { v: t.g2Text, s: 9 },
+                { v: t.g3Text, s: 9 },
+                { v: t.grandTotalText, s: 9 },
+                { v: '', s: 9 }
+              ]
+            });
+          }
+          rows.push({ height: 8, cells: [] });
+        } else if (subKey === 'appendix') {
+          pushFullRow(displayModel.section3SubCHeading, 12, 24);
+          pushFullRow(displayModel.section3SubDHeading, 12, 24);
+          (displayModel.appendixItems || []).forEach((line, idx) => {
+            pushFullRow(`${fmtNum(idx + 1)}. ${line}`, 0, 24);
+          });
+        }
+      });
+      rows.push({ height: 8, cells: [] });
+    } else if (topKey === 'challenges') {
+      pushFullRow(`${secNums.challenges}.បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`, 12, 26);
+      const subDataMap = {
+        challenges: { heading: chalHeadings.challenges, items: displayModel.challenges || [] },
+        solutions: { heading: chalHeadings.solutions, items: displayModel.solutions || [] },
+        requests: { heading: chalHeadings.requests, items: displayModel.requests || [] }
+      };
+      (resolvedOrder.challengesSub || ['challenges', 'solutions', 'requests']).forEach(subKey => {
+        const cfg = subDataMap[subKey];
+        if (!cfg) return;
+        pushFullRow(cfg.heading, 12, 24);
+        cfg.items.forEach(line => {
+          const ht = line.length > 95 ? 38 : 24;
+          pushFullRow(`- ${line}`, 0, ht);
+        });
+      });
+      rows.push({ height: 8, cells: [] });
+    } else if (topKey === 'directions') {
+      pushFullRow(`${secNums.directions}.ទិសដៅបន្ត`, 12, 26);
+      (displayModel.directions || []).forEach(line => {
+        pushFullRow(`- ${line}`, 0, 24);
+      });
+      rows.push({ height: 8, cells: [] });
+    } else if (topKey === 'conclusion') {
+      pushFullRow(`${secNums.conclusion}.សន្និដ្ឋាន`, 12, 26);
+      pushFullRow(displayModel.conclusionText, 0, 48);
+      rows.push({ height: 8, cells: [] });
     }
-    rows.push({ height: 8, cells: [] });
-  }
+  });
 
-  pushFullRow(displayModel.section3SubCHeading, 12, 24);
-  pushFullRow(displayModel.section3SubDHeading, 12, 24);
-  (displayModel.appendixItems || []).forEach((line, idx) => {
-    pushFullRow(`${fmtNum(idx + 1)}. ${line}`, 0, 24);
-  });
-  rows.push({ height: 8, cells: [] });
-
-  // IV (or V). បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
-  pushFullRow(`${secNums.challenges}.បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`, 12, 26);
-  pushFullRow('១-បញ្ហាប្រឈម', 12, 24);
-  (displayModel.challenges || []).forEach(line => {
-    const ht = line.length > 95 ? 38 : 24;
-    pushFullRow(`- ${line}`, 0, ht);
-  });
-  pushFullRow('២-ដំណោះស្រាយ', 12, 24);
-  (displayModel.solutions || []).forEach(line => {
-    const ht = line.length > 95 ? 38 : 24;
-    pushFullRow(`- ${line}`, 0, ht);
-  });
-  pushFullRow('៣-សំណូមពរ', 12, 24);
-  (displayModel.requests || []).forEach(line => {
-    pushFullRow(`- ${line}`, 0, 24);
-  });
-  rows.push({ height: 8, cells: [] });
-
-  // V (or VI). ទិសដៅបន្ត
-  pushFullRow(`${secNums.directions}.ទិសដៅបន្ត`, 12, 26);
-  (displayModel.directions || []).forEach(line => {
-    pushFullRow(`- ${line}`, 0, 24);
-  });
-  rows.push({ height: 8, cells: [] });
-
-  // VI (or VII). សន្និដ្ឋាន
-  pushFullRow(`${secNums.conclusion}.សន្និដ្ឋាន`, 12, 26);
-  pushFullRow(displayModel.conclusionText, 0, 48);
+  // Closing & Right-side Lunar/Solar Dates & Signer
   pushFullRow(displayModel.closingLine1, 0, 24);
   pushFullRow(displayModel.closingLine2, 0, 24);
   rows.push({ height: 12, cells: [] });
-
-  // Right-side Lunar/Solar Dates & Signer
   pushFullRow(displayModel.lunarDateLine, 13, 22);
   pushFullRow(displayModel.solarDateLine, 13, 22);
   pushFullRow(displayModel.signerTitle || 'ព្រះនាយក', 1, 26);

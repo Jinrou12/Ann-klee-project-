@@ -25,6 +25,134 @@ export const DEFAULT_SECTION1_INTRO =
 export const DEFAULT_RECIPIENT_TITLE =
   'ព្រះធម្មសាលវង្ស សា វីរៈ ព្រះបដ្ឋនវង្សាចារ្យអនុគណក្រុងកំពង់ចាម';
 
+export const ADMIN_TOP_SECTION_KEYS_STANDARD = [
+  'management',
+  'stats',
+  'progress',
+  'challenges',
+  'directions',
+  'conclusion'
+];
+
+export const ADMIN_TOP_SECTION_KEYS_COMBINED = [
+  'background',
+  'management',
+  'stats',
+  'progress',
+  'challenges',
+  'directions',
+  'conclusion'
+];
+
+export const ADMIN_PROGRESS_SUB_KEYS_STANDARD = ['activities', 'admin_docs', 'appendix'];
+export const ADMIN_PROGRESS_SUB_KEYS_COMBINED = ['activities', 'admin_docs', 'history_table', 'appendix'];
+export const ADMIN_CHALLENGES_SUB_KEYS = ['challenges', 'solutions', 'requests'];
+
+const ROMAN_SECTION_NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+const KHMER_SUB_LETTERS = ['ក', 'ខ', 'គ', 'ឃ', 'ង', 'ច', 'ឆ'];
+const KHMER_NUM_PREFIXES = ['១', '២', '៣', '៤', '៥'];
+
+/**
+ * Pure list reorder helper: moves `fromKey` into the exact index slot currently occupied by `toKey`.
+ * Works symmetrically for both upward drags (e.g. គ -> ខ) and downward drags (e.g. ក -> គ).
+ */
+export function reorderKeyList(list = [], fromKey, toKey) {
+  const arr = Array.isArray(list) ? [...list] : [];
+  const fromIdx = arr.indexOf(fromKey);
+  const toIdx = arr.indexOf(toKey);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return arr;
+  const [moved] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, moved);
+  return arr;
+}
+
+function normalizeOrderedKeys(savedList, allowedDefaults) {
+  const allowedSet = new Set(allowedDefaults);
+  const seen = new Set();
+  const out = [];
+  if (Array.isArray(savedList)) {
+    savedList.forEach(k => {
+      if (allowedSet.has(k) && !seen.has(k)) {
+        seen.add(k);
+        out.push(k);
+      }
+    });
+  }
+  allowedDefaults.forEach(k => {
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push(k);
+    }
+  });
+  return out;
+}
+
+/**
+ * Resolve Option-B Admin Report section order (top-level Roman numerals + progress sub-sections + challenges sub-sections)
+ * and compute automatic sequential labels (I..VII, ក..ង, ១-..៣-).
+ */
+export function resolveAdminSectionOrder(rawSectionOrder = null, includeHistory = false) {
+  const defaultTop = includeHistory
+    ? ADMIN_TOP_SECTION_KEYS_COMBINED
+    : ADMIN_TOP_SECTION_KEYS_STANDARD;
+  const defaultProgressSub = includeHistory
+    ? ADMIN_PROGRESS_SUB_KEYS_COMBINED
+    : ADMIN_PROGRESS_SUB_KEYS_STANDARD;
+  const defaultChallengesSub = ADMIN_CHALLENGES_SUB_KEYS;
+
+  const top = normalizeOrderedKeys(rawSectionOrder?.top, defaultTop);
+  const progressSub = normalizeOrderedKeys(rawSectionOrder?.progressSub, defaultProgressSub);
+  const challengesSub = normalizeOrderedKeys(rawSectionOrder?.challengesSub, defaultChallengesSub);
+
+  const sectionNumbers = {
+    background: null,
+    management: 'I',
+    stats: 'II',
+    progress: 'III',
+    challenges: 'IV',
+    directions: 'V',
+    conclusion: 'VI'
+  };
+  top.forEach((key, idx) => {
+    sectionNumbers[key] = ROMAN_SECTION_NUMERALS[idx] || String(idx + 1);
+  });
+
+  const progressSubLetters = {};
+  let letterIdx = 0;
+  progressSub.forEach(subKey => {
+    if (subKey === 'appendix') {
+      progressSubLetters.appendix = {
+        letterC: KHMER_SUB_LETTERS[letterIdx++] || 'គ',
+        letterD: KHMER_SUB_LETTERS[letterIdx++] || 'ឃ'
+      };
+    } else {
+      progressSubLetters[subKey] = {
+        letter: KHMER_SUB_LETTERS[letterIdx++] || 'ក'
+      };
+    }
+  });
+
+  const challengesSubNumbers = {};
+  challengesSub.forEach((subKey, idx) => {
+    challengesSubNumbers[subKey] = KHMER_NUM_PREFIXES[idx] || String(idx + 1);
+  });
+
+  const isCustomOrder =
+    JSON.stringify(top) !== JSON.stringify(defaultTop) ||
+    JSON.stringify(progressSub) !== JSON.stringify(defaultProgressSub) ||
+    JSON.stringify(challengesSub) !== JSON.stringify(defaultChallengesSub);
+
+  return {
+    top,
+    progressSub,
+    challengesSub,
+    sectionNumbers,
+    progressSubLetters,
+    challengesSubNumbers,
+    isCustomOrder
+  };
+}
+
 /**
  * Authentic Seed Data from the 5 Official Word Documents (May - September 2026)
  */
@@ -1110,25 +1238,10 @@ export function buildAdminReportDisplayModel({
         : `ក្នុងឆ្នាំសិក្សា ${yrKh}`;
 
   const shouldIncludeHistory = periodType === 'sem1' && Boolean(includeHistory) && Boolean(schoolHistory);
-  const sectionNumbers = shouldIncludeHistory
-    ? {
-        background: 'I',
-        management: 'II',
-        stats: 'III',
-        progress: 'IV',
-        challenges: 'V',
-        directions: 'VI',
-        conclusion: 'VII'
-      }
-    : {
-        background: null,
-        management: 'I',
-        stats: 'II',
-        progress: 'III',
-        challenges: 'IV',
-        directions: 'V',
-        conclusion: 'VI'
-      };
+  const resolvedOrder = resolveAdminSectionOrder(rawReport.sectionOrder, shouldIncludeHistory);
+  const sectionNumbers = resolvedOrder.sectionNumbers;
+  const subLetters = resolvedOrder.progressSubLetters;
+  const chalNums = resolvedOrder.challengesSubNumbers;
 
   const section3Heading = periodType === 'month'
     ? `${sectionNumbers.progress}. វឌ្ឍនភាពការងារក្នុងខែ${monthName} ឆ្នាំ${yrKh}`
@@ -1138,14 +1251,20 @@ export function buildAdminReportDisplayModel({
         ? `${sectionNumbers.progress}. វឌ្ឍនភាពការងារក្នុងឆមាសទី២ ឆ្នាំ${yrKh}`
         : `${sectionNumbers.progress}. វឌ្ឍនភាពការងារក្នុងឆ្នាំសិក្សា ${yrKh}`;
 
-  const section3SubAHeading = periodType === 'month'
-    ? 'ក. សកម្មភាពប្រចាំខែ'
-    : periodType === 'sem1' || periodType === 'sem2'
-      ? 'ក. សកម្មភាពប្រចាំឆមាស'
-      : 'ក. សកម្មភាពប្រចាំឆ្នាំ';
+  const actLetter = subLetters.activities?.letter || 'ក';
+  const adminDocsLetter = subLetters.admin_docs?.letter || 'ខ';
+  const historyTableLetter = subLetters.history_table?.letter || 'គ';
+  const subCLetter = subLetters.appendix?.letterC || (shouldIncludeHistory ? 'ឃ' : 'គ');
+  const subDLetter = subLetters.appendix?.letterD || (shouldIncludeHistory ? 'ង' : 'ឃ');
 
-  const subCLetter = shouldIncludeHistory ? 'ឃ' : 'គ';
-  const subDLetter = shouldIncludeHistory ? 'ង' : 'ឃ';
+  const section3SubAHeading = periodType === 'month'
+    ? `${actLetter}. សកម្មភាពប្រចាំខែ`
+    : periodType === 'sem1' || periodType === 'sem2'
+      ? `${actLetter}. សកម្មភាពប្រចាំឆមាស`
+      : `${actLetter}. សកម្មភាពប្រចាំឆ្នាំ`;
+
+  const section3SubBHeading = `${adminDocsLetter}. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍`;
+  const section3HistoryPrefix = `${historyTableLetter}.`;
 
   const section3SubCHeading = periodType === 'month'
     ? `${subCLetter}. សរុបអវត្តមានប្រចាំខែ (តារាងឧសម្ព័ន្ធ)`
@@ -1158,6 +1277,12 @@ export function buildAdminReportDisplayModel({
     : periodType === 'sem1' || periodType === 'sem2'
       ? `${subDLetter}. ចំណាយប្រចាំឆមាស (តារាងឧសម្ព័ន្ធ)`
       : `${subDLetter}. ចំណាយប្រចាំឆ្នាំ (តារាងឧសម្ព័ន្ធ)`;
+
+  const challengesSubHeadings = {
+    challenges: `${chalNums.challenges || '១'}-បញ្ហាប្រឈម`,
+    solutions: `${chalNums.solutions || '២'}-ដំណោះស្រាយ`,
+    requests: `${chalNums.requests || '៣'}-សំណូមពរ`
+  };
 
   const defaultAutoSubject = `របាយការណ៍បូកសរុបលទ្ធផលការងារ${periodTitlePhrase} និងលើកទិសដៅការងារបន្តរបស់សាលាពុទ្ធិកបឋមសិក្សាកម្រង ហ៊ុន ណេង ក្រុងកំពង់ចាម។`;
   const rawCustomSubj = String(rawReport.customSubjectText || '').trim();
@@ -1233,7 +1358,11 @@ export function buildAdminReportDisplayModel({
     year: activeYear,
     includeHistory: shouldIncludeHistory,
     schoolHistory: shouldIncludeHistory ? schoolHistory : null,
+    resolvedOrder,
     sectionNumbers,
+    section3SubBHeading,
+    section3HistoryPrefix,
+    challengesSubHeadings,
     periodTitlePhrase,
     inPeriodPhrase,
     shortFileNameTag,

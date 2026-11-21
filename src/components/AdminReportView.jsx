@@ -20,7 +20,7 @@ import KhmerJustifiedText from './KhmerJustifiedText';
 import A4SheetScaler from './A4SheetScaler';
 import TelegramSendMenu from './TelegramSendMenu';
 import ReportEditableZone from './ReportEditableZone';
-import ReportSectionDrawer, { ReportEditModeBar } from './ReportSectionDrawer';
+import ReportSectionDrawer, { ReportEditModeBar, ConfirmReorderModal } from './ReportSectionDrawer';
 import {
   AdminSectionEditorContent,
   HistorySectionEditorContent,
@@ -35,7 +35,9 @@ import {
   buildAutoAdminDocLines,
   synthesizeMultiMonthAdminReport,
   importAdminReportFile,
-  syncMonthlyDropoutChallengeLine
+  syncMonthlyDropoutChallengeLine,
+  reorderKeyList,
+  resolveAdminSectionOrder
 } from '../utils/adminReportBuilder';
 import {
   buildMinistryReportModel,
@@ -94,13 +96,30 @@ export default function AdminReportView({
   const [editDraft, setEditDraft] = useState(null);
   const [ministryEditDraft, setMinistryEditDraft] = useState(null);
   const [historyEditDraft, setHistoryEditDraft] = useState(null);
+  const [liveEditDraft, setLiveEditDraft] = useState(null);
+  const [liveMinistryDraft, setLiveMinistryDraft] = useState(null);
+  const [liveHistoryDraft, setLiveHistoryDraft] = useState(null);
+  const [dragState, setDragState] = useState({ group: null, fromId: null, overId: null });
+  const [pendingReorder, setPendingReorder] = useState(null);
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1440
+  );
   const fileInputRef = useRef(null);
   const savedToastTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const showSavedToast = (msg = 'បានរក្សាទុក!') => {
     setSavedToastText(msg);
     if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
-    savedToastTimerRef.current = setTimeout(() => setSavedToastText(''), 2400);
+    savedToastTimerRef.current = setTimeout(() => setSavedToastText(''), 2600);
   };
 
   useEffect(() => () => {
@@ -110,13 +129,25 @@ export default function AdminReportView({
   const handleCloseEditMode = () => {
     setIsEditing(false);
     setActiveEditSection(null);
+    setLiveEditDraft(null);
+    setLiveHistoryDraft(null);
+    setLiveMinistryDraft(null);
+    setDragState({ group: null, fromId: null, overId: null });
+    setPendingReorder(null);
   };
 
-  // Close edit mode automatically whenever user switches month or year in top bar
+  // Close edit mode & reset undo/redo history automatically whenever user switches report context
   useEffect(() => {
     setIsEditing(false);
     setActiveEditSection(null);
-  }, [currentMonthKey, activeYear]);
+    setLiveEditDraft(null);
+    setLiveHistoryDraft(null);
+    setLiveMinistryDraft(null);
+    setDragState({ group: null, fromId: null, overId: null });
+    setPendingReorder(null);
+    setUndoStack([]);
+    setRedoStack([]);
+  }, [currentMonthKey, activeYear, periodType, sem1Mode, annualTemplate]);
 
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
 
@@ -394,8 +425,333 @@ export default function AdminReportView({
 
   const handleCancelActiveDrawer = () => {
     initDraftsForCurrentMode();
+    setLiveEditDraft(null);
+    setLiveHistoryDraft(null);
+    setLiveMinistryDraft(null);
     setActiveEditSection(null);
   };
+
+  // Pure serializers shared by BOTH Real-Time Live Preview AND Save (guarantees 100% WYSIWYG parity)
+  const buildDraftStudentStatsObj = (draft) => ({
+    ...(displayModel.studentStats || {}),
+    classCount: displayModel.studentStats?.classCount || 4,
+    totalStudents: Number(draft.totalStudents) || 0,
+    gradeKindergarten: Number(draft.gradeKindergarten) || 0,
+    grade1: Number(draft.grade1) || 0,
+    grade2: Number(draft.grade2) || 0,
+    grade3: Number(draft.grade3) || 0
+  });
+
+  const buildDraftAdminDocsObj = (draft) => ({
+    outgoingLetters: Number(draft.outgoingLetters) || 0,
+    incomingLetters: Number(draft.incomingLetters) || 0,
+    schoolMinutes: Number(draft.schoolMinutes) || 0,
+    schoolReportsToMinistry: Number(draft.schoolReportsToMinistry) || 0,
+    ministryMeetings: Number(draft.ministryMeetings) || 0
+  });
+
+  const serializeAdminDraft = (draft) => {
+    const splitClean = (txt) =>
+      String(txt || '')
+        .split('\n')
+        .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
+        .filter(Boolean);
+
+    const prevSt = displayModel.studentStats || {};
+    const didManuallyChangeStudentStats =
+      Number(draft.totalStudents) !== Number(prevSt.totalStudents) ||
+      Number(draft.gradeKindergarten) !== Number(prevSt.gradeKindergarten) ||
+      Number(draft.grade1) !== Number(prevSt.grade1) ||
+      Number(draft.grade2) !== Number(prevSt.grade2) ||
+      Number(draft.grade3) !== Number(prevSt.grade3);
+
+    const cleanedChallenges = splitClean(draft.challengesText);
+    const autoSyncedChallenges = periodType === 'month'
+      ? syncMonthlyDropoutChallengeLine({
+          monthKey: currentMonthKey,
+          prevTotal: displayModel.prevMonthTotalStudents,
+          currTotal: Number(draft.totalStudents) || 0,
+          challenges: cleanedChallenges,
+          useKhmerNumerals
+        })
+      : cleanedChallenges;
+    const didUserCustomEditChallengeText =
+      JSON.stringify(cleanedChallenges) !== JSON.stringify(autoSyncedChallenges);
+
+    const normalizeMultilinePreserveBreaks = (val) => {
+      const rawLines = String(val || '')
+        .replace(/\u200B/g, '')
+        .split(/\r?\n/)
+        .map(line => line.replace(/[ \t]+/g, ' ').trim());
+      while (rawLines.length > 0 && rawLines[0] === '') rawLines.shift();
+      while (rawLines.length > 0 && rawLines[rawLines.length - 1] === '') rawLines.pop();
+      return rawLines.join('\n');
+    };
+
+    const trimmedSubject = normalizeMultilinePreserveBreaks(draft.subjectText)
+      .replace(/^កម្មវត្ថុ[៖:]\s*/, '')
+      .trim();
+    const trimmedIntro = normalizeMultilinePreserveBreaks(draft.introParagraph);
+    const trimmedConclusion = normalizeMultilinePreserveBreaks(draft.conclusionText);
+    const isCustomSubjectEdited = Boolean(
+      trimmedSubject && trimmedSubject !== String(displayModel.defaultAutoSubject || '').trim()
+    );
+    const isCustomIntroEdited = Boolean(
+      trimmedIntro && trimmedIntro !== String(displayModel.defaultAutoIntroParagraph || '').trim()
+    );
+
+    const nextStudentStats = buildDraftStudentStatsObj(draft);
+    const nextAdminDocs = buildDraftAdminDocsObj(draft);
+
+    const cleanedStaffStats = splitClean(draft.staffStatsText);
+    const cleanedStudentLines = splitClean(draft.studentStatLinesText);
+    const autoStudentLinesForDraft = buildAutoStudentStatLines({
+      periodType,
+      studentStats: nextStudentStats,
+      useKhmerNumerals
+    });
+    const isCustomStudentLines =
+      cleanedStudentLines.length > 0 &&
+      JSON.stringify(cleanedStudentLines) !== JSON.stringify(autoStudentLinesForDraft);
+
+    const cleanedAdminDocLines = splitClean(draft.adminDocLinesText);
+    const autoAdminDocLinesForDraft = buildAutoAdminDocLines({
+      adminDocs: nextAdminDocs,
+      useKhmerNumerals
+    });
+    const isCustomAdminDocLines =
+      cleanedAdminDocLines.length > 0 &&
+      JSON.stringify(cleanedAdminDocLines) !== JSON.stringify(autoAdminDocLinesForDraft);
+
+    const cleanedSection1Intro =
+      normalizeMultilinePreserveBreaks(draft.section1Intro) || DEFAULT_SECTION1_INTRO;
+    const cleanedManagementRoles = (draft.managementRoles || [])
+      .map(m => ({
+        name: String(m?.name || '').trim(),
+        role: String(m?.role || '').trim()
+      }))
+      .filter(m => m.name || m.role);
+
+    return {
+      ...displayModel.rawReport,
+      id: `admin-${displayModel.storageKey}`,
+      periodType,
+      monthKey: periodType === 'month' ? currentMonthKey : undefined,
+      year: activeYear,
+      docNumber: String(draft.docNumber || '').trim() || '......................',
+      recipientTitle: String(draft.recipientTitle || '').trim(),
+      customSubjectText: isCustomSubjectEdited ? trimmedSubject : '',
+      manualSubjectOverride: isCustomSubjectEdited,
+      customIntroParagraph: isCustomIntroEdited ? trimmedIntro : '',
+      section1Intro: cleanedSection1Intro,
+      managementRoles:
+        cleanedManagementRoles.length > 0 ? cleanedManagementRoles : DEFAULT_MANAGEMENT_ROLES,
+      manualStudentStatsOverride: (didManuallyChangeStudentStats || isCustomStudentLines)
+        ? true
+        : Boolean(displayModel.rawReport?.manualStudentStatsOverride),
+      manualChallengesOverride: didUserCustomEditChallengeText,
+      staffStats: cleanedStaffStats.length > 0 ? cleanedStaffStats : DEFAULT_STAFF_STATS,
+      studentStats: nextStudentStats,
+      customStudentLines: isCustomStudentLines ? cleanedStudentLines : [],
+      adminDocs: nextAdminDocs,
+      customAdminDocLines: isCustomAdminDocLines ? cleanedAdminDocLines : [],
+      activities: splitClean(draft.activitiesText),
+      appendixItems: splitClean(draft.appendixText),
+      challenges: cleanedChallenges,
+      solutions: splitClean(draft.solutionsText),
+      requests: splitClean(draft.requestsText),
+      directions: splitClean(draft.directionsText),
+      conclusionText: trimmedConclusion,
+      lunarDateLine: String(draft.lunarDateLine || '').trim(),
+      solarDateLine: String(draft.solarDateLine || '').trim(),
+      signerTitle: String(draft.signerTitle || 'ព្រះនាយក').trim()
+    };
+  };
+
+  const serializeMinistryDraft = (draft) => {
+    const splitClean = (txt) =>
+      String(txt || '')
+        .split('\n')
+        .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
+        .filter(Boolean);
+
+    const cleanedHourlyMap = {};
+    Object.entries(draft.hourlyIncomeByMonth || {}).forEach(([mNum, val]) => {
+      const trimmed = String(val ?? '').trim();
+      if (trimmed !== '') {
+        cleanedHourlyMap[mNum] = Number(trimmed) || 0;
+      }
+    });
+
+    return {
+      ...(ministryModel.rawOverride || {}),
+      id: `admin-${ministryModel.storageKey}`,
+      year: activeYear,
+      docNumber: String(draft.docNumber || '').trim() || '.....................................',
+      lunarDateLine: String(draft.lunarDateLine || '').trim(),
+      solarDateLine: String(draft.solarDateLine || '').trim(),
+      signerTitle: String(draft.signerTitle || 'ព្រះនាយក').trim(),
+      reporterTitle: String(draft.reporterTitle || 'អ្នកធ្វើរបាយការណ៍').trim(),
+      appliedStudents: Number(draft.appliedStudents) || 0,
+      permanentStudents: Number(draft.permanentStudents) || 0,
+      oldStudents: Number(draft.oldStudents) || 0,
+      newStudents: Number(draft.newStudents) || 0,
+      dropoutStudents: Number(draft.dropoutStudents) || 0,
+      remainingStudents: Number(draft.remainingStudents) || 0,
+      remainingGrade3: Number(draft.remainingGrade3) || 0,
+      offCampusStudents: Number(draft.offCampusStudents) || 0,
+      teacherTotal: Number(draft.teacherTotal) || 0,
+      teacherFramework: Number(draft.teacherFramework) || 0,
+      teacherContract: Number(draft.teacherContract) || 0,
+      teacherHourly: Number(draft.teacherHourly) || 0,
+      paliExamTotal: Number(draft.paliExamTotal) || 0,
+      paliExamPassed: Number(draft.paliExamPassed) || 0,
+      paliExamFailed: Number(draft.paliExamFailed) || 0,
+      dhammaExamTotal: Number(draft.dhammaExamTotal) || 0,
+      dhammaExamTri: Number(draft.dhammaExamTri) || 0,
+      dhammaExamTo: Number(draft.dhammaExamTo) || 0,
+      dhammaExamEk: Number(draft.dhammaExamEk) || 0,
+      dhammaExamNote: String(draft.dhammaExamNote || '').trim(),
+      computerCountText: String(draft.computerCountText || '').trim(),
+      computerNoteText: String(draft.computerNoteText || '').trim(),
+      awardCeremonyIncome1: Number(draft.awardCeremonyIncome1) || 0,
+      awardCeremonyIncome2: Number(draft.awardCeremonyIncome2) || 0,
+      awardCeremonyExpense: Number(draft.awardCeremonyExpense) || 0,
+      hourlyIncomeByMonth: cleanedHourlyMap,
+      teacherActivities: splitClean(draft.teacherActivitiesText),
+      studentActivities: splitClean(draft.studentActivitiesText),
+      outsideActivities: splitClean(draft.outsideActivitiesText),
+      abbotResponsibilities: splitClean(draft.abbotResponsibilitiesText),
+      managementActivities: splitClean(draft.managementActivitiesText),
+      libraryLines: splitClean(draft.libraryLinesText),
+      donationLines: splitClean(draft.donationLinesText),
+      teacherRelations: splitClean(draft.teacherRelationsText),
+      challenges: splitClean(draft.challengesText),
+      solutions: splitClean(draft.solutionsText),
+      conclusionParas: normalizeParagraphArrayPreserveBlanks(draft.conclusionParasText),
+      requests: splitClean(draft.requestsText),
+      ccList: splitClean(draft.ccListText)
+    };
+  };
+
+  // Debounce unsaved drafts (~90ms) for 60fps typing + Real-Time Live Preview on A4 & Mobile Cards
+  useEffect(() => {
+    if (!canEdit || !isEditing || !activeEditSection) {
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      if (isHistoryOnly) {
+        setLiveHistoryDraft(historyEditDraft);
+      } else if (isMinistryActive) {
+        setLiveMinistryDraft(ministryEditDraft);
+      } else {
+        setLiveEditDraft(editDraft);
+        if (isSem1Combined) setLiveHistoryDraft(historyEditDraft);
+      }
+    }, 90);
+    return () => clearTimeout(timer);
+  }, [
+    canEdit,
+    isEditing,
+    activeEditSection,
+    isHistoryOnly,
+    isMinistryActive,
+    isSem1Combined,
+    editDraft,
+    historyEditDraft,
+    ministryEditDraft
+  ]);
+
+  const isLivePreviewActive = Boolean(
+    canEdit && isEditing && activeEditSection && !isExportingPdf
+  );
+
+  const liveAdminReports = (() => {
+    if (!isLivePreviewActive) return adminReports;
+    let changed = false;
+    const nextMap = { ...(adminReports || {}) };
+    if (isHistoryOnly && liveHistoryDraft) {
+      nextMap[SCHOOL_HISTORY_STORAGE_KEY] = serializeHistoryDraft(liveHistoryDraft);
+      changed = true;
+    } else if (isMinistryActive && liveMinistryDraft) {
+      nextMap[ministryModel.storageKey] = serializeMinistryDraft(liveMinistryDraft);
+      changed = true;
+    } else if (!isHistoryOnly && !isMinistryActive) {
+      if (liveEditDraft) {
+        nextMap[displayModel.storageKey] = serializeAdminDraft(liveEditDraft);
+        changed = true;
+      }
+      if (isSem1Combined && liveHistoryDraft) {
+        nextMap[SCHOOL_HISTORY_STORAGE_KEY] = serializeHistoryDraft(liveHistoryDraft);
+        changed = true;
+      }
+    }
+    return changed ? nextMap : adminReports;
+  })();
+
+  const liveSchoolHistoryModel = useMemo(() => {
+    if (liveAdminReports === adminReports) return schoolHistoryModel;
+    return buildSchoolHistoryModel({
+      adminReports: liveAdminReports,
+      year: activeYear,
+      useKhmerNumerals
+    });
+  }, [liveAdminReports, adminReports, schoolHistoryModel, activeYear, useKhmerNumerals]);
+
+  const liveDisplayModel = useMemo(() => {
+    if (liveAdminReports === adminReports) return displayModel;
+    return buildAdminReportDisplayModel({
+      periodType,
+      monthKey: currentMonthKey,
+      year: activeYear,
+      adminReports: liveAdminReports,
+      studentMaster,
+      useKhmerNumerals,
+      includeHistory: isSem1Combined,
+      schoolHistory: liveSchoolHistoryModel
+    });
+  }, [
+    liveAdminReports,
+    adminReports,
+    displayModel,
+    periodType,
+    currentMonthKey,
+    activeYear,
+    studentMaster,
+    useKhmerNumerals,
+    isSem1Combined,
+    liveSchoolHistoryModel
+  ]);
+
+  const liveMinistryModel = useMemo(() => {
+    if (liveAdminReports === adminReports) return ministryModel;
+    return buildMinistryReportModel({
+      year: activeYear,
+      adminReports: liveAdminReports,
+      studentMaster,
+      allFinance,
+      useKhmerNumerals
+    });
+  }, [liveAdminReports, adminReports, ministryModel, activeYear, studentMaster, allFinance, useKhmerNumerals]);
+
+  // Auto-scroll active section into view when opening/switching focused editor sections
+  useEffect(() => {
+    if (!isEditing || !activeEditSection || typeof document === 'undefined') return undefined;
+    const timer = setTimeout(() => {
+      const containerSelector =
+        !isMobile || mobilePreviewA4
+          ? `.admin-a4-page-sheet [data-edit-section="${activeEditSection}"]`
+          : `.admin-mobile-cards-list [data-edit-section="${activeEditSection}"]`;
+      const targetEl = document.querySelector(containerSelector);
+      if (targetEl && typeof targetEl.scrollIntoView === 'function') {
+        targetEl.scrollIntoView({
+          behavior: 'smooth',
+          block: isMobile ? 'start' : 'center'
+        });
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [activeEditSection, isEditing, isMobile, mobilePreviewA4]);
 
   const activeEditSections = useMemo(() => {
     if (isHistoryOnly) {
@@ -427,7 +783,8 @@ export default function AdminReportView({
       ];
     }
 
-    const sn = displayModel.sectionNumbers || {
+    const sn = liveDisplayModel.sectionNumbers || {
+      background: isSem1Combined ? 'I' : null,
       management: 'I',
       stats: 'II',
       progress: 'III',
@@ -435,44 +792,379 @@ export default function AdminReportView({
       directions: 'V',
       conclusion: 'VI'
     };
-    return [
+    const ro = liveDisplayModel.resolvedOrder || resolveAdminSectionOrder(null, isSem1Combined);
+    const subL = ro.progressSubLetters || {};
+    const chalH = liveDisplayModel.challengesSubHeadings || {
+      challenges: '១-បញ្ហាប្រឈម',
+      solutions: '២-ដំណោះស្រាយ',
+      requests: '៣-សំណូមពរ'
+    };
+
+    const dynamicList = [
       { id: 'header', shortLabel: 'លេខ/អ្នកទទួល', label: 'លេខលិខិត & ព្រះនាមអ្នកទទួល' },
-      { id: 'subject_intro', shortLabel: 'កម្មវត្ថុ/ផ្ដើម', label: 'កម្មវត្ថុ & សេចក្ដីផ្ដើម' },
-      ...(isSem1Combined ? [{ id: 'history_bg', shortLabel: 'I. សាវតារ', label: 'I. សាវតារ' }] : []),
-      { id: 'management', shortLabel: `${sn.management}. តួនាទី`, label: `${sn.management}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា` },
-      { id: 'stats', shortLabel: `${sn.stats}. ស្ថិតិ`, label: `${sn.stats}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស` },
-      { id: 'activities', shortLabel: `${sn.progress}. ក. សកម្មភាព`, label: `${sn.progress}. ក. សកម្មភាពការងារ` },
-      { id: 'admin_docs', shortLabel: `${sn.progress}. ខ. រដ្ឋបាល`, label: `${sn.progress}. ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល` },
-      ...(isSem1Combined
-        ? [{ id: 'history_table', shortLabel: 'គ. តារាង ១៦ ឆ្នាំ', label: 'គ. អត្ថបទណែនាំ & តារាងធនធានមនុស្ស ១៦ ឆ្នាំ', wide: true }]
-        : []),
-      { id: 'appendix', shortLabel: 'ឧបសម្ព័ន្ធ', label: displayModel.section3SubDHeading || 'ឧបសម្ព័ន្ធ (ចំណាយ)' },
-      { id: 'challenges', shortLabel: `${sn.challenges}. ១-បញ្ហា`, label: `${sn.challenges}. ១-បញ្ហាប្រឈម` },
-      { id: 'solutions', shortLabel: '២-ដំណោះស្រាយ', label: `${sn.challenges}. ២-ដំណោះស្រាយ` },
-      { id: 'requests', shortLabel: '៣-សំណូមពរ', label: `${sn.challenges}. ៣-សំណូមពរ` },
-      { id: 'directions', shortLabel: `${sn.directions}. ទិសដៅ`, label: `${sn.directions}. ទិសដៅបន្ត` },
-      { id: 'conclusion', shortLabel: `${sn.conclusion}. សន្និដ្ឋាន`, label: `${sn.conclusion}. សេចក្ដីសន្និដ្ឋាន` },
-      { id: 'signature', shortLabel: 'ហត្ថលេខា', label: 'កាលបរិច្ឆេទ & ហត្ថលេខា' }
+      { id: 'subject_intro', shortLabel: 'កម្មវត្ថុ/ផ្ដើម', label: 'កម្មវត្ថុ & សេចក្ដីផ្ដើម' }
     ];
-  }, [isHistoryOnly, isMinistryActive, ministryDocType, isSem1Combined, displayModel.sectionNumbers, displayModel.section3SubDHeading]);
 
-  const buildDraftStudentStatsObj = (draft) => ({
-    ...(displayModel.studentStats || {}),
-    classCount: displayModel.studentStats?.classCount || 4,
-    totalStudents: Number(draft.totalStudents) || 0,
-    gradeKindergarten: Number(draft.gradeKindergarten) || 0,
-    grade1: Number(draft.grade1) || 0,
-    grade2: Number(draft.grade2) || 0,
-    grade3: Number(draft.grade3) || 0
-  });
+    (ro.top || []).forEach(topKey => {
+      if (topKey === 'background' && isSem1Combined) {
+        dynamicList.push({
+          id: 'history_bg',
+          shortLabel: `${sn.background || 'I'}. សាវតារ`,
+          label: `${sn.background || 'I'}. សាវតារ`,
+          dragGroup: 'top',
+          dragId: 'background'
+        });
+      } else if (topKey === 'management') {
+        dynamicList.push({
+          id: 'management',
+          shortLabel: `${sn.management}. តួនាទី`,
+          label: `${sn.management}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា`,
+          dragGroup: 'top',
+          dragId: 'management'
+        });
+      } else if (topKey === 'stats') {
+        dynamicList.push({
+          id: 'stats',
+          shortLabel: `${sn.stats}. ស្ថិតិ`,
+          label: `${sn.stats}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`,
+          dragGroup: 'top',
+          dragId: 'stats'
+        });
+      } else if (topKey === 'progress') {
+        (ro.progressSub || []).forEach(subKey => {
+          if (subKey === 'activities') {
+            const lt = subL.activities?.letter || 'ក';
+            dynamicList.push({
+              id: 'activities',
+              shortLabel: `${sn.progress}. ${lt}. សកម្មភាព`,
+              label: `${sn.progress}. ${liveDisplayModel.section3SubAHeading || `${lt}. សកម្មភាពការងារ`}`,
+              dragGroup: 'progressSub',
+              dragId: 'activities',
+              fallbackTopId: 'progress'
+            });
+          } else if (subKey === 'admin_docs') {
+            const lt = subL.admin_docs?.letter || 'ខ';
+            dynamicList.push({
+              id: 'admin_docs',
+              shortLabel: `${sn.progress}. ${lt}. រដ្ឋបាល`,
+              label: `${sn.progress}. ${liveDisplayModel.section3SubBHeading || `${lt}. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល`}`,
+              dragGroup: 'progressSub',
+              dragId: 'admin_docs',
+              fallbackTopId: 'progress'
+            });
+          } else if (subKey === 'history_table' && isSem1Combined) {
+            const lt = subL.history_table?.letter || 'គ';
+            dynamicList.push({
+              id: 'history_table',
+              shortLabel: `${lt}. តារាង ១៦ ឆ្នាំ`,
+              label: `${lt}. អត្ថបទណែនាំ & តារាងធនធានមនុស្ស ១៦ ឆ្នាំ`,
+              wide: true,
+              dragGroup: 'progressSub',
+              dragId: 'history_table',
+              fallbackTopId: 'progress'
+            });
+          } else if (subKey === 'appendix') {
+            const lc = subL.appendix?.letterC || 'គ';
+            const ld = subL.appendix?.letterD || 'ឃ';
+            dynamicList.push({
+              id: 'appendix',
+              shortLabel: `${lc}-${ld}. ឧបសម្ព័ន្ធ`,
+              label: liveDisplayModel.section3SubDHeading || `${lc}-${ld}. ឧបសម្ព័ន្ធ (ចំណាយ)`,
+              dragGroup: 'progressSub',
+              dragId: 'appendix',
+              fallbackTopId: 'progress'
+            });
+          }
+        });
+      } else if (topKey === 'challenges') {
+        (ro.challengesSub || []).forEach(subKey => {
+          if (subKey === 'challenges') {
+            dynamicList.push({
+              id: 'challenges',
+              shortLabel: `${sn.challenges}. ${chalH.challenges}`,
+              label: `${sn.challenges}. ${chalH.challenges}`,
+              dragGroup: 'challengesSub',
+              dragId: 'challenges',
+              fallbackTopId: 'challenges'
+            });
+          } else if (subKey === 'solutions') {
+            dynamicList.push({
+              id: 'solutions',
+              shortLabel: chalH.solutions,
+              label: `${sn.challenges}. ${chalH.solutions}`,
+              dragGroup: 'challengesSub',
+              dragId: 'solutions',
+              fallbackTopId: 'challenges'
+            });
+          } else if (subKey === 'requests') {
+            dynamicList.push({
+              id: 'requests',
+              shortLabel: chalH.requests,
+              label: `${sn.challenges}. ${chalH.requests}`,
+              dragGroup: 'challengesSub',
+              dragId: 'requests',
+              fallbackTopId: 'challenges'
+            });
+          }
+        });
+      } else if (topKey === 'directions') {
+        dynamicList.push({
+          id: 'directions',
+          shortLabel: `${sn.directions}. ទិសដៅ`,
+          label: `${sn.directions}. ទិសដៅបន្ត`,
+          dragGroup: 'top',
+          dragId: 'directions'
+        });
+      } else if (topKey === 'conclusion') {
+        dynamicList.push({
+          id: 'conclusion',
+          shortLabel: `${sn.conclusion}. សន្និដ្ឋាន`,
+          label: `${sn.conclusion}. សេចក្ដីសន្និដ្ឋាន`,
+          dragGroup: 'top',
+          dragId: 'conclusion'
+        });
+      }
+    });
 
-  const buildDraftAdminDocsObj = (draft) => ({
-    outgoingLetters: Number(draft.outgoingLetters) || 0,
-    incomingLetters: Number(draft.incomingLetters) || 0,
-    schoolMinutes: Number(draft.schoolMinutes) || 0,
-    schoolReportsToMinistry: Number(draft.schoolReportsToMinistry) || 0,
-    ministryMeetings: Number(draft.ministryMeetings) || 0
-  });
+    dynamicList.push({
+      id: 'signature',
+      shortLabel: 'ហត្ថលេខា',
+      label: 'កាលបរិច្ឆេទ & ហត្ថលេខា'
+    });
+    return dynamicList;
+  }, [
+    isHistoryOnly,
+    isMinistryActive,
+    ministryDocType,
+    isSem1Combined,
+    liveDisplayModel
+  ]);
+
+  // Snapshot helpers for Ctrl+Z / Ctrl+Y Undo-Redo (Single State Mutator via onUpdateAdminReport)
+  const captureCurrentSnapshot = () => {
+    if (isHistoryOnly) {
+      return {
+        primaryKey: SCHOOL_HISTORY_STORAGE_KEY,
+        primaryData: JSON.parse(JSON.stringify(serializeHistoryDraft(makeHistoryDraftFromModel(schoolHistoryModel)))),
+        secondaryKey: null,
+        secondaryData: null
+      };
+    }
+    if (isMinistryActive) {
+      return {
+        primaryKey: ministryModel.storageKey,
+        primaryData: JSON.parse(JSON.stringify(serializeMinistryDraft(buildFreshMinistryDraft()))),
+        secondaryKey: null,
+        secondaryData: null
+      };
+    }
+    return {
+      primaryKey: displayModel.storageKey,
+      primaryData: JSON.parse(JSON.stringify(displayModel.rawReport || {})),
+      secondaryKey: isSem1Combined ? SCHOOL_HISTORY_STORAGE_KEY : null,
+      secondaryData: isSem1Combined
+        ? JSON.parse(JSON.stringify(serializeHistoryDraft(makeHistoryDraftFromModel(schoolHistoryModel))))
+        : null
+    };
+  };
+
+  const pushUndoSnapshot = () => {
+    const snap = captureCurrentSnapshot();
+    setUndoStack(prev => [...prev.slice(-29), snap]);
+    setRedoStack([]);
+  };
+
+  const applySnapshot = (snap) => {
+    if (!snap || !onUpdateAdminReport) return;
+    if (snap.primaryKey && snap.primaryData) {
+      onUpdateAdminReport(snap.primaryKey, JSON.parse(JSON.stringify(snap.primaryData)));
+    }
+    if (snap.secondaryKey && snap.secondaryData) {
+      onUpdateAdminReport(snap.secondaryKey, JSON.parse(JSON.stringify(snap.secondaryData)));
+    }
+    setActiveEditSection(null);
+    setLiveEditDraft(null);
+    setLiveHistoryDraft(null);
+    setLiveMinistryDraft(null);
+  };
+
+  const undoActionRef = useRef({ captureCurrentSnapshot, applySnapshot });
+  undoActionRef.current = { captureCurrentSnapshot, applySnapshot };
+
+  // Global Ctrl+Z / Ctrl+Y (Cmd+Z / Cmd+Shift+Z) Undo-Redo inside Edit Mode
+  // Respects native browser text Undo/Redo whenever focused inside an <input> or <textarea>!
+  useEffect(() => {
+    if (!canEdit || !isEditing) return undefined;
+    const onKeyDown = (e) => {
+      if (pendingReorder) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = String(e.key || '').toLowerCase();
+      const isUndoKey = key === 'z' && !e.shiftKey;
+      const isRedoKey = key === 'y' || (key === 'z' && e.shiftKey);
+      if (!isUndoKey && !isRedoKey) return;
+
+      const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+      const tag = activeEl?.tagName ? activeEl.tagName.toUpperCase() : '';
+      const isTypingField =
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(activeEl?.isContentEditable);
+      if (isTypingField) return;
+
+      e.preventDefault();
+      if (isUndoKey) {
+        if (undoStack.length === 0) {
+          showSavedToast('គ្មានប្រវត្តិត្រឡប់ក្រោយទៀតទេ');
+          return;
+        }
+        const currentSnap = undoActionRef.current.captureCurrentSnapshot();
+        const prevSnap = undoStack[undoStack.length - 1];
+        setUndoStack(prev => prev.slice(0, -1));
+        setRedoStack(prev => [...prev.slice(-29), currentSnap]);
+        undoActionRef.current.applySnapshot(prevSnap);
+        showSavedToast('↶ បានត្រឡប់ក្រោយ (Ctrl+Z)');
+      } else if (isRedoKey) {
+        if (redoStack.length === 0) {
+          showSavedToast('គ្មានប្រវត្តិទៅមុខទៀតទេ');
+          return;
+        }
+        const currentSnap = undoActionRef.current.captureCurrentSnapshot();
+        const nextSnap = redoStack[redoStack.length - 1];
+        setRedoStack(prev => prev.slice(0, -1));
+        setUndoStack(prev => [...prev.slice(-29), currentSnap]);
+        undoActionRef.current.applySnapshot(nextSnap);
+        showSavedToast('↷ បានធ្វើឡើងវិញ (Ctrl+Y)');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [canEdit, isEditing, pendingReorder, undoStack, redoStack]);
+
+  // Option-B Drag & Drop Label Helper & Drop Confirmation Pipeline (Admin Reports only)
+  const getReorderGroupLabel = (group, key, orderObj) => {
+    const sn = orderObj.sectionNumbers || {};
+    const pl = orderObj.progressSubLetters || {};
+    const cn = orderObj.challengesSubNumbers || {};
+    if (group === 'top') {
+      const topTitles = {
+        background: `${sn.background || 'I'}. សាវតារ`,
+        management: `${sn.management || 'I'}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រង`,
+        stats: `${sn.stats || 'II'}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`,
+        progress: `${sn.progress || 'III'}. វឌ្ឍនភាពការងារ`,
+        challenges: `${sn.challenges || 'IV'}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`,
+        directions: `${sn.directions || 'V'}. ទិសដៅបន្ត`,
+        conclusion: `${sn.conclusion || 'VI'}. សន្និដ្ឋាន`
+      };
+      return topTitles[key] || key;
+    }
+    if (group === 'progressSub') {
+      const periodSuffix =
+        periodType === 'month' ? 'ប្រចាំខែ' : periodType === 'year' ? 'ប្រចាំឆ្នាំ' : 'ប្រចាំឆមាស';
+      if (key === 'activities') return `${pl.activities?.letter || 'ក'}. សកម្មភាព${periodSuffix}`;
+      if (key === 'admin_docs') return `${pl.admin_docs?.letter || 'ខ'}. ការងារគ្រប់គ្រង លិខិតរដ្ឋបាល`;
+      if (key === 'history_table') return `${pl.history_table?.letter || 'គ'}. តារាងធនធានមនុស្ស ១៦ ឆ្នាំ`;
+      if (key === 'appendix') {
+        return `${pl.appendix?.letterC || 'គ'}. សរុបអវត្តមាន & ${pl.appendix?.letterD || 'ឃ'}. ចំណាយ`;
+      }
+      return key;
+    }
+    if (group === 'challengesSub') {
+      if (key === 'challenges') return `${cn.challenges || '១'}-បញ្ហាប្រឈម`;
+      if (key === 'solutions') return `${cn.solutions || '២'}-ដំណោះស្រាយ`;
+      if (key === 'requests') return `${cn.requests || '៣'}-សំណូមពរ`;
+      return key;
+    }
+    return key;
+  };
+
+  const handleRequestReorderDrop = (group, fromId, toId) => {
+    setDragState({ group: null, fromId: null, overId: null });
+    if (!group || !fromId || !toId || fromId === toId) return;
+    if (isHistoryOnly || isMinistryActive) return;
+
+    const currentOrder =
+      displayModel.resolvedOrder || resolveAdminSectionOrder(displayModel.rawReport?.sectionOrder, isSem1Combined);
+    const listProp = group === 'top' ? 'top' : group === 'progressSub' ? 'progressSub' : 'challengesSub';
+    const currentList = currentOrder[listProp] || [];
+    const nextList = reorderKeyList(currentList, fromId, toId);
+    if (JSON.stringify(nextList) === JSON.stringify(currentList)) return;
+
+    const nextSectionOrder = {
+      top: currentOrder.top,
+      progressSub: currentOrder.progressSub,
+      challengesSub: currentOrder.challengesSub,
+      [listProp]: nextList
+    };
+    const nextResolved = resolveAdminSectionOrder(nextSectionOrder, isSem1Combined);
+
+    setPendingReorder({
+      group,
+      fromId,
+      toId,
+      fromLabel: getReorderGroupLabel(group, fromId, currentOrder),
+      toLabel: getReorderGroupLabel(group, toId, currentOrder),
+      nextSectionOrder,
+      previewItems: nextList.map(k => ({
+        key: k,
+        isMoved: k === fromId,
+        newLabel: getReorderGroupLabel(group, k, nextResolved)
+      }))
+    });
+  };
+
+  const handleConfirmReorder = () => {
+    if (!pendingReorder || !onUpdateAdminReport) {
+      setPendingReorder(null);
+      return;
+    }
+    pushUndoSnapshot();
+    const updatedReport = {
+      ...(displayModel.rawReport || {}),
+      id: `admin-${displayModel.storageKey}`,
+      periodType,
+      monthKey: periodType === 'month' ? currentMonthKey : undefined,
+      year: activeYear,
+      sectionOrder: pendingReorder.nextSectionOrder
+    };
+    onUpdateAdminReport(displayModel.storageKey, updatedReport);
+    setPendingReorder(null);
+    showSavedToast('បានប្ដូរទីតាំង! (Ctrl+Z ត្រឡប់ក្រោយ)');
+  };
+
+  const handleCancelReorder = () => {
+    setPendingReorder(null);
+    setDragState({ group: null, fromId: null, overId: null });
+  };
+
+  const reorderDropRef = useRef(handleRequestReorderDrop);
+  reorderDropRef.current = handleRequestReorderDrop;
+
+  const supportsAdminReorder = Boolean(canEdit && isEditing && !isHistoryOnly && !isMinistryActive && !isExportingPdf);
+  const dragController = useMemo(() => {
+    if (!supportsAdminReorder) return null;
+    return {
+      dragState,
+      onStart: (group, fromId) => setDragState({ group, fromId, overId: null }),
+      onOver: (group, overId) =>
+        setDragState(prev =>
+          prev.group === group && prev.overId !== overId ? { ...prev, overId } : prev
+        ),
+      onDrop: (group, fromId, toId) => reorderDropRef.current(group, fromId, toId),
+      onEnd: () => setDragState({ group: null, fromId: null, overId: null })
+    };
+  }, [supportsAdminReorder, dragState]);
+
+  const activeEditSecObj = useMemo(
+    () => activeEditSections.find(s => s.id === activeEditSection) || null,
+    [activeEditSections, activeEditSection]
+  );
+
+  const pcPaperRightPadding = useMemo(() => {
+    if (isMobile || !canEdit || !isEditing || !activeEditSection) return 0;
+    const isWide = Boolean(activeEditSecObj?.wide);
+    if (isWide) {
+      return viewportWidth >= 1280 ? 'min(636px, 47vw)' : 0;
+    }
+    return 'min(456px, 39vw)';
+  }, [isMobile, canEdit, isEditing, activeEditSection, activeEditSecObj, viewportWidth]);
 
   const handleTotalStudentsChange = (rawVal) => {
     setEditDraft(prev => {
@@ -559,211 +1251,37 @@ export default function AdminReportView({
   const handleSaveEditor = (e) => {
     if (e?.preventDefault) e.preventDefault();
     if (!editDraft || !onUpdateAdminReport) return;
-
-    const splitClean = (txt) =>
-      String(txt || '')
-        .split('\n')
-        .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
-        .filter(Boolean);
-
-    const prevSt = displayModel.studentStats || {};
-    const didManuallyChangeStudentStats =
-      Number(editDraft.totalStudents) !== Number(prevSt.totalStudents) ||
-      Number(editDraft.gradeKindergarten) !== Number(prevSt.gradeKindergarten) ||
-      Number(editDraft.grade1) !== Number(prevSt.grade1) ||
-      Number(editDraft.grade2) !== Number(prevSt.grade2) ||
-      Number(editDraft.grade3) !== Number(prevSt.grade3);
-
-    const cleanedChallenges = splitClean(editDraft.challengesText);
-    const autoSyncedChallenges = periodType === 'month'
-      ? syncMonthlyDropoutChallengeLine({
-          monthKey: currentMonthKey,
-          prevTotal: displayModel.prevMonthTotalStudents,
-          currTotal: Number(editDraft.totalStudents) || 0,
-          challenges: cleanedChallenges,
-          useKhmerNumerals
-        })
-      : cleanedChallenges;
-    const didUserCustomEditChallengeText =
-      JSON.stringify(cleanedChallenges) !== JSON.stringify(autoSyncedChallenges);
-
-    // Preserve explicit Enter (\n) line breaks inside BOTH កម្មវត្ថុ and សេចក្ដីផ្ដើម (and សន្និដ្ឋាន)
-    const normalizeMultilinePreserveBreaks = (val) => {
-      const rawLines = String(val || '')
-        .replace(/\u200B/g, '')
-        .split(/\r?\n/)
-        .map(line => line.replace(/[ \t]+/g, ' ').trim());
-      while (rawLines.length > 0 && rawLines[0] === '') rawLines.shift();
-      while (rawLines.length > 0 && rawLines[rawLines.length - 1] === '') rawLines.pop();
-      return rawLines.join('\n');
-    };
-
-    const trimmedSubject = normalizeMultilinePreserveBreaks(editDraft.subjectText)
-      .replace(/^កម្មវត្ថុ[៖:]\s*/, '')
-      .trim();
-    const trimmedIntro = normalizeMultilinePreserveBreaks(editDraft.introParagraph);
-    const trimmedConclusion = normalizeMultilinePreserveBreaks(editDraft.conclusionText);
-    const isCustomSubjectEdited = Boolean(
-      trimmedSubject && trimmedSubject !== String(displayModel.defaultAutoSubject || '').trim()
-    );
-    const isCustomIntroEdited = Boolean(
-      trimmedIntro && trimmedIntro !== String(displayModel.defaultAutoIntroParagraph || '').trim()
-    );
-
-    const nextStudentStats = buildDraftStudentStatsObj(editDraft);
-    const nextAdminDocs = buildDraftAdminDocsObj(editDraft);
-
-    const cleanedStaffStats = splitClean(editDraft.staffStatsText);
-    const cleanedStudentLines = splitClean(editDraft.studentStatLinesText);
-    const autoStudentLinesForDraft = buildAutoStudentStatLines({
-      periodType,
-      studentStats: nextStudentStats,
-      useKhmerNumerals
-    });
-    const isCustomStudentLines =
-      cleanedStudentLines.length > 0 &&
-      JSON.stringify(cleanedStudentLines) !== JSON.stringify(autoStudentLinesForDraft);
-
-    const cleanedAdminDocLines = splitClean(editDraft.adminDocLinesText);
-    const autoAdminDocLinesForDraft = buildAutoAdminDocLines({
-      adminDocs: nextAdminDocs,
-      useKhmerNumerals
-    });
-    const isCustomAdminDocLines =
-      cleanedAdminDocLines.length > 0 &&
-      JSON.stringify(cleanedAdminDocLines) !== JSON.stringify(autoAdminDocLinesForDraft);
-
-    const cleanedSection1Intro =
-      normalizeMultilinePreserveBreaks(editDraft.section1Intro) || DEFAULT_SECTION1_INTRO;
-    const cleanedManagementRoles = (editDraft.managementRoles || [])
-      .map(m => ({
-        name: String(m?.name || '').trim(),
-        role: String(m?.role || '').trim()
-      }))
-      .filter(m => m.name || m.role);
-
-    const updatedReport = {
-      ...displayModel.rawReport,
-      id: `admin-${displayModel.storageKey}`,
-      periodType,
-      monthKey: periodType === 'month' ? currentMonthKey : undefined,
-      year: activeYear,
-      docNumber: String(editDraft.docNumber || '').trim() || '......................',
-      recipientTitle: String(editDraft.recipientTitle || '').trim(),
-      customSubjectText: isCustomSubjectEdited ? trimmedSubject : '',
-      manualSubjectOverride: isCustomSubjectEdited,
-      customIntroParagraph: isCustomIntroEdited ? trimmedIntro : '',
-      section1Intro: cleanedSection1Intro,
-      managementRoles:
-        cleanedManagementRoles.length > 0 ? cleanedManagementRoles : DEFAULT_MANAGEMENT_ROLES,
-      manualStudentStatsOverride: (didManuallyChangeStudentStats || isCustomStudentLines)
-        ? true
-        : Boolean(displayModel.rawReport?.manualStudentStatsOverride),
-      manualChallengesOverride: didUserCustomEditChallengeText,
-      staffStats: cleanedStaffStats.length > 0 ? cleanedStaffStats : DEFAULT_STAFF_STATS,
-      studentStats: nextStudentStats,
-      customStudentLines: isCustomStudentLines ? cleanedStudentLines : [],
-      adminDocs: nextAdminDocs,
-      customAdminDocLines: isCustomAdminDocLines ? cleanedAdminDocLines : [],
-      activities: splitClean(editDraft.activitiesText),
-      appendixItems: splitClean(editDraft.appendixText),
-      challenges: cleanedChallenges,
-      solutions: splitClean(editDraft.solutionsText),
-      requests: splitClean(editDraft.requestsText),
-      directions: splitClean(editDraft.directionsText),
-      conclusionText: trimmedConclusion,
-      lunarDateLine: String(editDraft.lunarDateLine || '').trim(),
-      solarDateLine: String(editDraft.solarDateLine || '').trim(),
-      signerTitle: String(editDraft.signerTitle || 'ព្រះនាយក').trim()
-    };
-
+    pushUndoSnapshot();
+    const updatedReport = serializeAdminDraft(editDraft);
     onUpdateAdminReport(displayModel.storageKey, updatedReport);
     if (isSem1Combined && historyEditDraft) {
       onUpdateAdminReport(SCHOOL_HISTORY_STORAGE_KEY, serializeHistoryDraft(historyEditDraft));
     }
+    setLiveEditDraft(null);
+    setLiveHistoryDraft(null);
     setActiveEditSection(null);
-    showSavedToast('បានរក្សាទុក!');
+    showSavedToast('បានរក្សាទុក! (Ctrl+Z ត្រឡប់ក្រោយ)');
   };
 
   const handleSaveHistoryEditor = (e) => {
     if (e?.preventDefault) e.preventDefault();
     if (!historyEditDraft || !onUpdateAdminReport) return;
+    pushUndoSnapshot();
     onUpdateAdminReport(SCHOOL_HISTORY_STORAGE_KEY, serializeHistoryDraft(historyEditDraft));
+    setLiveHistoryDraft(null);
     setActiveEditSection(null);
-    showSavedToast('បានរក្សាទុក!');
+    showSavedToast('បានរក្សាទុក! (Ctrl+Z ត្រឡប់ក្រោយ)');
   };
 
   const handleSaveMinistryEditor = (e) => {
     if (e?.preventDefault) e.preventDefault();
     if (!ministryEditDraft || !onUpdateAdminReport) return;
-
-    const splitClean = (txt) =>
-      String(txt || '')
-        .split('\n')
-        .map(s => s.replace(/^[-•❖▪◦\s]+/, '').trim())
-        .filter(Boolean);
-
-    const cleanedHourlyMap = {};
-    Object.entries(ministryEditDraft.hourlyIncomeByMonth || {}).forEach(([mNum, val]) => {
-      const trimmed = String(val ?? '').trim();
-      if (trimmed !== '') {
-        cleanedHourlyMap[mNum] = Number(trimmed) || 0;
-      }
-    });
-
-    const updatedMinistry = {
-      ...(ministryModel.rawOverride || {}),
-      id: `admin-${ministryModel.storageKey}`,
-      year: activeYear,
-      docNumber: String(ministryEditDraft.docNumber || '').trim() || '.....................................',
-      lunarDateLine: String(ministryEditDraft.lunarDateLine || '').trim(),
-      solarDateLine: String(ministryEditDraft.solarDateLine || '').trim(),
-      signerTitle: String(ministryEditDraft.signerTitle || 'ព្រះនាយក').trim(),
-      reporterTitle: String(ministryEditDraft.reporterTitle || 'អ្នកធ្វើរបាយការណ៍').trim(),
-      appliedStudents: Number(ministryEditDraft.appliedStudents) || 0,
-      permanentStudents: Number(ministryEditDraft.permanentStudents) || 0,
-      oldStudents: Number(ministryEditDraft.oldStudents) || 0,
-      newStudents: Number(ministryEditDraft.newStudents) || 0,
-      dropoutStudents: Number(ministryEditDraft.dropoutStudents) || 0,
-      remainingStudents: Number(ministryEditDraft.remainingStudents) || 0,
-      remainingGrade3: Number(ministryEditDraft.remainingGrade3) || 0,
-      offCampusStudents: Number(ministryEditDraft.offCampusStudents) || 0,
-      teacherTotal: Number(ministryEditDraft.teacherTotal) || 0,
-      teacherFramework: Number(ministryEditDraft.teacherFramework) || 0,
-      teacherContract: Number(ministryEditDraft.teacherContract) || 0,
-      teacherHourly: Number(ministryEditDraft.teacherHourly) || 0,
-      paliExamTotal: Number(ministryEditDraft.paliExamTotal) || 0,
-      paliExamPassed: Number(ministryEditDraft.paliExamPassed) || 0,
-      paliExamFailed: Number(ministryEditDraft.paliExamFailed) || 0,
-      dhammaExamTotal: Number(ministryEditDraft.dhammaExamTotal) || 0,
-      dhammaExamTri: Number(ministryEditDraft.dhammaExamTri) || 0,
-      dhammaExamTo: Number(ministryEditDraft.dhammaExamTo) || 0,
-      dhammaExamEk: Number(ministryEditDraft.dhammaExamEk) || 0,
-      dhammaExamNote: String(ministryEditDraft.dhammaExamNote || '').trim(),
-      computerCountText: String(ministryEditDraft.computerCountText || '').trim(),
-      computerNoteText: String(ministryEditDraft.computerNoteText || '').trim(),
-      awardCeremonyIncome1: Number(ministryEditDraft.awardCeremonyIncome1) || 0,
-      awardCeremonyIncome2: Number(ministryEditDraft.awardCeremonyIncome2) || 0,
-      awardCeremonyExpense: Number(ministryEditDraft.awardCeremonyExpense) || 0,
-      hourlyIncomeByMonth: cleanedHourlyMap,
-      teacherActivities: splitClean(ministryEditDraft.teacherActivitiesText),
-      studentActivities: splitClean(ministryEditDraft.studentActivitiesText),
-      outsideActivities: splitClean(ministryEditDraft.outsideActivitiesText),
-      abbotResponsibilities: splitClean(ministryEditDraft.abbotResponsibilitiesText),
-      managementActivities: splitClean(ministryEditDraft.managementActivitiesText),
-      libraryLines: splitClean(ministryEditDraft.libraryLinesText),
-      donationLines: splitClean(ministryEditDraft.donationLinesText),
-      teacherRelations: splitClean(ministryEditDraft.teacherRelationsText),
-      challenges: splitClean(ministryEditDraft.challengesText),
-      solutions: splitClean(ministryEditDraft.solutionsText),
-      conclusionParas: normalizeParagraphArrayPreserveBlanks(ministryEditDraft.conclusionParasText),
-      requests: splitClean(ministryEditDraft.requestsText),
-      ccList: splitClean(ministryEditDraft.ccListText)
-    };
-
+    pushUndoSnapshot();
+    const updatedMinistry = serializeMinistryDraft(ministryEditDraft);
     onUpdateAdminReport(ministryModel.storageKey, updatedMinistry);
+    setLiveMinistryDraft(null);
     setActiveEditSection(null);
-    showSavedToast('បានរក្សាទុក!');
+    showSavedToast('បានរក្សាទុក! (Ctrl+Z ត្រឡប់ក្រោយ)');
   };
 
   const handleDownloadPdf = async () => {
@@ -1381,7 +1899,7 @@ export default function AdminReportView({
       </div>
 
       {/* ================================================================== */}
-      {/* SMART CLICK-TO-EDIT MODE BAR (Quick Jump Chips — PC & Mobile /mp)  */}
+      {/* SMART CLICK-TO-EDIT MODE BAR (Quick Jump + Direct Chip Drag /mp)   */}
       {/* ================================================================== */}
       {canEdit && isEditing && (
         <ReportEditModeBar
@@ -1392,11 +1910,22 @@ export default function AdminReportView({
           isMobile={isMobile}
           savedToastText={savedToastText}
           theme={isHistoryOnly || isSem1Combined ? 'sky' : 'amber'}
+          dragController={dragController}
+          supportsReorder={!isHistoryOnly && !isMinistryActive}
         />
       )}
 
       {/* ================================================================== */}
-      {/* FOCUSED SINGLE-SECTION DRAWER (PC Side Drawer / Mobile Sheet)      */}
+      {/* DROP CONFIRMATION MODAL (Option-B Reorder Safety Guard)            */}
+      {/* ================================================================== */}
+      <ConfirmReorderModal
+        pendingReorder={pendingReorder}
+        onConfirm={handleConfirmReorder}
+        onCancel={handleCancelReorder}
+      />
+
+      {/* ================================================================== */}
+      {/* FOCUSED SINGLE-SECTION DRAWER (PC Live Side Drawer / Mobile Split) */}
       {/* ================================================================== */}
       {canEdit && isEditing && (
         <ReportSectionDrawer
@@ -1438,7 +1967,7 @@ export default function AdminReportView({
               setEditDraft={setEditDraft}
               historyEditDraft={historyEditDraft}
               setHistoryEditDraft={setHistoryEditDraft}
-              displayModel={displayModel}
+              displayModel={liveDisplayModel}
               periodType={periodType}
               useKhmerNumerals={useKhmerNumerals}
               isMobile={isMobile}
@@ -1453,10 +1982,6 @@ export default function AdminReportView({
         </ReportSectionDrawer>
       )}
 
-
-
-
-
       {/* ================================================================== */}
       {/* VIEW RENDERER:                                                     */}
       {/* - PC -> Official A4/Letter Document inside .paper-sheet-wrapper    */}
@@ -1465,12 +1990,14 @@ export default function AdminReportView({
       {/* ================================================================== */}
       {!isMobile ? (
         <div
-          className="paper-sheet-wrapper"
+          className="paper-sheet-wrapper admin-report-paper-shift"
           style={{
             position: 'relative',
             display: 'flex',
             justifyContent: 'center',
-            overflowX: 'visible'
+            overflowX: pcPaperRightPadding ? 'auto' : 'visible',
+            paddingRight: pcPaperRightPadding || undefined,
+            boxSizing: 'border-box'
           }}
         >
           {/* Floating Top-Left Summary/Full Switcher (សង្ខេប / ពេញ) when Ministry Template is active on Annual Tab */}
@@ -1547,7 +2074,7 @@ export default function AdminReportView({
             {isHistoryOnly ? (
               <OfficialSchoolHistoryDocument
                 id="printable-school-history-document"
-                historyModel={schoolHistoryModel}
+                historyModel={liveSchoolHistoryModel}
                 useKhmerNumerals={useKhmerNumerals}
                 editMode={canEdit && isEditing && !isExportingPdf}
                 activeEditSection={activeEditSection}
@@ -1557,7 +2084,7 @@ export default function AdminReportView({
               ministryDocType === 'summary' ? (
                 <OfficialMinistrySummaryDocument
                   id="printable-ministry-summary-document"
-                  ministryModel={ministryModel}
+                  ministryModel={liveMinistryModel}
                   editMode={canEdit && isEditing && !isExportingPdf}
                   activeEditSection={activeEditSection}
                   onSelectEditSection={handleSelectEditSection}
@@ -1565,7 +2092,7 @@ export default function AdminReportView({
               ) : (
                 <OfficialMinistryReportDocument
                   id="printable-ministry-report-document"
-                  ministryModel={ministryModel}
+                  ministryModel={liveMinistryModel}
                   useKhmerNumerals={useKhmerNumerals}
                   editMode={canEdit && isEditing && !isExportingPdf}
                   activeEditSection={activeEditSection}
@@ -1575,17 +2102,19 @@ export default function AdminReportView({
             ) : (
               <OfficialAdminReportDocument
                 id="printable-admin-report-document"
-                displayModel={displayModel}
+                displayModel={liveDisplayModel}
                 useKhmerNumerals={useKhmerNumerals}
                 editMode={canEdit && isEditing && !isExportingPdf}
                 activeEditSection={activeEditSection}
                 onSelectEditSection={handleSelectEditSection}
+                dragController={dragController}
+                isMobile={false}
               />
             )}
           </div>
         </div>
       ) : mobilePreviewA4 ? (
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', paddingBottom: isEditing && activeEditSection ? '52vh' : 0 }}>
           {periodType === 'year' && (
             <div
               className="no-print"
@@ -1656,7 +2185,7 @@ export default function AdminReportView({
             {isHistoryOnly ? (
               <OfficialSchoolHistoryDocument
                 id="printable-school-history-document"
-                historyModel={schoolHistoryModel}
+                historyModel={liveSchoolHistoryModel}
                 useKhmerNumerals={useKhmerNumerals}
                 editMode={canEdit && isEditing && !isExportingPdf}
                 activeEditSection={activeEditSection}
@@ -1666,7 +2195,7 @@ export default function AdminReportView({
               ministryDocType === 'summary' ? (
                 <OfficialMinistrySummaryDocument
                   id="printable-ministry-summary-document"
-                  ministryModel={ministryModel}
+                  ministryModel={liveMinistryModel}
                   editMode={canEdit && isEditing && !isExportingPdf}
                   activeEditSection={activeEditSection}
                   onSelectEditSection={handleSelectEditSection}
@@ -1674,7 +2203,7 @@ export default function AdminReportView({
               ) : (
                 <OfficialMinistryReportDocument
                   id="printable-ministry-report-document"
-                  ministryModel={ministryModel}
+                  ministryModel={liveMinistryModel}
                   useKhmerNumerals={useKhmerNumerals}
                   editMode={canEdit && isEditing && !isExportingPdf}
                   activeEditSection={activeEditSection}
@@ -1684,11 +2213,13 @@ export default function AdminReportView({
             ) : (
               <OfficialAdminReportDocument
                 id="printable-admin-report-document"
-                displayModel={displayModel}
+                displayModel={liveDisplayModel}
                 useKhmerNumerals={useKhmerNumerals}
                 editMode={canEdit && isEditing && !isExportingPdf}
                 activeEditSection={activeEditSection}
                 onSelectEditSection={handleSelectEditSection}
+                dragController={dragController}
+                isMobile
               />
             )}
           </A4SheetScaler>
@@ -1696,7 +2227,16 @@ export default function AdminReportView({
       ) : (
         <>
           {/* Mobile Structured Card View */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
+          <div
+            className="admin-mobile-cards-list"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              position: 'relative',
+              paddingBottom: isEditing && activeEditSection ? '52vh' : 0
+            }}
+          >
             {periodType === 'year' && (
               <div
                 className="no-print"
@@ -1771,6 +2311,7 @@ export default function AdminReportView({
                   label="ចំណងជើងរបាយការណ៍"
                   activeSectionId={activeEditSection}
                   onSelectSection={handleSelectEditSection}
+                  isMobile
                 >
                 <div
                   style={{
@@ -1814,7 +2355,7 @@ export default function AdminReportView({
                     </div>
                   </div>
                   <div className="font-moul" style={{ fontSize: 13.5, lineHeight: 1.55, textAlign: 'center' }}>
-                    របាយការណ៍ ស្ដីពី {schoolHistoryModel.title}
+                    របាយការណ៍ ស្ដីពី {liveSchoolHistoryModel.title}
                   </div>
                 </div>
                 </ReportEditableZone>
@@ -1825,6 +2366,7 @@ export default function AdminReportView({
                   label="១.១. សាវតារ"
                   activeSectionId={activeEditSection}
                   onSelectSection={handleSelectEditSection}
+                  isMobile
                 >
                 <div
                   style={{
@@ -1842,7 +2384,7 @@ export default function AdminReportView({
                     <span>{fmtNum(1)}.{fmtNum(1)}. សាវតារ</span>
                   </div>
                   <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
-                    {(schoolHistoryModel.backgroundParagraphs || []).map((p, i) =>
+                    {(liveSchoolHistoryModel.backgroundParagraphs || []).map((p, i) =>
                       String(p || '').trim() ? (
                         <KhmerJustifiedText
                           key={i}
@@ -1875,10 +2417,11 @@ export default function AdminReportView({
                     label="តារាង ១៦ ឆ្នាំ"
                     activeSectionId={activeEditSection}
                     onSelectSection={handleSelectEditSection}
+                    isMobile
                   >
-                  {schoolHistoryModel.tableIntro && (
+                  {liveSchoolHistoryModel.tableIntro && (
                     <KhmerJustifiedText
-                      text={schoolHistoryModel.tableIntro}
+                      text={liveSchoolHistoryModel.tableIntro}
                       firstLineIndent={24}
                       fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
                       fontSize={12.5}
@@ -1898,7 +2441,7 @@ export default function AdminReportView({
                         </tr>
                       </thead>
                       <tbody>
-                        {(schoolHistoryModel.rows || []).map((r, ri) => (
+                        {(liveSchoolHistoryModel.rows || []).map((r, ri) => (
                           <tr key={ri} style={{ background: ri % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                             <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.no}</td>
                             <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 600 }}>{r.academicYearDisplay}</td>
@@ -1910,16 +2453,16 @@ export default function AdminReportView({
                             <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.note || ''}</td>
                           </tr>
                         ))}
-                        {schoolHistoryModel.totals && (
+                        {liveSchoolHistoryModel.totals && (
                           <tr style={{ background: '#fef3c7', fontWeight: 700, color: '#78350f' }}>
                             <td colSpan={2} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
-                              {schoolHistoryModel.totals.label}
+                              {liveSchoolHistoryModel.totals.label}
                             </td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.kgText}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.g1Text}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.g2Text}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.g3Text}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{schoolHistoryModel.totals.grandTotalText}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveSchoolHistoryModel.totals.kgText}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveSchoolHistoryModel.totals.g1Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveSchoolHistoryModel.totals.g2Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveSchoolHistoryModel.totals.g3Text}</td>
+                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveSchoolHistoryModel.totals.grandTotalText}</td>
                             <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1' }}></td>
                           </tr>
                         )}
@@ -1934,6 +2477,7 @@ export default function AdminReportView({
                     label="កាលបរិច្ឆេទ & ហត្ថលេខា"
                     activeSectionId={activeEditSection}
                     onSelectSection={handleSelectEditSection}
+                    isMobile
                   >
                   <div
                     style={{
@@ -1945,10 +2489,10 @@ export default function AdminReportView({
                       color: '#475569'
                     }}
                   >
-                    <div>{schoolHistoryModel.lunarDateLine}</div>
-                    <div>{schoolHistoryModel.solarDateLine}</div>
+                    <div>{liveSchoolHistoryModel.lunarDateLine}</div>
+                    <div>{liveSchoolHistoryModel.solarDateLine}</div>
                     <div className="font-moul" style={{ marginTop: 4, color: '#0f172a' }}>
-                      {schoolHistoryModel.signerTitle}
+                      {liveSchoolHistoryModel.signerTitle}
                     </div>
                   </div>
                   </ReportEditableZone>
@@ -1962,6 +2506,7 @@ export default function AdminReportView({
                   label="តារាងសង្ខេប ១០ ជួរ"
                   activeSectionId={activeEditSection}
                   onSelectSection={handleSelectEditSection}
+                  isMobile
                 >
                 <div
                   style={{
@@ -1973,10 +2518,10 @@ export default function AdminReportView({
                   }}
                 >
                   <div className="font-moul" style={{ fontSize: 13.5, color: '#92400e', textAlign: 'center', marginBottom: 10 }}>
-                    {ministryModel.summaryReportTitle} (មន្ទីរធម្មការ និងសាសនា)
+                    {liveMinistryModel.summaryReportTitle} (មន្ទីរធម្មការ និងសាសនា)
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {(ministryModel.summaryRows || []).map((row, idx) => (
+                    {(liveMinistryModel.summaryRows || []).map((row, idx) => (
                       <div
                         key={idx}
                         style={{
@@ -2017,6 +2562,7 @@ export default function AdminReportView({
                     label="លេខលិខិត & ហត្ថលេខា"
                     activeSectionId={activeEditSection}
                     onSelectSection={handleSelectEditSection}
+                    isMobile
                   >
                     <div
                       style={{
@@ -2028,10 +2574,10 @@ export default function AdminReportView({
                         color: '#475569'
                       }}
                     >
-                      <div>{ministryModel.lunarDateLine}</div>
-                      <div>{ministryModel.solarDateLine}</div>
+                      <div>{liveMinistryModel.lunarDateLine}</div>
+                      <div>{liveMinistryModel.solarDateLine}</div>
                       <div className="font-moul" style={{ marginTop: 4, color: '#0f172a' }}>
-                        {ministryModel.signerTitle} / {ministryModel.reporterTitle}
+                        {liveMinistryModel.signerTitle} / {liveMinistryModel.reporterTitle}
                       </div>
                     </div>
                   </ReportEditableZone>
@@ -2051,7 +2597,7 @@ export default function AdminReportView({
                       មន្ទីរធម្មការ និងសាសនាខេត្តកំពង់ចាម
                     </div>
                     <div className="font-moul" style={{ fontSize: 13.5, marginBottom: 4 }}>
-                      របាយការណ៍ ស្តីពី {ministryModel.fullReportTitle}
+                      របាយការណ៍ ស្តីពី {liveMinistryModel.fullReportTitle}
                     </div>
                   </div>
 
@@ -2061,12 +2607,13 @@ export default function AdminReportView({
                     label="ក. ព័ត៌មានទូទៅ"
                     activeSectionId={activeEditSection}
                     onSelectSection={handleSelectEditSection}
+                    isMobile
                   >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
                     <div className="font-moul" style={{ fontSize: 13, color: '#92400e', marginBottom: 8 }}>
                       ក. ព័ត៌មានទូទៅ
                     </div>
-                    {(ministryModel.generalInfoLines || []).map((r, i) => (
+                    {(liveMinistryModel.generalInfoLines || []).map((r, i) => (
                       <div key={i} style={{ fontSize: 12.5, color: '#334155', marginBottom: 4 }}>
                         - {r.label} {r.value ? <strong>({r.value})</strong> : ''}
                       </div>
@@ -2081,17 +2628,18 @@ export default function AdminReportView({
                     label="ខ. ក្នុងសាលា"
                     activeSectionId={activeEditSection}
                     onSelectSection={handleSelectEditSection}
+                    isMobile
                   >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
                     <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 8 }}>
                       ខ. សកម្មភាពនៅក្នុងសាលា
                     </div>
                     <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 4 }}>ខ.១. សកម្មភាពរបស់គ្រូ</div>
-                    {(ministryModel.teacherActivities || []).map((line, i) => (
+                    {(liveMinistryModel.teacherActivities || []).map((line, i) => (
                       <div key={`mt-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                     ))}
                     <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginTop: 8, marginBottom: 4 }}>ខ.២. សកម្មភាពសមណសិស្ស សិស្ស</div>
-                    {(ministryModel.studentActivities || []).map((line, i) => (
+                    {(liveMinistryModel.studentActivities || []).map((line, i) => (
                       <div key={`ms-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                     ))}
                   </div>
@@ -2105,9 +2653,10 @@ export default function AdminReportView({
                       label="គ. ក្រៅសាលា"
                       activeSectionId={activeEditSection}
                       onSelectSection={handleSelectEditSection}
+                      isMobile
                     >
                       <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 6 }}>គ. សកម្មភាពនៅក្រៅសាលា</div>
-                      {(ministryModel.outsideActivities || []).map((line, i) => (
+                      {(liveMinistryModel.outsideActivities || []).map((line, i) => (
                         <div key={`mo-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                       ))}
                     </ReportEditableZone>
@@ -2117,9 +2666,10 @@ export default function AdminReportView({
                       label="ឃ. ព្រះចៅអធិការ"
                       activeSectionId={activeEditSection}
                       onSelectSection={handleSelectEditSection}
+                      isMobile
                     >
                       <div className="font-moul" style={{ fontSize: 13, color: '#92400e', marginBottom: 6 }}>ឃ.១. ការទទួលខុសត្រូវព្រះគ្រូចៅអធិការ</div>
-                      {(ministryModel.abbotResponsibilities || []).map((line, i) => (
+                      {(liveMinistryModel.abbotResponsibilities || []).map((line, i) => (
                         <div key={`ma-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                       ))}
                     </ReportEditableZone>
@@ -2132,18 +2682,19 @@ export default function AdminReportView({
                     label="ង. គណៈគ្រប់គ្រង"
                     activeSectionId={activeEditSection}
                     onSelectSection={handleSelectEditSection}
+                    isMobile
                   >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
                     <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 6 }}>ង. សកម្មភាពគណៈគ្រប់គ្រង បណ្ណាល័យ & ជំនួយ</div>
-                    {(ministryModel.managementActivities || []).map((line, i) => (
+                    {(liveMinistryModel.managementActivities || []).map((line, i) => (
                       <div key={`mm-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                     ))}
                     <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginTop: 8, marginBottom: 4 }}>ង.១. ពុទ្ធិកបណ្ណាល័យ</div>
-                    {(ministryModel.libraryLines || []).map((line, i) => (
+                    {(liveMinistryModel.libraryLines || []).map((line, i) => (
                       <div key={`ml-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                     ))}
                     <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginTop: 8, marginBottom: 4 }}>ង.២. ការទទួលជំនួយពីសប្បុរសជន</div>
-                    {(ministryModel.donationLines || []).map((line, i) => (
+                    {(liveMinistryModel.donationLines || []).map((line, i) => (
                       <div key={`md-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                     ))}
                   </div>
@@ -2155,17 +2706,18 @@ export default function AdminReportView({
                     label="ច. ហិរញ្ញវត្ថុ"
                     activeSectionId={activeEditSection}
                     onSelectSection={handleSelectEditSection}
+                    isMobile
                   >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
                     <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 8 }}>
-                      ច. សង្ខេបហិរញ្ញវត្ថុប្រចាំឆ្នាំ ({ministryModel.yearKhmer})
+                      ច. សង្ខេបហិរញ្ញវត្ថុប្រចាំឆ្នាំ ({liveMinistryModel.yearKhmer})
                     </div>
                     <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
-                      <div>• ចំណាយប្រាក់ម៉ោងសរុប៖ <strong>{ministryModel.hourlyAnnual?.sumExpenseText}</strong> ({ministryModel.hourlyAnnual?.sumHoursText})</div>
-                      <div>• ចំណាយសម្ភារៈការិយាល័យសរុប៖ <strong>{ministryModel.officeAnnual?.totalExpenseText}</strong></div>
-                      <div>• ចំណូលរួមប្រចាំឆ្នាំ៖ <strong style={{ color: '#15803d' }}>{ministryModel.grandAnnualTable?.incomeKHRText}</strong></div>
-                      <div>• ចំណាយរួមប្រចាំឆ្នាំ៖ <strong style={{ color: '#b91c1c' }}>{ministryModel.grandAnnualTable?.expenseKHRText}</strong></div>
-                      <div>• សមតុល្យប្រចាំឆ្នាំ៖ <strong>{ministryModel.grandAnnualTable?.balanceKHRText}</strong></div>
+                      <div>• ចំណាយប្រាក់ម៉ោងសរុប៖ <strong>{liveMinistryModel.hourlyAnnual?.sumExpenseText}</strong> ({liveMinistryModel.hourlyAnnual?.sumHoursText})</div>
+                      <div>• ចំណាយសម្ភារៈការិយាល័យសរុប៖ <strong>{liveMinistryModel.officeAnnual?.totalExpenseText}</strong></div>
+                      <div>• ចំណូលរួមប្រចាំឆ្នាំ៖ <strong style={{ color: '#15803d' }}>{liveMinistryModel.grandAnnualTable?.incomeKHRText}</strong></div>
+                      <div>• ចំណាយរួមប្រចាំឆ្នាំ៖ <strong style={{ color: '#b91c1c' }}>{liveMinistryModel.grandAnnualTable?.expenseKHRText}</strong></div>
+                      <div>• សមតុល្យប្រចាំឆ្នាំ៖ <strong>{liveMinistryModel.grandAnnualTable?.balanceKHRText}</strong></div>
                     </div>
                   </div>
                   </ReportEditableZone>
@@ -2178,9 +2730,10 @@ export default function AdminReportView({
                       label="ឆ. គ្រូ & សិស្ស"
                       activeSectionId={activeEditSection}
                       onSelectSection={handleSelectEditSection}
+                      isMobile
                     >
                       <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 6 }}>ឆ. សកម្មភាពគ្រូជាមួយសមណសិស្ស</div>
-                      {(ministryModel.teacherRelations || []).map((line, i) => (
+                      {(liveMinistryModel.teacherRelations || []).map((line, i) => (
                         <div key={`mr-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                       ))}
                     </ReportEditableZone>
@@ -2190,13 +2743,14 @@ export default function AdminReportView({
                       label="ជ-ឈ. បញ្ហា & ដំណោះស្រាយ"
                       activeSectionId={activeEditSection}
                       onSelectSection={handleSelectEditSection}
+                      isMobile
                     >
                       <div style={{ fontWeight: 700, fontSize: 12.5, color: '#991b1b', marginBottom: 4 }}>ជ. បញ្ហាប្រឈម</div>
-                      {(ministryModel.challenges || []).map((line, i) => (
+                      {(liveMinistryModel.challenges || []).map((line, i) => (
                         <div key={`mc-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                       ))}
                       <div style={{ fontWeight: 700, fontSize: 12.5, color: '#15803d', marginTop: 8, marginBottom: 4 }}>ឈ. ដំណោះស្រាយ</div>
-                      {(ministryModel.solutions || []).map((line, i) => (
+                      {(liveMinistryModel.solutions || []).map((line, i) => (
                         <div key={`msol-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                       ))}
                     </ReportEditableZone>
@@ -2210,9 +2764,10 @@ export default function AdminReportView({
                       label="ញ-ដ. សន្និដ្ឋាន & សំណូមពរ"
                       activeSectionId={activeEditSection}
                       onSelectSection={handleSelectEditSection}
+                      isMobile
                     >
                       <div className="font-moul" style={{ fontSize: 13, color: '#78350f', marginBottom: 6 }}>ញ. សេចក្ដីសន្និដ្ឋាន</div>
-                      {(ministryModel.conclusionParas || []).map((p, i) =>
+                      {(liveMinistryModel.conclusionParas || []).map((p, i) =>
                         String(p || '').trim() ? (
                           <KhmerJustifiedText
                             key={`mconc-${i}`}
@@ -2228,7 +2783,7 @@ export default function AdminReportView({
                         )
                       )}
                       <div style={{ fontWeight: 700, fontSize: 12.5, color: '#b45309', marginTop: 6, marginBottom: 4 }}>ដ. សំណូមពរ</div>
-                      {(ministryModel.requests || []).map((line, i) => (
+                      {(liveMinistryModel.requests || []).map((line, i) => (
                         <div key={`mreq-${i}`} style={{ fontSize: 12.5, color: '#334155', marginBottom: 3 }}>- {line}</div>
                       ))}
                     </ReportEditableZone>
@@ -2238,19 +2793,20 @@ export default function AdminReportView({
                       label="ហត្ថលេខា & CC"
                       activeSectionId={activeEditSection}
                       onSelectSection={handleSelectEditSection}
+                      isMobile
                     >
                       <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: 8, fontSize: 12, color: '#475569' }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div>{ministryModel.lunarDateLine}</div>
-                          <div>{ministryModel.solarDateLine}</div>
+                          <div>{liveMinistryModel.lunarDateLine}</div>
+                          <div>{liveMinistryModel.solarDateLine}</div>
                           <div className="font-moul" style={{ marginTop: 4, color: '#0f172a' }}>
-                            {ministryModel.signerTitle} / {ministryModel.reporterTitle}
+                            {liveMinistryModel.signerTitle} / {liveMinistryModel.reporterTitle}
                           </div>
                         </div>
-                        {(ministryModel.ccList || []).length > 0 && (
+                        {(liveMinistryModel.ccList || []).length > 0 && (
                           <div style={{ marginTop: 8, fontSize: 11.5 }}>
                             <div style={{ fontWeight: 700, color: '#334155', marginBottom: 2 }}>ចម្លងប្រគេនជូន៖</div>
-                            {(ministryModel.ccList || []).map((cc, i) => (
+                            {(liveMinistryModel.ccList || []).map((cc, i) => (
                               <div key={`mcc-${i}`}>- {cc}</div>
                             ))}
                           </div>
@@ -2278,6 +2834,7 @@ export default function AdminReportView({
                 label="លេខ/អ្នកទទួល"
                 activeSectionId={activeEditSection}
                 onSelectSection={handleSelectEditSection}
+                isMobile
               >
               <div
                 style={{
@@ -2312,7 +2869,7 @@ export default function AdminReportView({
                 </div>
               </div>
               <div style={{ fontSize: 11.5, opacity: 0.9, marginBottom: 4 }}>
-                គោរពប្រគេន៖ {displayModel.recipientTitle}
+                គោរពប្រគេន៖ {liveDisplayModel.recipientTitle}
               </div>
               </ReportEditableZone>
               <ReportEditableZone
@@ -2321,67 +2878,562 @@ export default function AdminReportView({
                 label="កម្មវត្ថុ & សេចក្ដីផ្ដើម"
                 activeSectionId={activeEditSection}
                 onSelectSection={handleSelectEditSection}
+                isMobile
               >
               <div className="font-moul" style={{ fontSize: 13.5, lineHeight: 1.5, marginBottom: 6 }}>
-                របាយការណ៍បូកសរុបលទ្ធផលការងារ{displayModel.periodTitlePhrase}
+                របាយការណ៍បូកសរុបលទ្ធផលការងារ{liveDisplayModel.periodTitlePhrase}
               </div>
               <div style={{ fontSize: 12.5, opacity: 0.95, lineHeight: 1.5, whiteSpace: 'pre-line', marginBottom: 6 }}>
-                {displayModel.subjectText}
+                {liveDisplayModel.subjectText}
               </div>
-              {displayModel.introParagraph && (
+              {liveDisplayModel.introParagraph && (
                 <div style={{ fontSize: 12, opacity: 0.9, lineHeight: 1.55, whiteSpace: 'pre-line', borderTop: '1px solid rgba(255,255,255,0.18)', paddingTop: 6 }}>
-                  {displayModel.introParagraph}
+                  {liveDisplayModel.introParagraph}
                 </div>
               )}
               </ReportEditableZone>
             </div>
 
-            {/* Combined Mode ONLY: Card I. សាវតារ */}
-            {displayModel.includeHistory && displayModel.schoolHistory && (
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="history_bg"
-                label="I. សាវតារ"
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #bae6fd',
-                  borderRadius: 12,
-                  padding: 14
-                }}
-              >
-                <div
-                  className="font-moul"
-                  style={{ fontSize: 13, color: '#0c4a6e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
-                >
-                  <Landmark size={16} />
-                  <span>I. សាវតារ</span>
-                </div>
-                <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
-                  {(displayModel.schoolHistory.backgroundParagraphs || []).map((p, i) =>
-                    String(p || '').trim() ? (
+            {/* Dynamic Option-B Ordered Mobile Cards (synced 100% with A4 / PDF / Word / Excel) */}
+            {(liveDisplayModel.resolvedOrder?.top || []).map(topKey => {
+              const sn = liveDisplayModel.sectionNumbers || {};
+              const ro = liveDisplayModel.resolvedOrder || {};
+              const chalH = liveDisplayModel.challengesSubHeadings || {
+                challenges: '១-បញ្ហាប្រឈម',
+                solutions: '២-ដំណោះស្រាយ',
+                requests: '៣-សំណូមពរ'
+              };
+
+              if (topKey === 'background' && liveDisplayModel.includeHistory && liveDisplayModel.schoolHistory) {
+                return (
+                  <ReportEditableZone
+                    key="mob-top-background"
+                    editMode={canEdit && isEditing}
+                    sectionId="history_bg"
+                    label={`${sn.background || 'I'}. សាវតារ`}
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                    dragGroup="top"
+                    dragId="background"
+                    dragController={dragController}
+                    isMobile
+                  >
+                    <div
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #bae6fd',
+                        borderRadius: 12,
+                        padding: 14
+                      }}
+                    >
+                      <div
+                        className="font-moul"
+                        style={{ fontSize: 13, color: '#0c4a6e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <Landmark size={16} />
+                        <span>{sn.background || 'I'}. សាវតារ</span>
+                      </div>
+                      <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.7 }}>
+                        {(liveDisplayModel.schoolHistory.backgroundParagraphs || []).map((p, i) =>
+                          String(p || '').trim() ? (
+                            <KhmerJustifiedText
+                              key={i}
+                              text={p}
+                              firstLineIndent={24}
+                              fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                              fontSize={12.5}
+                              lineHeight={1.7}
+                              style={{ margin: '0 0 8px', color: '#334155' }}
+                            />
+                          ) : (
+                            <div key={i} aria-hidden="true" style={{ height: 14 }} />
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </ReportEditableZone>
+                );
+              }
+
+              if (topKey === 'management') {
+                return (
+                  <ReportEditableZone
+                    key="mob-top-management"
+                    editMode={canEdit && isEditing}
+                    sectionId="management"
+                    label={`${sn.management || 'I'}. តួនាទី និងភារកិច្ច`}
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                    dragGroup="top"
+                    dragId="management"
+                    dragController={dragController}
+                    isMobile
+                  >
+                    <div
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 12,
+                        padding: 14
+                      }}
+                    >
+                      <div
+                        className="font-moul"
+                        style={{ fontSize: 13, color: '#92400e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <BookOpen size={16} />
+                        <span>{sn.management || 'I'}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា</span>
+                      </div>
+                      {liveDisplayModel.section1Intro && (
+                        <KhmerJustifiedText
+                          text={liveDisplayModel.section1Intro}
+                          firstLineIndent={24}
+                          fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                          fontSize={12.5}
+                          lineHeight={1.65}
+                          style={{ color: '#475569', marginBottom: 8 }}
+                        />
+                      )}
+                      <div style={{ fontSize: 12.5, color: '#334155' }}>
+                        {(liveDisplayModel.managementRoles || []).map((m, i) => (
+                          <div key={i} style={{ marginBottom: 4 }}>
+                            <strong>{fmtNum(i + 1)}. {m.name}</strong> — {m.role}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </ReportEditableZone>
+                );
+              }
+
+              if (topKey === 'stats') {
+                return (
+                  <ReportEditableZone
+                    key="mob-top-stats"
+                    editMode={canEdit && isEditing}
+                    sectionId="stats"
+                    label={`${sn.stats || 'II'}. ស្ថិតិ`}
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                    dragGroup="top"
+                    dragId="stats"
+                    dragController={dragController}
+                    isMobile
+                  >
+                    <div
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 12,
+                        padding: 14
+                      }}
+                    >
+                      <div
+                        className="font-moul"
+                        style={{ fontSize: 13, color: '#92400e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <BookOpen size={16} />
+                        <span>{sn.stats || 'II'}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស</span>
+                      </div>
+                      <div
+                        style={{
+                          background: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          borderRadius: 8,
+                          padding: 10,
+                          fontSize: 12.5,
+                          color: '#78350f'
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, marginBottom: 4, color: '#92400e' }}>
+                          ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ
+                        </div>
+                        {(liveDisplayModel.staffStats || []).map((line, i) => (
+                          <div key={`mob-staff-${i}`} style={{ marginBottom: 3 }}>- {line}</div>
+                        ))}
+                        <div style={{ fontWeight: 700, marginTop: 8, marginBottom: 4, color: '#92400e' }}>
+                          ខ-ចំនួនថ្នាក់ សមណសិស្ស
+                        </div>
+                        {(liveDisplayModel.studentStatLines || []).map((line, i) => (
+                          <div key={`mob-st-${i}`} style={{ marginBottom: 3 }}>- {line}</div>
+                        ))}
+                      </div>
+                    </div>
+                  </ReportEditableZone>
+                );
+              }
+
+              if (topKey === 'progress') {
+                return (
+                  <div
+                    key="mob-top-progress"
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      padding: 14,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10
+                    }}
+                  >
+                    <ReportEditableZone
+                      editMode={canEdit && isEditing}
+                      sectionId="activities"
+                      label={`${sn.progress || 'III'}. វឌ្ឍនភាពការងារ`}
+                      activeSectionId={activeEditSection}
+                      onSelectSection={handleSelectEditSection}
+                      dragGroup="top"
+                      dragId="progress"
+                      dragController={dragController}
+                      isMobile
+                    >
+                      <div
+                        className="font-moul"
+                        style={{ fontSize: 13, color: '#0369a1', display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <Award size={16} />
+                        <span>{liveDisplayModel.section3Heading}</span>
+                      </div>
+                    </ReportEditableZone>
+
+                    {(ro.progressSub || []).map(subKey => {
+                      if (subKey === 'activities') {
+                        return (
+                          <ReportEditableZone
+                            key="mob-sub-activities"
+                            editMode={canEdit && isEditing}
+                            sectionId="activities"
+                            label={liveDisplayModel.section3SubAHeading || 'ក. សកម្មភាព'}
+                            activeSectionId={activeEditSection}
+                            onSelectSection={handleSelectEditSection}
+                            dragGroup="progressSub"
+                            dragId="activities"
+                            fallbackTopId="progress"
+                            dragController={dragController}
+                            isMobile
+                          >
+                            <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 6 }}>
+                              {liveDisplayModel.section3SubAHeading}
+                            </div>
+                            <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6 }}>
+                              {(liveDisplayModel.activities || []).map((line, i) => (
+                                <div key={i} style={{ marginBottom: 4 }}>❖ {line}</div>
+                              ))}
+                            </div>
+                          </ReportEditableZone>
+                        );
+                      }
+                      if (subKey === 'admin_docs') {
+                        return (
+                          <ReportEditableZone
+                            key="mob-sub-admin-docs"
+                            editMode={canEdit && isEditing}
+                            sectionId="admin_docs"
+                            label={liveDisplayModel.section3SubBHeading || 'ខ. លិខិតរដ្ឋបាល'}
+                            activeSectionId={activeEditSection}
+                            onSelectSection={handleSelectEditSection}
+                            dragGroup="progressSub"
+                            dragId="admin_docs"
+                            fallbackTopId="progress"
+                            dragController={dragController}
+                            isMobile
+                          >
+                            <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 6 }}>
+                              {liveDisplayModel.section3SubBHeading ||
+                                'ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍'}
+                            </div>
+                            <div
+                              style={{
+                                background: '#f0f9ff',
+                                border: '1px solid #bae6fd',
+                                borderRadius: 8,
+                                padding: 10,
+                                fontSize: 12.5,
+                                color: '#0c4a6e'
+                              }}
+                            >
+                              {(liveDisplayModel.adminDocLines || []).map((line, i) => (
+                                <div key={i} style={{ marginBottom: 3 }}>- {line}</div>
+                              ))}
+                            </div>
+                          </ReportEditableZone>
+                        );
+                      }
+                      if (subKey === 'history_table' && liveDisplayModel.includeHistory && liveDisplayModel.schoolHistory) {
+                        const cleanHistIntro = String(liveDisplayModel.schoolHistory.tableIntro || '')
+                          .trim()
+                          .replace(/^[ក-អ]\.\s*/, '');
+                        const histPrefix = liveDisplayModel.section3HistoryPrefix || 'គ.';
+                        return (
+                          <ReportEditableZone
+                            key="mob-sub-history-table"
+                            editMode={canEdit && isEditing}
+                            sectionId="history_table"
+                            label={`${histPrefix} តារាង ១៦ ឆ្នាំ`}
+                            activeSectionId={activeEditSection}
+                            onSelectSection={handleSelectEditSection}
+                            dragGroup="progressSub"
+                            dragId="history_table"
+                            fallbackTopId="progress"
+                            dragController={dragController}
+                            isMobile
+                          >
+                            <div>
+                              {cleanHistIntro && (
+                                <KhmerJustifiedText
+                                  text={cleanHistIntro}
+                                  firstParagraphPrefixBold={histPrefix}
+                                  firstLineIndent={22}
+                                  indentFirstParagraphOnly
+                                  fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                                  fontSize={12.5}
+                                  lineHeight={1.65}
+                                  style={{ marginBottom: 8, color: '#1e293b' }}
+                                />
+                              )}
+                              <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', minWidth: 500, borderCollapse: 'collapse', fontSize: 11.5 }}>
+                                  <thead>
+                                    <tr style={{ background: '#e0f2fe', color: '#0c4a6e' }}>
+                                      {['ល.រ', 'ឆ្នាំសិក្សា', 'មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'].map(h => (
+                                        <th key={h} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
+                                          {h}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(liveDisplayModel.schoolHistory.rows || []).map((r, ri) => (
+                                      <tr key={ri} style={{ background: ri % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                                        <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.no}</td>
+                                        <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 600 }}>{r.academicYearDisplay}</td>
+                                        <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.kgText}</td>
+                                        <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g1Text}</td>
+                                        <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g2Text}</td>
+                                        <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g3Text}</td>
+                                        <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 700, color: '#0c4a6e' }}>{r.totalText}</td>
+                                        <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.note || ''}</td>
+                                      </tr>
+                                    ))}
+                                    {liveDisplayModel.schoolHistory.totals && (
+                                      <tr style={{ background: '#fef3c7', fontWeight: 700, color: '#78350f' }}>
+                                        <td colSpan={2} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
+                                          {liveDisplayModel.schoolHistory.totals.label}
+                                        </td>
+                                        <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveDisplayModel.schoolHistory.totals.kgText}</td>
+                                        <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveDisplayModel.schoolHistory.totals.g1Text}</td>
+                                        <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveDisplayModel.schoolHistory.totals.g2Text}</td>
+                                        <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveDisplayModel.schoolHistory.totals.g3Text}</td>
+                                        <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{liveDisplayModel.schoolHistory.totals.grandTotalText}</td>
+                                        <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1' }}></td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </ReportEditableZone>
+                        );
+                      }
+                      if (subKey === 'appendix') {
+                        return (
+                          <ReportEditableZone
+                            key="mob-sub-appendix"
+                            editMode={canEdit && isEditing}
+                            sectionId="appendix"
+                            label={`${ro.progressSubLetters?.appendix?.letterC || 'គ'}-${ro.progressSubLetters?.appendix?.letterD || 'ឃ'}. ឧបសម្ព័ន្ធ`}
+                            activeSectionId={activeEditSection}
+                            onSelectSection={handleSelectEditSection}
+                            dragGroup="progressSub"
+                            dragId="appendix"
+                            fallbackTopId="progress"
+                            dragController={dragController}
+                            isMobile
+                          >
+                            <div style={{ paddingTop: 8, borderTop: '1px dashed #cbd5e1', fontSize: 12.5, color: '#334155' }}>
+                              <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>{liveDisplayModel.section3SubCHeading}</div>
+                              <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>{liveDisplayModel.section3SubDHeading}</div>
+                              {(liveDisplayModel.appendixItems || []).map((line, i) => (
+                                <div key={`mob-appx-${i}`} style={{ paddingLeft: 10, marginBottom: 2 }}>- {line}</div>
+                              ))}
+                            </div>
+                          </ReportEditableZone>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                );
+              }
+
+              if (topKey === 'challenges') {
+                const subMap = {
+                  challenges: {
+                    sectionId: 'challenges',
+                    heading: chalH.challenges,
+                    color: '#991b1b',
+                    items: liveDisplayModel.challenges || []
+                  },
+                  solutions: {
+                    sectionId: 'solutions',
+                    heading: chalH.solutions,
+                    color: '#15803d',
+                    items: liveDisplayModel.solutions || []
+                  },
+                  requests: {
+                    sectionId: 'requests',
+                    heading: chalH.requests,
+                    color: '#b45309',
+                    items: liveDisplayModel.requests || []
+                  }
+                };
+                return (
+                  <div
+                    key="mob-top-challenges"
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      padding: 14,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8
+                    }}
+                  >
+                    <ReportEditableZone
+                      editMode={canEdit && isEditing}
+                      sectionId="challenges"
+                      label={`${sn.challenges || 'IV'}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`}
+                      activeSectionId={activeEditSection}
+                      onSelectSection={handleSelectEditSection}
+                      dragGroup="top"
+                      dragId="challenges"
+                      dragController={dragController}
+                      isMobile
+                    >
+                      <div
+                        className="font-moul"
+                        style={{ fontSize: 13, color: '#b91c1c', display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <AlertTriangle size={16} />
+                        <span>{sn.challenges || 'IV'}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ</span>
+                      </div>
+                    </ReportEditableZone>
+
+                    {(ro.challengesSub || ['challenges', 'solutions', 'requests']).map(subKey => {
+                      const cfg = subMap[subKey];
+                      if (!cfg) return null;
+                      return (
+                        <ReportEditableZone
+                          key={`mob-chal-${subKey}`}
+                          editMode={canEdit && isEditing}
+                          sectionId={cfg.sectionId}
+                          label={cfg.heading}
+                          activeSectionId={activeEditSection}
+                          onSelectSection={handleSelectEditSection}
+                          dragGroup="challengesSub"
+                          dragId={subKey}
+                          fallbackTopId="challenges"
+                          dragController={dragController}
+                          isMobile
+                        >
+                          <div style={{ fontWeight: 700, fontSize: 12.5, color: cfg.color, marginBottom: 4 }}>
+                            {cfg.heading}
+                          </div>
+                          <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6 }}>
+                            {cfg.items.map((line, i) => (
+                              <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
+                            ))}
+                          </div>
+                        </ReportEditableZone>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              if (topKey === 'directions') {
+                return (
+                  <ReportEditableZone
+                    key="mob-top-directions"
+                    editMode={canEdit && isEditing}
+                    sectionId="directions"
+                    label={`${sn.directions || 'V'}. ទិសដៅបន្ត`}
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                    dragGroup="top"
+                    dragId="directions"
+                    dragController={dragController}
+                    isMobile
+                  >
+                    <div
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 12,
+                        padding: 14
+                      }}
+                    >
+                      <div
+                        className="font-moul"
+                        style={{ fontSize: 13, color: '#15803d', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <Compass size={16} />
+                        <span>{sn.directions || 'V'}. ទិសដៅបន្ត</span>
+                      </div>
+                      <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6 }}>
+                        {(liveDisplayModel.directions || []).map((line, i) => (
+                          <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
+                        ))}
+                      </div>
+                    </div>
+                  </ReportEditableZone>
+                );
+              }
+
+              if (topKey === 'conclusion') {
+                return (
+                  <ReportEditableZone
+                    key="mob-top-conclusion"
+                    editMode={canEdit && isEditing}
+                    sectionId="conclusion"
+                    label={`${sn.conclusion || 'VI'}. សន្និដ្ឋាន`}
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSection}
+                    dragGroup="top"
+                    dragId="conclusion"
+                    dragController={dragController}
+                    isMobile
+                  >
+                    <div
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 12,
+                        padding: 14
+                      }}
+                    >
+                      <div className="font-moul" style={{ fontSize: 13, color: '#78350f', marginBottom: 6 }}>
+                        {sn.conclusion || 'VI'}. សន្និដ្ឋាន
+                      </div>
                       <KhmerJustifiedText
-                        key={i}
-                        text={p}
+                        text={liveDisplayModel.conclusionText}
                         firstLineIndent={24}
                         fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
                         fontSize={12.5}
-                        lineHeight={1.7}
-                        style={{ margin: '0 0 8px', color: '#334155' }}
+                        lineHeight={1.6}
+                        style={{ color: '#334155' }}
                       />
-                    ) : (
-                      <div key={i} aria-hidden="true" style={{ height: 14 }} />
-                    )
-                  )}
-                </div>
-              </div>
-              </ReportEditableZone>
-            )}
+                    </div>
+                  </ReportEditableZone>
+                );
+              }
 
-            {/* Card I & II (or II & III): គណៈគ្រប់គ្រង និងស្ថិតិសមណសិស្ស */}
+              return null;
+            })}
+
+            {/* Anchored Signature Card at the bottom */}
             <div
               style={{
                 background: '#ffffff',
@@ -2390,357 +3442,27 @@ export default function AdminReportView({
                 padding: 14
               }}
             >
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="management"
-                label={`${displayModel.sectionNumbers?.management || 'I'}. តួនាទី និងភារកិច្ច`}
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div
-                className="font-moul"
-                style={{ fontSize: 13, color: '#92400e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <BookOpen size={16} />
-                <span>
-                  {displayModel.sectionNumbers?.management || 'I'} & {displayModel.sectionNumbers?.stats || 'II'}. គណៈគ្រប់គ្រង និងស្ថិតិសមណសិស្ស
-                </span>
-              </div>
-              {displayModel.section1Intro && (
-                <KhmerJustifiedText
-                  text={displayModel.section1Intro}
-                  firstLineIndent={24}
-                  fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                  fontSize={12.5}
-                  lineHeight={1.65}
-                  style={{ color: '#475569', marginBottom: 8 }}
-                />
-              )}
-              <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 8 }}>
-                {(displayModel.managementRoles || []).map((m, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>
-                    <strong>{fmtNum(i + 1)}. {m.name}</strong> — {m.role}
-                  </div>
-                ))}
-              </div>
-              </ReportEditableZone>
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="stats"
-                label={`${displayModel.sectionNumbers?.stats || 'II'}. ស្ថិតិ`}
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div
-                style={{
-                  background: '#fffbeb',
-                  border: '1px solid #fde68a',
-                  borderRadius: 8,
-                  padding: 10,
-                  fontSize: 12.5,
-                  color: '#78350f'
-                }}
-              >
-                <div style={{ fontWeight: 700, marginBottom: 4, color: '#92400e' }}>
-                  ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ
-                </div>
-                {(displayModel.staffStats || []).map((line, i) => (
-                  <div key={`mob-staff-${i}`} style={{ marginBottom: 3 }}>- {line}</div>
-                ))}
-                <div style={{ fontWeight: 700, marginTop: 8, marginBottom: 4, color: '#92400e' }}>
-                  ខ-ចំនួនថ្នាក់ សមណសិស្ស
-                </div>
-                {(displayModel.studentStatLines || []).map((line, i) => (
-                  <div key={`mob-st-${i}`} style={{ marginBottom: 3 }}>- {line}</div>
-                ))}
-              </div>
-              </ReportEditableZone>
-            </div>
-
-            {/* Card III: វឌ្ឍនភាពការងារ */}
-            <div
-              style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: 12,
-                padding: 14
-              }}
-            >
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="activities"
-                label="ក. សកម្មភាព"
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div
-                className="font-moul"
-                style={{ fontSize: 13, color: '#0369a1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <Award size={16} />
-                <span>{displayModel.section3Heading}</span>
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 6 }}>
-                {displayModel.section3SubAHeading}
-              </div>
-              <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 10, lineHeight: 1.6 }}>
-                {(displayModel.activities || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>❖ {line}</div>
-                ))}
-              </div>
-              </ReportEditableZone>
-
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="admin_docs"
-                label="ខ. លិខិតរដ្ឋបាល"
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div style={{ fontWeight: 700, fontSize: 12.5, color: '#0f172a', marginBottom: 6 }}>
-                ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍
-              </div>
-              <div
-                style={{
-                  background: '#f0f9ff',
-                  border: '1px solid #bae6fd',
-                  borderRadius: 8,
-                  padding: 10,
-                  fontSize: 12.5,
-                  color: '#0c4a6e'
-                }}
-              >
-                {(displayModel.adminDocLines || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 3 }}>- {line}</div>
-                ))}
-              </div>
-              </ReportEditableZone>
-
-              {/* Combined Mode ONLY: Editable Table Intro + 16-Year Human Resource Training Table (placed after ខ) */}
-              {displayModel.includeHistory && displayModel.schoolHistory && (
-                <ReportEditableZone
-                  editMode={canEdit && isEditing}
-                  sectionId="history_table"
-                  label="គ. & តារាង ១៦ ឆ្នាំ"
-                  activeSectionId={activeEditSection}
-                  onSelectSection={handleSelectEditSection}
-                >
-                <div style={{ marginTop: 12 }}>
-                  {displayModel.schoolHistory.tableIntro && (
-                    <KhmerJustifiedText
-                      text={displayModel.schoolHistory.tableIntro}
-                      firstParagraphPrefixBold="គ."
-                      firstLineIndent={22}
-                      indentFirstParagraphOnly
-                      fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                      fontSize={12.5}
-                      lineHeight={1.65}
-                      style={{ marginBottom: 8, color: '#1e293b' }}
-                    />
-                  )}
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', minWidth: 500, borderCollapse: 'collapse', fontSize: 11.5 }}>
-                      <thead>
-                        <tr style={{ background: '#e0f2fe', color: '#0c4a6e' }}>
-                          {['ល.រ', 'ឆ្នាំសិក្សា', 'មត្តេយ្យ', 'ថ្នាក់ទី១', 'ថ្នាក់ទី២', 'ថ្នាក់ទី៣', 'សរុប', 'ផ្សេងៗ'].map(h => (
-                            <th key={h} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(displayModel.schoolHistory.rows || []).map((r, ri) => (
-                          <tr key={ri} style={{ background: ri % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.no}</td>
-                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 600 }}>{r.academicYearDisplay}</td>
-                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.kgText}</td>
-                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g1Text}</td>
-                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g2Text}</td>
-                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.g3Text}</td>
-                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 700, color: '#0c4a6e' }}>{r.totalText}</td>
-                            <td style={{ padding: '5px 4px', border: '1px solid #e2e8f0', textAlign: 'center' }}>{r.note || ''}</td>
-                          </tr>
-                        ))}
-                        {displayModel.schoolHistory.totals && (
-                          <tr style={{ background: '#fef3c7', fontWeight: 700, color: '#78350f' }}>
-                            <td colSpan={2} style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>
-                              {displayModel.schoolHistory.totals.label}
-                            </td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.kgText}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.g1Text}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.g2Text}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.g3Text}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{displayModel.schoolHistory.totals.grandTotalText}</td>
-                            <td style={{ padding: '6px 4px', border: '1px solid #cbd5e1' }}></td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                </ReportEditableZone>
-              )}
-
-              {/* Appendix items (គ/ឃ & ឃ/ង) on Mobile Card */}
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="appendix"
-                label="ឧបសម្ព័ន្ធ"
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-                <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed #cbd5e1', fontSize: 12.5, color: '#334155' }}>
-                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>{displayModel.section3SubCHeading}</div>
-                  <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>{displayModel.section3SubDHeading}</div>
-                  {(displayModel.appendixItems || []).map((line, i) => (
-                    <div key={`mob-appx-${i}`} style={{ paddingLeft: 10, marginBottom: 2 }}>- {line}</div>
-                  ))}
-                </div>
-              </ReportEditableZone>
-            </div>
-
-            {/* Card IV: បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ */}
-            <div
-              style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: 12,
-                padding: 14
-              }}
-            >
-              <div
-                className="font-moul"
-                style={{ fontSize: 13, color: '#b91c1c', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <AlertTriangle size={16} />
-                <span>{displayModel.sectionNumbers?.challenges || 'IV'}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ</span>
-              </div>
-
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="challenges"
-                label="១-បញ្ហាប្រឈម"
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div style={{ fontWeight: 700, fontSize: 12.5, color: '#991b1b', marginBottom: 4 }}>
-                ១-បញ្ហាប្រឈម
-              </div>
-              <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 8, lineHeight: 1.6 }}>
-                {(displayModel.challenges || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
-                ))}
-              </div>
-              </ReportEditableZone>
-
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="solutions"
-                label="២-ដំណោះស្រាយ"
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div style={{ fontWeight: 700, fontSize: 12.5, color: '#15803d', marginBottom: 4 }}>
-                ២-ដំណោះស្រាយ
-              </div>
-              <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 8, lineHeight: 1.6 }}>
-                {(displayModel.solutions || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
-                ))}
-              </div>
-              </ReportEditableZone>
-
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="requests"
-                label="៣-សំណូមពរ"
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div style={{ fontWeight: 700, fontSize: 12.5, color: '#b45309', marginBottom: 4 }}>
-                ៣-សំណូមពរ
-              </div>
-              <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.6 }}>
-                {(displayModel.requests || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
-                ))}
-              </div>
-              </ReportEditableZone>
-            </div>
-
-            {/* Card V & VI: ទិសដៅបន្ត និងសេចក្ដីសន្និដ្ឋាន */}
-            <div
-              style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: 12,
-                padding: 14
-              }}
-            >
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="directions"
-                label={`${displayModel.sectionNumbers?.directions || 'V'}. ទិសដៅបន្ត`}
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div
-                className="font-moul"
-                style={{ fontSize: 13, color: '#15803d', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <Compass size={16} />
-                <span>{displayModel.sectionNumbers?.directions || 'V'}. ទិសដៅបន្ត</span>
-              </div>
-              <div style={{ fontSize: 12.5, color: '#334155', marginBottom: 12, lineHeight: 1.6 }}>
-                {(displayModel.directions || []).map((line, i) => (
-                  <div key={i} style={{ marginBottom: 4 }}>- {line}</div>
-                ))}
-              </div>
-              </ReportEditableZone>
-
-              <ReportEditableZone
-                editMode={canEdit && isEditing}
-                sectionId="conclusion"
-                label={`${displayModel.sectionNumbers?.conclusion || 'VI'}. សន្និដ្ឋាន`}
-                activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
-              >
-              <div className="font-moul" style={{ fontSize: 13, color: '#78350f', marginBottom: 6 }}>
-                {displayModel.sectionNumbers?.conclusion || 'VI'}. សន្និដ្ឋាន
-              </div>
-              <KhmerJustifiedText
-                text={displayModel.conclusionText}
-                firstLineIndent={24}
-                fontFamily="'Kantumruy Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-                fontSize={12.5}
-                lineHeight={1.6}
-                style={{ color: '#334155', marginBottom: 8 }}
-              />
-              </ReportEditableZone>
-
               <ReportEditableZone
                 editMode={canEdit && isEditing}
                 sectionId="signature"
                 label="កាលបរិច្ឆេទ & ហត្ថលេខា"
                 activeSectionId={activeEditSection}
                 onSelectSection={handleSelectEditSection}
+                isMobile
               >
-              <div
-                style={{
-                  borderTop: '1px dashed #cbd5e1',
-                  paddingTop: 8,
-                  textAlign: 'right',
-                  fontSize: 12,
-                  color: '#475569'
-                }}
-              >
-                <div>{displayModel.lunarDateLine}</div>
-                <div>{displayModel.solarDateLine}</div>
-                <div className="font-moul" style={{ marginTop: 4, color: '#0f172a' }}>
-                  {displayModel.signerTitle}
+                <div
+                  style={{
+                    textAlign: 'right',
+                    fontSize: 12,
+                    color: '#475569'
+                  }}
+                >
+                  <div>{liveDisplayModel.lunarDateLine}</div>
+                  <div>{liveDisplayModel.solarDateLine}</div>
+                  <div className="font-moul" style={{ marginTop: 4, color: '#0f172a' }}>
+                    {liveDisplayModel.signerTitle}
+                  </div>
                 </div>
-              </div>
               </ReportEditableZone>
             </div>
               </>

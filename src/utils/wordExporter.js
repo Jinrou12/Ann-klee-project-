@@ -1322,14 +1322,211 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
 
   const roleTabPos = 4680;
   const includeHist = Boolean(displayModel.includeHistory && displayModel.schoolHistory);
+  const resolvedOrder = displayModel.resolvedOrder || {
+    top: includeHist
+      ? ['background', 'management', 'stats', 'progress', 'challenges', 'directions', 'conclusion']
+      : ['management', 'stats', 'progress', 'challenges', 'directions', 'conclusion'],
+    progressSub: includeHist
+      ? ['activities', 'admin_docs', 'history_table', 'appendix']
+      : ['activities', 'admin_docs', 'appendix'],
+    challengesSub: ['challenges', 'solutions', 'requests']
+  };
   const secNums = displayModel.sectionNumbers || {
-    background: null,
-    management: 'I',
-    stats: 'II',
-    progress: 'III',
-    challenges: 'IV',
-    directions: 'V',
-    conclusion: 'VI'
+    background: includeHist ? 'I' : null,
+    management: includeHist ? 'II' : 'I',
+    stats: includeHist ? 'III' : 'II',
+    progress: includeHist ? 'IV' : 'III',
+    challenges: includeHist ? 'V' : 'IV',
+    directions: includeHist ? 'VI' : 'V',
+    conclusion: includeHist ? 'VII' : 'VI'
+  };
+  const chalHeadings = displayModel.challengesSubHeadings || {
+    challenges: '១-បញ្ហាប្រឈម',
+    solutions: '២-ដំណោះស្រាយ',
+    requests: '៣-សំណូមពរ'
+  };
+
+  const renderAlignedLetterSubHead = (txt) => {
+    const m = String(txt || '').match(/^([ក-អ]\.)\s*(.*)$/);
+    if (!m) return subHeading(txt);
+    const dotPos = SUB_INDENT * 2 + 225;
+    const textPos = SUB_INDENT * 2 + 305;
+    return wMultiRunParagraph(
+      [
+        { tab: true },
+        { text: m[1], font: FONT_SIEMREAP, sizePt: SZ, bold: true },
+        { tab: true },
+        { text: m[2], font: FONT_SIEMREAP, sizePt: SZ, bold: true }
+      ],
+      {
+        align: 'left',
+        indentLeft: 0,
+        tabStops: [
+          { val: 'right', pos: dotPos },
+          { val: 'left', pos: textPos }
+        ]
+      }
+    );
+  };
+
+  const buildTopSectionXml = (topKey) => {
+    if (topKey === 'background') {
+      if (!includeHist || !displayModel.schoolHistory) return [];
+      return [
+        sectionHeading(`${secNums.background || 'I'}. សាវតារ`),
+        ...(displayModel.schoolHistory.backgroundParagraphs || []).map(p => {
+          const cleanP = String(p || '').trim();
+          if (!cleanP) return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ });
+          return wParagraph(cleanP, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', firstLine: FIRST_LINE, spaceAfter: 40 });
+        })
+      ];
+    }
+    if (topKey === 'management') {
+      return [
+        sectionHeading(`${secNums.management}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា`),
+        String(displayModel.section1Intro || '')
+          .split(/\r?\n/)
+          .map(ln => {
+            const cleanLn = ln.trim();
+            if (!cleanLn) return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ });
+            return wMultiRunParagraph(buildHighlightedRuns(cleanLn, [], SZ), {
+              align: 'both',
+              indentLeft: BODY_INDENT + SUB_INDENT,
+              firstLine: 680
+            });
+          })
+          .join(''),
+        ...(displayModel.managementRoles || []).map((m) => {
+          const { prefix, personal } = splitMonkTitleAndName(m.name);
+          return wMultiRunParagraph([
+            { text: '- ', font: FONT_SIEMREAP, sizePt: SZ },
+            ...(prefix ? [{ text: prefix, font: FONT_SIEMREAP, sizePt: SZ }] : []),
+            { text: personal, font: FONT_MOUL, sizePt: SZ },
+            { tab: true },
+            { text: m.role || '', font: FONT_SIEMREAP, sizePt: SZ }
+          ], { align: 'left', indentLeft: BODY_INDENT + SUB_INDENT, tabStops: [roleTabPos] });
+        })
+      ];
+    }
+    if (topKey === 'stats') {
+      return [
+        sectionHeading(`${secNums.stats}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`),
+        subHeading('ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ'),
+        ...(displayModel.staffStats || []).map(line => listItem(line)),
+        subHeading('ខ-ចំនួនថ្នាក់ សមណសិស្ស'),
+        ...(displayModel.studentStatLines || []).map(line => listItem(line))
+      ];
+    }
+    if (topKey === 'progress') {
+      const progressParts = [
+        sectionHeading(
+          `${secNums.progress}. ${String(displayModel.section3Heading || '').replace(/^[IVX]+\.+\s*/, '')}`
+        )
+      ];
+      (resolvedOrder.progressSub || []).forEach(subKey => {
+        if (subKey === 'activities') {
+          progressParts.push(renderAlignedLetterSubHead(displayModel.section3SubAHeading));
+          (displayModel.activities || []).forEach(line => progressParts.push(listItem(line, '❖')));
+        } else if (subKey === 'admin_docs') {
+          progressParts.push(
+            renderAlignedLetterSubHead(
+              displayModel.section3SubBHeading ||
+                'ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍'
+            )
+          );
+          (displayModel.adminDocLines || []).forEach(line => progressParts.push(listItem(line)));
+        } else if (subKey === 'history_table' && includeHist && displayModel.schoolHistory) {
+          const dynamicPrefix = displayModel.section3HistoryPrefix || 'គ.';
+          if (displayModel.schoolHistory.tableIntro) {
+            const gSubLeft = SUB_INDENT * 2;
+            const introLines = String(displayModel.schoolHistory.tableIntro || '').trim().split(/\r?\n/);
+            let appliedPrefix = false;
+            introLines.forEach((ln, idx) => {
+              let cleanLn = ln.trim();
+              const isFirst = idx === 0;
+              const isLast = idx === introLines.length - 1;
+              if (!cleanLn) {
+                progressParts.push(
+                  wParagraph('', {
+                    font: FONT_SIEMREAP,
+                    sizePt: SZ,
+                    indentLeft: 0,
+                    spaceBefore: isFirst ? 60 : 0,
+                    spaceAfter: isLast ? 60 : 0
+                  })
+                );
+                return;
+              }
+              if (!appliedPrefix) {
+                appliedPrefix = true;
+                cleanLn = cleanLn.replace(/^[ក-អ]\.\s*/, '').trim();
+                progressParts.push(
+                  wMultiRunParagraph(
+                    [
+                      { text: `${dynamicPrefix} `, font: FONT_SIEMREAP, sizePt: SZ, bold: true },
+                      ...(cleanLn ? [{ text: cleanLn, font: FONT_SIEMREAP, sizePt: SZ }] : [])
+                    ],
+                    {
+                      align: 'both',
+                      indentLeft: 0,
+                      firstLine: gSubLeft,
+                      spaceBefore: 60,
+                      spaceAfter: isLast ? 60 : 0
+                    }
+                  )
+                );
+                return;
+              }
+              progressParts.push(
+                wParagraph(cleanLn, {
+                  font: FONT_SIEMREAP,
+                  sizePt: SZ,
+                  align: 'both',
+                  indentLeft: 0,
+                  firstLine: 0,
+                  spaceAfter: isLast ? 60 : 0
+                })
+              );
+            });
+          }
+          progressParts.push(buildSchoolHistoryTableXml(displayModel.schoolHistory, contentWidth));
+          progressParts.push(wParagraph('', { sizePt: 6, spaceAfter: 40 }));
+        } else if (subKey === 'appendix') {
+          progressParts.push(renderAlignedLetterSubHead(displayModel.section3SubCHeading));
+          progressParts.push(renderAlignedLetterSubHead(displayModel.section3SubDHeading));
+          (displayModel.appendixItems || []).forEach(line => progressParts.push(listItem(line)));
+        }
+      });
+      return progressParts;
+    }
+    if (topKey === 'challenges') {
+      const chalParts = [sectionHeading(`${secNums.challenges}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`)];
+      const subDataMap = {
+        challenges: { heading: chalHeadings.challenges, items: displayModel.challenges || [] },
+        solutions: { heading: chalHeadings.solutions, items: displayModel.solutions || [] },
+        requests: { heading: chalHeadings.requests, items: displayModel.requests || [] }
+      };
+      (resolvedOrder.challengesSub || ['challenges', 'solutions', 'requests']).forEach(subKey => {
+        const cfg = subDataMap[subKey];
+        if (!cfg) return;
+        chalParts.push(subHeading(cfg.heading));
+        cfg.items.forEach(line => chalParts.push(listItem(line)));
+      });
+      return chalParts;
+    }
+    if (topKey === 'directions') {
+      return [
+        sectionHeading(`${secNums.directions}. ទិសដៅបន្ត`),
+        ...(displayModel.directions || []).map(line => listItem(line))
+      ];
+    }
+    if (topKey === 'conclusion') {
+      return [
+        sectionHeading(`${secNums.conclusion}. សន្និដ្ឋាន`),
+        bodyPara(displayModel.conclusionText)
+      ];
+    }
+    return [];
   };
 
   const bodyParts = [
@@ -1345,163 +1542,10 @@ export async function exportAdminReportToWord(displayModel, _metadata = {}) {
     // Intro Paragraph (aligned straight under កម្មវត្ថុ៖ text at 1080 dxa — exact match with A4 Preview/PDF)
     buildIntroParas(displayModel.introParagraph, [displayModel.inPeriodPhrase]),
 
-    // Optional I. សាវតារ (Semester 1 + School History Combined Mode — respects both single & double Enter)
-    ...(includeHist
-      ? [
-        sectionHeading('I. សាវតារ'),
-        ...(displayModel.schoolHistory.backgroundParagraphs || []).map(p => {
-          const cleanP = String(p || '').trim();
-          if (!cleanP) return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ });
-          return wParagraph(cleanP, { font: FONT_SIEMREAP, sizePt: SZ, align: 'both', firstLine: FIRST_LINE, spaceAfter: 40 });
-        })
-      ]
-      : []),
+    // Dynamic Option-B Ordered Sections (I..VII, ក..ង, ១-..៣-)
+    ...(resolvedOrder.top || []).flatMap(buildTopSectionXml),
 
-    // I (or II). តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
-    sectionHeading(`${secNums.management}. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា`),
-    String(displayModel.section1Intro || '')
-      .split(/\r?\n/)
-      .map(ln => {
-        const cleanLn = ln.trim();
-        if (!cleanLn) return wParagraph('', { font: FONT_SIEMREAP, sizePt: SZ });
-        return wMultiRunParagraph(buildHighlightedRuns(cleanLn, [], SZ), {
-          align: 'both',
-          indentLeft: BODY_INDENT + SUB_INDENT,
-          firstLine: 680
-        });
-      })
-      .join(''),
-    ...(displayModel.managementRoles || []).map((m) => {
-      const { prefix, personal } = splitMonkTitleAndName(m.name);
-      return wMultiRunParagraph([
-        { text: '- ', font: FONT_SIEMREAP, sizePt: SZ },
-        ...(prefix ? [{ text: prefix, font: FONT_SIEMREAP, sizePt: SZ }] : []),
-        { text: personal, font: FONT_MOUL, sizePt: SZ },
-        { tab: true },
-        { text: m.role || '', font: FONT_SIEMREAP, sizePt: SZ }
-      ], { align: 'left', indentLeft: BODY_INDENT + SUB_INDENT, tabStops: [roleTabPos] });
-    }),
-
-    // II (or III). ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
-    sectionHeading(`${secNums.stats}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`),
-    subHeading('ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ'),
-    ...(displayModel.staffStats || []).map(line => listItem(line)),
-    subHeading('ខ-ចំនួនថ្នាក់ សមណសិស្ស'),
-    ...(displayModel.studentStatLines || []).map(line => listItem(line)),
-
-    // III (or IV). វឌ្ឍនភាពការងារ
-    sectionHeading(
-      `${secNums.progress}. ${String(displayModel.section3Heading || '').replace(/^[IVX]+\.+\s*/, '')}`
-    ),
-    subHeading(displayModel.section3SubAHeading),
-    ...(displayModel.activities || []).map(line => listItem(line, '❖')),
-
-    subHeading('ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍'),
-    ...(displayModel.adminDocLines || []).map(line => listItem(line)),
-
-    // Optional School History ចំណុច គ. Intro (Line 1 គ. at SUB_INDENT*2 = 568 dxa aligned with ខ.,
-    // Line 2+ & Enter lines flush at 0 dxa aligned with table ល.រ left edge) + 16-Year Table
-    ...(includeHist
-      ? [
-        ...(displayModel.schoolHistory.tableIntro
-          ? (() => {
-            const gSubLeft = SUB_INDENT * 2; // 568 dxa — exact column of ក., ខ., ឃ., ង.
-            const introLines = String(displayModel.schoolHistory.tableIntro || '').trim().split(/\r?\n/);
-            let appliedPrefix = false;
-            return introLines.map((ln, idx) => {
-              let cleanLn = ln.trim();
-              const isFirst = idx === 0;
-              const isLast = idx === introLines.length - 1;
-              if (!cleanLn) {
-                return wParagraph('', {
-                  font: FONT_SIEMREAP,
-                  sizePt: SZ,
-                  indentLeft: 0,
-                  spaceBefore: isFirst ? 60 : 0,
-                  spaceAfter: isLast ? 60 : 0
-                });
-              }
-              if (!appliedPrefix) {
-                appliedPrefix = true;
-                if (cleanLn.startsWith('គ.')) {
-                  cleanLn = cleanLn.slice(2).trim();
-                }
-                return wMultiRunParagraph(
-                  [
-                    { text: 'គ. ', font: FONT_SIEMREAP, sizePt: SZ, bold: true },
-                    ...(cleanLn ? [{ text: cleanLn, font: FONT_SIEMREAP, sizePt: SZ }] : [])
-                  ],
-                  {
-                    align: 'both',
-                    indentLeft: 0,
-                    firstLine: gSubLeft,
-                    spaceBefore: 60,
-                    spaceAfter: isLast ? 60 : 0
-                  }
-                );
-              }
-              return wParagraph(cleanLn, {
-                font: FONT_SIEMREAP,
-                sizePt: SZ,
-                align: 'both',
-                indentLeft: 0,
-                firstLine: 0,
-                spaceAfter: isLast ? 60 : 0
-              });
-            });
-          })()
-          : []),
-        buildSchoolHistoryTableXml(displayModel.schoolHistory, contentWidth),
-        wParagraph('', { sizePt: 6, spaceAfter: 40 })
-      ]
-      : []),
-
-    (() => {
-      const renderAlignedAppendixSubHead = (txt) => {
-        const m = String(txt || '').match(/^([ក-អ]\.)\s*(.*)$/);
-        if (!m) return subHeading(txt);
-        const dotPos = SUB_INDENT * 2 + 225;
-        const textPos = SUB_INDENT * 2 + 305;
-        return wMultiRunParagraph(
-          [
-            { tab: true },
-            { text: m[1], font: FONT_SIEMREAP, sizePt: SZ, bold: true },
-            { tab: true },
-            { text: m[2], font: FONT_SIEMREAP, sizePt: SZ, bold: true }
-          ],
-          {
-            align: 'left',
-            indentLeft: 0,
-            tabStops: [
-              { val: 'right', pos: dotPos },
-              { val: 'left', pos: textPos }
-            ]
-          }
-        );
-      };
-      return [
-        renderAlignedAppendixSubHead(displayModel.section3SubCHeading),
-        renderAlignedAppendixSubHead(displayModel.section3SubDHeading)
-      ].join('');
-    })(),
-    ...(displayModel.appendixItems || []).map(line => listItem(line)),
-
-    // IV (or V). បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
-    sectionHeading(`${secNums.challenges}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`),
-    subHeading('១-បញ្ហាប្រឈម'),
-    ...(displayModel.challenges || []).map(line => listItem(line)),
-    subHeading('២-ដំណោះស្រាយ'),
-    ...(displayModel.solutions || []).map(line => listItem(line)),
-    subHeading('៣-សំណូមពរ'),
-    ...(displayModel.requests || []).map(line => listItem(line)),
-
-    // V (or VI). ទិសដៅបន្ត
-    sectionHeading(`${secNums.directions}. ទិសដៅបន្ត`),
-    ...(displayModel.directions || []).map(line => listItem(line)),
-
-    // VI (or VII). សន្និដ្ឋាន
-    sectionHeading(`${secNums.conclusion}. សន្និដ្ឋាន`),
-    bodyPara(displayModel.conclusionText),
+    // Closing statement & Official Signature block anchored cleanly at the end
     bodyPara(displayModel.closingLine1),
     bodyPara(displayModel.closingLine2),
     wParagraph('', { sizePt: 8, spaceAfter: 60 }),
@@ -1575,24 +1619,24 @@ export async function exportMinistrySummaryToWord(ministryModel) {
 
   const bodyRowsXml = (ministryModel.summaryRows || []).map(row => {
     const descParas = [
-      wParagraph(row.desc || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'left', spaceBefore: 24, spaceAfter: 24 }),
+      wParagraph(row.desc || '', { font: FONT_SIEMREAP, sizePt: 12, align: 'left', spaceBefore: 24, spaceAfter: 24 }),
       ...(row.subDescLines || []).map(sub =>
-        wParagraph(sub, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'left', indentLeft: 240, spaceBefore: 10, spaceAfter: 20 })
+        wParagraph(sub, { font: FONT_SIEMREAP, sizePt: 12, align: 'left', indentLeft: 240, spaceBefore: 10, spaceAfter: 20 })
       )
     ].join('');
 
     const countParas = [
-      wParagraph(row.count || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', spaceBefore: 24, spaceAfter: 24 }),
+      wParagraph(row.count || '', { font: FONT_SIEMREAP, sizePt: 12, align: 'center', spaceBefore: 24, spaceAfter: 24 }),
       ...(row.subCountLines || []).map(subC =>
-        wParagraph(subC, { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center', spaceBefore: 10, spaceAfter: 20 })
+        wParagraph(subC, { font: FONT_SIEMREAP, sizePt: 12, align: 'center', spaceBefore: 10, spaceAfter: 20 })
       )
     ].join('');
 
     return `<w:tr>
-      ${wCell(wParagraph(row.no || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center' }), { widthDxa: colWidths[0] })}
+      ${wCell(wParagraph(row.no || '', { font: FONT_SIEMREAP, sizePt: 12, align: 'center' }), { widthDxa: colWidths[0] })}
       ${wCell(descParas, { widthDxa: colWidths[1] })}
       ${wCell(countParas, { widthDxa: colWidths[2] })}
-      ${wCell(wParagraph(row.note || '', { font: FONT_SIEMREAP, sizePt: 11.5, align: 'center' }), { widthDxa: colWidths[3] })}
+      ${wCell(wParagraph(row.note || '', { font: FONT_SIEMREAP, sizePt: 12, align: 'center' }), { widthDxa: colWidths[3] })}
     </w:tr>`;
   });
 
@@ -1733,7 +1777,7 @@ export async function exportMinistryReportToWord(ministryModel) {
     wCell(
       wParagraph(text || '', {
         font: extra.moul ? FONT_MOUL : FONT_BATTAMBANG,
-        sizePt: extra.sizePt || 11,
+        sizePt: extra.sizePt || (extra.moul ? 11 : 12),
         bold: Boolean(extra.bold),
         align,
         spaceBefore: 20,

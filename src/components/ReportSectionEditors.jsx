@@ -597,7 +597,9 @@ export function AdminSectionEditorContent({
     case 'challenges':
       return (
         <div>
-          <label style={fieldLabelStyle}>១-បញ្ហាប្រឈម (- ចុច Enter ចុះបន្ទាត់ថ្មី)</label>
+          <label style={fieldLabelStyle}>
+            {displayModel.challengesSubHeadings?.challenges || '១-បញ្ហាប្រឈម'} (- ចុច Enter ចុះបន្ទាត់ថ្មី)
+          </label>
           <HangingBulletEditor
             rows={9}
             maxHeight={420}
@@ -611,7 +613,9 @@ export function AdminSectionEditorContent({
     case 'solutions':
       return (
         <div>
-          <label style={fieldLabelStyle}>២-ដំណោះស្រាយ (- ចុច Enter ចុះបន្ទាត់ថ្មី)</label>
+          <label style={fieldLabelStyle}>
+            {displayModel.challengesSubHeadings?.solutions || '២-ដំណោះស្រាយ'} (- ចុច Enter ចុះបន្ទាត់ថ្មី)
+          </label>
           <HangingBulletEditor
             rows={8}
             maxHeight={420}
@@ -625,7 +629,9 @@ export function AdminSectionEditorContent({
     case 'requests':
       return (
         <div>
-          <label style={fieldLabelStyle}>៣-សំណូមពរ (- ចុច Enter ចុះបន្ទាត់ថ្មី)</label>
+          <label style={fieldLabelStyle}>
+            {displayModel.challengesSubHeadings?.requests || '៣-សំណូមពរ'} (- ចុច Enter ចុះបន្ទាត់ថ្មី)
+          </label>
           <HangingBulletEditor
             rows={8}
             maxHeight={420}

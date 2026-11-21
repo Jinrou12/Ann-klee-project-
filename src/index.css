@@ -601,6 +601,51 @@ input:focus, select:focus, textarea:focus {
   background: #0284c7;
 }
 
+.monastic-app .report-edit-zone[data-draggable="true"] {
+  cursor: grab;
+}
+
+.monastic-app .report-edit-zone[data-dragging="true"] {
+  opacity: 0.45;
+  outline: 2px dashed #b45309;
+  background-color: rgba(254, 243, 199, 0.35);
+  cursor: grabbing;
+}
+
+.monastic-app .report-edit-zone[data-drag-over="true"] {
+  outline: 2.5px solid #0284c7 !important;
+  outline-offset: 2px;
+  background-color: rgba(186, 230, 253, 0.42) !important;
+  box-shadow: 0 -3px 0 0 #0284c7, 0 0 0 4px rgba(2, 132, 199, 0.14);
+  z-index: 8;
+}
+
+.monastic-app .report-edit-zone[data-drag-over="true"] > .report-edit-zone-badge {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+  background: #0284c7 !important;
+}
+
+.monastic-app .report-edit-chip[data-draggable="true"] {
+  cursor: grab;
+}
+
+.monastic-app .report-edit-chip[data-dragging="true"] {
+  opacity: 0.45;
+}
+
+.monastic-app .report-edit-chip[data-drag-over="true"] {
+  outline: 2px solid #0284c7;
+  outline-offset: 1px;
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+  border-color: #0284c7 !important;
+}
+
+.monastic-app .admin-report-paper-shift {
+  transition: padding-right 0.2s ease;
+}
+
 @media (hover: none), (max-width: 768px) {
   .monastic-app .report-edit-zone > .report-edit-zone-badge {
     opacity: 0.92;

@@ -137,7 +137,7 @@ function renderFitTableCell(
   text,
   innerPx,
   {
-    baseFont = 13.8,
+    baseFont = 16,
     minFont = 10.2,
     bold = false,
     moul = false,
@@ -175,7 +175,7 @@ function renderFitTableCell(
   }
 
   // Only genuinely long text (when allowWrap === true and text exceeds single-line minFont capacity) wraps inside cell
-  const twoLineFont = Math.min(12.6, Math.max(10.6, Math.floor((maxFitFont * 1.85) * 5) / 5));
+  const twoLineFont = Math.min(14, Math.max(10.6, Math.floor((maxFitFont * 1.85) * 5) / 5));
   return (
     <div
       style={{
@@ -217,7 +217,7 @@ const tdCellStyle = {
   padding: '4px 4px',
   fontFamily: BATTAMBANG_FONT,
   fontWeight: 400,
-  fontSize: 13.8,
+  fontSize: 16,
   verticalAlign: 'middle',
   background: '#ffffff',
   color: '#000000',
@@ -488,7 +488,7 @@ export default function OfficialMinistryReportDocument({
                       {renderFitTableCell(r.balanceText, 102)}
                     </td>
                     <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                      {renderFitTableCell(r.note || '', 68, { baseFont: 13.4, minFont: 7.5, allowWrap: false })}
+                      {renderFitTableCell(r.note || '', 68, { baseFont: 16, minFont: 7.5, allowWrap: false })}
                     </td>
                   </tr>
                 ))}
@@ -670,25 +670,25 @@ export default function OfficialMinistryReportDocument({
                       </td>
                       <td style={{ ...tdCellStyle, textAlign: 'left', padding: '3px 5px' }}>
                         {renderFitTableCell(r.desc, 266, {
-                          baseFont: 13.8,
+                          baseFont: 16,
                           minFont: 11.2,
                           allowWrap: true,
                           align: 'left'
                         })}
                       </td>
                       <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                        {renderFitTableCell(r.source, 82, { baseFont: 13.8, minFont: 10.2 })}
+                        {renderFitTableCell(r.source, 82, { baseFont: 16, minFont: 10.2 })}
                       </td>
                       <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                        {renderFitTableCell(r.amountText, 102, { baseFont: 13.8, minFont: 10.2 })}
+                        {renderFitTableCell(r.amountText, 102, { baseFont: 16, minFont: 10.2 })}
                       </td>
                       <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                        {renderFitTableCell(r.qty, 82, { baseFont: 13.8, minFont: 10.2 })}
+                        {renderFitTableCell(r.qty, 82, { baseFont: 16, minFont: 10.2 })}
                       </td>
                       <td style={{ ...tdCellStyle, textAlign: 'center' }}>
                         {r.note
                           ? renderFitTableCell(r.note, 74, {
-                              baseFont: 13.4,
+                              baseFont: 16,
                               minFont: 7.5,
                               allowWrap: false
                             })
@@ -704,7 +704,7 @@ export default function OfficialMinistryReportDocument({
                     </td>
                     <td style={{ ...tdCellStyle, fontWeight: 700, textAlign: 'center' }}>
                       {renderFitTableCell(semData?.totalExpenseText, 102, {
-                        baseFont: 13.8,
+                        baseFont: 16,
                         minFont: 10,
                         bold: true
                       })}
@@ -792,7 +792,7 @@ export default function OfficialMinistryReportDocument({
                       </td>
                       <td style={{ ...tdCellStyle, textAlign: 'left', padding: '3px 5px' }}>
                         {renderFitTableCell(r.desc, 280, {
-                          baseFont: 13.8,
+                          baseFont: 16,
                           minFont: 11.2,
                           allowWrap: true,
                           align: 'left'
@@ -807,7 +807,7 @@ export default function OfficialMinistryReportDocument({
                       <td style={{ ...tdCellStyle, textAlign: 'center' }}>
                         {r.note
                           ? renderFitTableCell(r.note, 130, {
-                              baseFont: 13.4,
+                              baseFont: 16,
                               minFont: 7.5,
                               allowWrap: false
                             })
@@ -830,7 +830,7 @@ export default function OfficialMinistryReportDocument({
                     <td style={{ ...tdCellStyle, textAlign: 'center' }}>
                       {semData?.inKindSummary
                         ? renderFitTableCell(semData.inKindSummary, 130, {
-                            baseFont: 13.4,
+                            baseFont: 16,
                             minFont: 7.5,
                             allowWrap: false
                           })
@@ -914,7 +914,7 @@ export default function OfficialMinistryReportDocument({
                   <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(r.incomeText, 164)}</td>
                   <td style={{ ...tdCellStyle, textAlign: 'center' }}>{renderFitTableCell(r.expenseText, 164)}</td>
                   <td style={{ ...tdCellStyle, textAlign: 'center' }}>
-                    {renderFitTableCell(r.note || '', 144, { baseFont: 13.4, minFont: 7.5, allowWrap: false })}
+                    {renderFitTableCell(r.note || '', 144, { baseFont: 16, minFont: 7.5, allowWrap: false })}
                   </td>
                 </tr>
               ))}
@@ -930,7 +930,7 @@ export default function OfficialMinistryReportDocument({
                 </td>
                 <td style={{ ...tdCellStyle, textAlign: 'center' }}>
                   {renderFitTableCell(ministryModel.officeAnnual?.inKindSummary || '', 144, {
-                    baseFont: 13.4,
+                    baseFont: 16,
                     minFont: 7.5,
                     allowWrap: false
                   })}
@@ -1081,7 +1081,7 @@ export default function OfficialMinistryReportDocument({
                 </td>
                 <td style={{ ...tdCellStyle, textAlign: 'center' }}>
                   {renderFitTableCell(ministryModel.grandAnnualTable?.balanceNote, 130, {
-                    baseFont: 13.4,
+                    baseFont: 16,
                     minFont: 7.5,
                     allowWrap: false
                   })}

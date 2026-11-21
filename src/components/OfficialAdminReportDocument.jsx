@@ -6,22 +6,54 @@ import { toKhmerDigits } from '../utils/khmerNumerals';
 import { renderSchoolHistoryTableChunk } from './OfficialSchoolHistoryDocument';
 import { subscribeKhmerFontReady, getKhmerFontVersion } from '../utils/khmerJustifyEngine';
 
-function mapAdminBlockIdToSection(blockId = '') {
+function mapAdminBlockMeta(blockId = '') {
   const id = String(blockId || '');
-  if (id === 'sec-hist-head' || id.startsWith('hist-bg-para-')) return 'history_bg';
-  if (id === 'sec-mgmt-head' || id === 'sec-mgmt-intro' || id.startsWith('comb-role-')) return 'management';
-  if (id === 'sec-stats-head' || id.startsWith('comb-staff-') || id === 'sec-stats-subB' || id.startsWith('comb-st-') || id.startsWith('st-p2-')) return 'stats';
-  if (id === 'sec3-head' || id.startsWith('act-')) return 'activities';
-  if (id === 'sec3-subB' || id.startsWith('doc-')) return 'admin_docs';
-  if (id === 'hist-tbl-intro' || id.startsWith('comb-hist-tbl-')) return 'history_table';
-  if (id === 'sec3-subCD' || id.startsWith('appx-')) return 'appendix';
-  if (id === 'sec4-head' || id.startsWith('chal-')) return 'challenges';
-  if (id === 'sec4-sol-head' || id.startsWith('sol-')) return 'solutions';
-  if (id === 'sec4-req-head' || id.startsWith('req-')) return 'requests';
-  if (id === 'sec5-head' || id.startsWith('dir-')) return 'directions';
-  if (id === 'sec6-conclusion') return 'conclusion';
-  if (id === 'sec6-closing-signature') return 'signature';
-  return null;
+  if (id === 'sec-hist-head' || id.startsWith('hist-bg-para-')) {
+    return { editSectionId: 'history_bg', dragGroup: 'top', dragId: 'background' };
+  }
+  if (id === 'sec-mgmt-head' || id === 'sec-mgmt-intro' || id.startsWith('comb-role-')) {
+    return { editSectionId: 'management', dragGroup: 'top', dragId: 'management' };
+  }
+  if (id === 'sec-stats-head' || id.startsWith('comb-staff-') || id === 'sec-stats-subB' || id.startsWith('comb-st-')) {
+    return { editSectionId: 'stats', dragGroup: 'top', dragId: 'stats' };
+  }
+  if (id === 'sec3-roman-head') {
+    return { editSectionId: 'activities', dragGroup: 'top', dragId: 'progress', useProgressRomanLabel: true };
+  }
+  if (id === 'sec3-subA-head' || id.startsWith('act-')) {
+    return { editSectionId: 'activities', dragGroup: 'progressSub', dragId: 'activities', fallbackTopId: 'progress' };
+  }
+  if (id === 'sec3-subB' || id.startsWith('doc-')) {
+    return { editSectionId: 'admin_docs', dragGroup: 'progressSub', dragId: 'admin_docs', fallbackTopId: 'progress' };
+  }
+  if (id === 'hist-tbl-intro' || id.startsWith('comb-hist-tbl-')) {
+    return { editSectionId: 'history_table', dragGroup: 'progressSub', dragId: 'history_table', fallbackTopId: 'progress' };
+  }
+  if (id === 'sec3-subCD' || id.startsWith('appx-')) {
+    return { editSectionId: 'appendix', dragGroup: 'progressSub', dragId: 'appendix', fallbackTopId: 'progress' };
+  }
+  if (id === 'sec4-roman-head') {
+    return { editSectionId: 'challenges', dragGroup: 'top', dragId: 'challenges', useChallengesRomanLabel: true };
+  }
+  if (id === 'sec4-chal-head' || id.startsWith('chal-')) {
+    return { editSectionId: 'challenges', dragGroup: 'challengesSub', dragId: 'challenges', fallbackTopId: 'challenges' };
+  }
+  if (id === 'sec4-sol-head' || id.startsWith('sol-')) {
+    return { editSectionId: 'solutions', dragGroup: 'challengesSub', dragId: 'solutions', fallbackTopId: 'challenges' };
+  }
+  if (id === 'sec4-req-head' || id.startsWith('req-')) {
+    return { editSectionId: 'requests', dragGroup: 'challengesSub', dragId: 'requests', fallbackTopId: 'challenges' };
+  }
+  if (id === 'sec5-head' || id.startsWith('dir-')) {
+    return { editSectionId: 'directions', dragGroup: 'top', dragId: 'directions' };
+  }
+  if (id === 'sec6-conclusion') {
+    return { editSectionId: 'conclusion', dragGroup: 'top', dragId: 'conclusion' };
+  }
+  if (id === 'sec6-closing-signature') {
+    return { editSectionId: 'signature', dragGroup: null, dragId: null };
+  }
+  return { editSectionId: null, dragGroup: null, dragId: null };
 }
 
 const SIEMREAP_FONT = "'Khmer OS Siemreap', 'Siemreap', 'Battambang', sans-serif";
@@ -99,10 +131,13 @@ export default function OfficialAdminReportDocument({
   useKhmerNumerals = true,
   editMode = false,
   activeEditSection = null,
-  onSelectEditSection = null
+  onSelectEditSection = null,
+  dragController = null,
+  isMobile = false
 }) {
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
   const secNumsForLabels = displayModel?.sectionNumbers || {
+    background: null,
     management: 'I',
     stats: 'II',
     progress: 'III',
@@ -110,31 +145,47 @@ export default function OfficialAdminReportDocument({
     directions: 'V',
     conclusion: 'VI'
   };
+  const chalSubLabels = displayModel?.challengesSubHeadings || {
+    challenges: '១-បញ្ហាប្រឈម',
+    solutions: '២-ដំណោះស្រាយ',
+    requests: '៣-សំណូមពរ'
+  };
   const adminSectionLabels = useMemo(
     () => ({
       header: 'លេខលិខិត & អ្នកទទួល',
       subject_intro: 'កម្មវត្ថុ & សេចក្ដីផ្ដើម',
-      history_bg: 'I. សាវតារ',
+      history_bg: `${secNumsForLabels.background || 'I'}. សាវតារ`,
       management: `${secNumsForLabels.management}. តួនាទី និងភារកិច្ច`,
       stats: `${secNumsForLabels.stats}. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស`,
-      activities: `${secNumsForLabels.progress}. ក. សកម្មភាពការងារ`,
-      admin_docs: `${secNumsForLabels.progress}. ខ. ការងារគ្រប់គ្រង លិខិតរដ្ឋបាល`,
-      history_table: 'គ. & តារាង ១៦ ឆ្នាំ',
-      appendix: 'ឧបសម្ព័ន្ធ (ចំណាយ)',
-      challenges: `${secNumsForLabels.challenges}. ១-បញ្ហាប្រឈម`,
-      solutions: `${secNumsForLabels.challenges}. ២-ដំណោះស្រាយ`,
-      requests: `${secNumsForLabels.challenges}. ៣-សំណូមពរ`,
+      progress_roman: `${secNumsForLabels.progress}. វឌ្ឍនភាពការងារ`,
+      activities: displayModel?.section3SubAHeading || 'ក. សកម្មភាពការងារ',
+      admin_docs: displayModel?.section3SubBHeading || 'ខ. ការងារគ្រប់គ្រង លិខិតរដ្ឋបាល',
+      history_table: `${displayModel?.section3HistoryPrefix || 'គ.'} តារាង ១៦ ឆ្នាំ`,
+      appendix: `${displayModel?.resolvedOrder?.progressSubLetters?.appendix?.letterC || 'គ'}-${displayModel?.resolvedOrder?.progressSubLetters?.appendix?.letterD || 'ឃ'}. ឧបសម្ព័ន្ធ`,
+      challenges_roman: `${secNumsForLabels.challenges}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`,
+      challenges: chalSubLabels.challenges,
+      solutions: chalSubLabels.solutions,
+      requests: chalSubLabels.requests,
       directions: `${secNumsForLabels.directions}. ទិសដៅបន្ត`,
       conclusion: `${secNumsForLabels.conclusion}. សន្និដ្ឋាន`,
       signature: 'កាលបរិច្ឆេទ & ហត្ថលេខា'
     }),
     [
+      secNumsForLabels.background,
       secNumsForLabels.management,
       secNumsForLabels.stats,
       secNumsForLabels.progress,
       secNumsForLabels.challenges,
       secNumsForLabels.directions,
-      secNumsForLabels.conclusion
+      secNumsForLabels.conclusion,
+      displayModel?.section3SubAHeading,
+      displayModel?.section3SubBHeading,
+      displayModel?.section3HistoryPrefix,
+      displayModel?.resolvedOrder?.progressSubLetters?.appendix?.letterC,
+      displayModel?.resolvedOrder?.progressSubLetters?.appendix?.letterD,
+      chalSubLabels.challenges,
+      chalSubLabels.solutions,
+      chalSubLabels.requests
     ]
   );
   const measureContainerRef = useRef(null);
@@ -147,42 +198,36 @@ export default function OfficialAdminReportDocument({
 
   useEffect(() => subscribeKhmerFontReady(setFontVersion), []);
 
-  // Build Page 1 Node + Flow Blocks for Page 2..N (or continuous flow from Page 1 when includeHistory is true)
+  // Build Page 1 Top Header + Unified Continuous Flow Blocks (supports Option-B reordering across BOTH Standard & Combined modes!)
   const { page1Node, flowBlocks, isHistoryCombined } = useMemo(() => {
     if (!displayModel) return { page1Node: null, flowBlocks: [], isHistoryCombined: false };
 
     const includeHist = Boolean(displayModel.includeHistory && displayModel.schoolHistory);
+    const resolvedOrder = displayModel.resolvedOrder || {
+      top: includeHist
+        ? ['background', 'management', 'stats', 'progress', 'challenges', 'directions', 'conclusion']
+        : ['management', 'stats', 'progress', 'challenges', 'directions', 'conclusion'],
+      progressSub: includeHist
+        ? ['activities', 'admin_docs', 'history_table', 'appendix']
+        : ['activities', 'admin_docs', 'appendix'],
+      challengesSub: ['challenges', 'solutions', 'requests']
+    };
     const secNums = displayModel.sectionNumbers || {
-      background: null,
-      management: 'I',
-      stats: 'II',
-      progress: 'III',
-      challenges: 'IV',
-      directions: 'V',
-      conclusion: 'VI'
+      background: includeHist ? 'I' : null,
+      management: includeHist ? 'II' : 'I',
+      stats: includeHist ? 'III' : 'II',
+      progress: includeHist ? 'IV' : 'III',
+      challenges: includeHist ? 'V' : 'IV',
+      directions: includeHist ? 'VI' : 'V',
+      conclusion: includeHist ? 'VII' : 'VI'
+    };
+    const chalHeadings = displayModel.challengesSubHeadings || {
+      challenges: '១-បញ្ហាប្រឈម',
+      solutions: '២-ដំណោះស្រាយ',
+      requests: '៣-សំណូមពរ'
     };
 
     const studentLines = (displayModel.studentStatLines || []).map(normalizeSingleSpaces);
-    const extraSubjLines = Math.max(0, countEstimatedVisualLines(displayModel.subjectText, 48) - 2);
-    const extraIntroLines = Math.max(0, countEstimatedVisualLines(displayModel.introParagraph, 48) - 3);
-    const extraSec1Lines = Math.max(0, countEstimatedVisualLines(displayModel.section1Intro, 52) - 4);
-    const roleVisualLines = (displayModel.managementRoles || []).reduce(
-      (sum, m) => sum + Math.max(1, countEstimatedVisualLines(m?.role || '', 34)),
-      0
-    );
-    const extraRoleLines = Math.max(0, roleVisualLines - 4);
-    const staffVisualLines = (displayModel.staffStats || []).reduce(
-      (sum, s) => sum + Math.max(1, countEstimatedVisualLines(s, 52)),
-      0
-    );
-    const extraStaffLines = Math.max(0, staffVisualLines - 4);
-    const totalP1ExtraLines =
-      extraSubjLines + extraIntroLines + extraSec1Lines + extraRoleLines + extraStaffLines;
-
-    const baseP1Slice = displayModel.periodType && displayModel.periodType !== 'month' ? 2 : 3;
-    const p1SliceCount = Math.max(0, baseP1Slice - totalP1ExtraLines);
-    const page1StudentLines = studentLines.slice(0, p1SliceCount);
-    const page2CarryStudentLines = studentLines.slice(p1SliceCount);
 
     // Top Official Header + Salutation + Subject + Intro (Shared by standard & combined)
     const p1TopHeader = (
@@ -362,9 +407,6 @@ export default function OfficialAdminReportDocument({
       </>
     );
 
-    // PAGE 1:
-    // - Standard mode: Header + Section I + Section II (up to p1SliceCount) — untouched authentic layout
-    // - Combined History mode: Header only, then I. សាវតារ, II..VII flow continuously starting right on Page 1
     const p1Node = (
       <div
         key="page-1-body"
@@ -374,162 +416,59 @@ export default function OfficialAdminReportDocument({
         }}
       >
         {p1TopHeader}
-
-        {!includeHist && (
-          <>
-            {/* 6. Section I: I.តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា */}
-            <ReportEditableZone
-              editMode={editMode}
-              sectionId="management"
-              label={adminSectionLabels.management}
-              activeSectionId={activeEditSection}
-              onSelectSection={onSelectEditSection}
-            >
-              <div style={{ marginBottom: 8 }}>
-              <div style={{ paddingLeft: 28, marginBottom: 4 }}>
-                <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>I.</span>
-                <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
-                  តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
-                </span>
-              </div>
-              <div style={{ paddingLeft: 56, marginBottom: 6, boxSizing: 'border-box' }}>
-                <KhmerJustifiedText
-                  text={displayModel.section1Intro}
-                  maxWidthPx={638}
-                  firstLineIndent={46}
-                  fontFamily={SIEMREAP_FONT}
-                  moulFontFamily={MOUL_FONT}
-                  fontSize={15.2}
-                  lineHeight={1.8}
-                />
-              </div>
-              <div style={{ paddingLeft: 56 }}>
-                {(displayModel.managementRoles || []).map((m, idx) => (
-                  <div
-                    key={`role-${idx}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'baseline',
-                      marginBottom: 3,
-                      lineHeight: 1.78
-                    }}
-                  >
-                    <span style={{ width: 18, flexShrink: 0 }}>-</span>
-                    <span style={{ minWidth: 192, flexShrink: 0 }}>
-                      {renderMonkTitleAndName(m.name)}
-                    </span>
-                    <span>{normalizeSingleSpaces(m.role)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            </ReportEditableZone>
-
-            {/* 7. Section II: II.ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស */}
-            <ReportEditableZone
-              editMode={editMode}
-              sectionId="stats"
-              label={adminSectionLabels.stats}
-              activeSectionId={activeEditSection}
-              onSelectSection={onSelectEditSection}
-            >
-            <div>
-              <div style={{ paddingLeft: 28, marginBottom: 4 }}>
-                <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>II.</span>
-                <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
-                  ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
-                </span>
-              </div>
-
-              <div
-                style={{
-                  paddingLeft: 68,
-                  fontWeight: 700,
-                  marginBottom: 3
-                }}
-              >
-                ក-គណៈគ្រប់គ្រង មន្ត្រី គ្រូ
-              </div>
-              <div style={{ paddingLeft: 68, marginBottom: 6 }}>
-                {(displayModel.staffStats || []).map((line, idx) => (
-                  <div
-                    key={`staff-${idx}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'baseline',
-                      marginBottom: 2,
-                      lineHeight: 1.78
-                    }}
-                  >
-                    <span style={{ width: 18, flexShrink: 0 }}>-</span>
-                    <KhmerJustifiedText
-                      text={line}
-                      maxWidthPx={608}
-                      fontFamily={SIEMREAP_FONT}
-                      moulFontFamily={MOUL_FONT}
-                      fontSize={15.2}
-                      lineHeight={1.78}
-                      style={{ flex: 1, minWidth: 0 }}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {page1StudentLines.length > 0 && (
-                <>
-                  <div
-                    style={{
-                      paddingLeft: 68,
-                      fontWeight: 700,
-                      marginBottom: 3
-                    }}
-                  >
-                    ខ-ចំនួនថ្នាក់ សមណសិស្ស
-                  </div>
-                  <div style={{ paddingLeft: 68 }}>
-                    {page1StudentLines.map((line, idx) => (
-                      <div
-                        key={`st-p1-${idx}`}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'baseline',
-                          marginBottom: 2,
-                          lineHeight: 1.78
-                        }}
-                      >
-                        <span style={{ width: 18, flexShrink: 0 }}>-</span>
-                        <KhmerJustifiedText
-                          text={line}
-                          maxWidthPx={608}
-                          fontFamily={SIEMREAP_FONT}
-                          moulFontFamily={MOUL_FONT}
-                          fontSize={15.2}
-                          lineHeight={1.78}
-                          style={{ flex: 1, minWidth: 0 }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-            </ReportEditableZone>
-          </>
-        )}
       </div>
     );
 
     const blocks = [];
 
-    if (includeHist) {
-      // Combined Mode Flow Block Group A: I. សាវតារ
+    // Aligned letter subheading (ក., ខ., គ., ឃ., ង.) so `.` and text line up pixel-perfectly regardless of order!
+    const renderAlignedLetterSubHeading = (headingText, marginBottom = 0, paddingTop = 0) => {
+      const m = String(headingText || '').match(/^([ក-អ]\.)\s*(.*)$/);
+      if (!m) {
+        return (
+          <div style={{ paddingLeft: 68, fontWeight: 700, paddingTop, marginBottom }}>
+            {headingText}
+          </div>
+        );
+      }
+      return (
+        <div
+          style={{
+            paddingLeft: 68,
+            fontWeight: 700,
+            paddingTop,
+            marginBottom,
+            display: 'flex',
+            alignItems: 'baseline'
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-block',
+              width: 15.5,
+              textAlign: 'right',
+              marginRight: 4.5,
+              flexShrink: 0
+            }}
+          >
+            {m[1]}
+          </span>
+          <span>{m[2]}</span>
+        </div>
+      );
+    };
+
+    const pushBackgroundSection = (isFirstTop) => {
+      if (!includeHist || !displayModel.schoolHistory) return;
       blocks.push({
         id: 'sec-hist-head',
         isHeading: true,
         estPx: 34,
         node: (
-          <div key="sec-hist-head" style={{ paddingLeft: 28, paddingTop: 2, marginBottom: 4 }}>
-            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>I. </span>
+          <div key="sec-hist-head" style={{ paddingLeft: 28, paddingTop: isFirstTop ? 2 : 6, marginBottom: 4 }}>
+            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
+              {secNums.background || 'I'}.{' '}
+            </span>
             <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>សាវតារ</span>
           </div>
         )
@@ -563,14 +502,15 @@ export default function OfficialAdminReportDocument({
           )
         });
       });
+    };
 
-      // Combined Mode Flow Block Group B: II. តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
+    const pushManagementSection = (isFirstTop) => {
       blocks.push({
         id: 'sec-mgmt-head',
         isHeading: true,
         estPx: 36,
         node: (
-          <div key="sec-mgmt-head" style={{ paddingLeft: 28, paddingTop: 6, marginBottom: 4 }}>
+          <div key="sec-mgmt-head" style={{ paddingLeft: 28, paddingTop: isFirstTop ? 2 : 6, marginBottom: 4 }}>
             <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>{secNums.management}. </span>
             <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
               តួនាទី និងភារកិច្ចគណៈគ្រប់គ្រងសាលា
@@ -621,14 +561,15 @@ export default function OfficialAdminReportDocument({
           )
         });
       });
+    };
 
-      // Combined Mode Flow Block Group C: III. ស្ថិតិ គណៈគ្រប់គ្រង គ្រូ និងសមណសិស្ស
+    const pushStatsSection = (isFirstTop) => {
       blocks.push({
         id: 'sec-stats-head',
         isHeading: true,
         estPx: 62,
         node: (
-          <div key="sec-stats-head" style={{ paddingTop: 6, marginBottom: 3 }}>
+          <div key="sec-stats-head" style={{ paddingTop: isFirstTop ? 2 : 6, marginBottom: 3 }}>
             <div style={{ paddingLeft: 28, marginBottom: 4 }}>
               <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>{secNums.stats}. </span>
               <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
@@ -720,47 +661,326 @@ export default function OfficialAdminReportDocument({
           )
         });
       });
-    } else {
-      // Standard Mode: If Page 1 filled before ខ-, carry the subheading cleanly onto Page 2!
-      if (page1StudentLines.length === 0 && page2CarryStudentLines.length > 0) {
+    };
+
+    const pushProgressSection = (isFirstTop) => {
+      // Parent Top-Level Roman Heading (draggable as `top: progress`)
+      blocks.push({
+        id: 'sec3-roman-head',
+        isHeading: true,
+        estPx: 34,
+        node: (
+          <div key="sec3-roman-head" style={{ paddingLeft: 28, paddingTop: isFirstTop ? 2 : 6, marginBottom: 3 }}>
+            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
+              {secNums.progress}.{' '}
+            </span>
+            <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
+              {String(displayModel.section3Heading || '').replace(/^[IVX]+\.+\s*/, '')}
+            </span>
+          </div>
+        )
+      });
+
+      // Dynamic sub-sections inside វឌ្ឍនភាពការងារ (ក., ខ., គ., ឃ., ង.)
+      (resolvedOrder.progressSub || []).forEach((subKey, subIdx) => {
+        const subPadTop = subIdx === 0 ? 0 : 4;
+        if (subKey === 'activities') {
+          blocks.push({
+            id: 'sec3-subA-head',
+            isHeading: true,
+            estPx: 30,
+            node: (
+              <div key="sec3-subA-head" style={{ paddingTop: subPadTop, marginBottom: 3 }}>
+                {renderAlignedLetterSubHeading(displayModel.section3SubAHeading, 0)}
+              </div>
+            )
+          });
+          (displayModel.activities || []).forEach((rawLine, idx) => {
+            const line = normalizeSingleSpaces(rawLine);
+            blocks.push({
+              id: `act-${idx}`,
+              estPx: estimateVisualHeightPx(line, 58, 3),
+              node: (
+                <div
+                  key={`act-${idx}`}
+                  style={{
+                    paddingLeft: 86,
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    marginBottom: 3,
+                    lineHeight: 1.78
+                  }}
+                >
+                  <span style={{ width: 22, flexShrink: 0, fontSize: 13 }}>❖</span>
+                  <KhmerJustifiedText
+                    text={line}
+                    maxWidthPx={586}
+                    fontFamily={SIEMREAP_FONT}
+                    moulFontFamily={MOUL_FONT}
+                    fontSize={15.2}
+                    lineHeight={1.78}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                </div>
+              )
+            });
+          });
+        } else if (subKey === 'admin_docs') {
+          blocks.push({
+            id: 'sec3-subB',
+            isHeading: true,
+            estPx: 34,
+            node: (
+              <div key="sec3-subB" style={{ paddingTop: subPadTop, marginBottom: 3 }}>
+                {renderAlignedLetterSubHeading(
+                  displayModel.section3SubBHeading ||
+                    'ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍',
+                  0
+                )}
+              </div>
+            )
+          });
+          (displayModel.adminDocLines || []).forEach((rawLine, idx) => {
+            const line = normalizeSingleSpaces(rawLine);
+            blocks.push({
+              id: `doc-${idx}`,
+              estPx: estimateVisualHeightPx(line, 58, 3),
+              node: (
+                <div
+                  key={`doc-${idx}`}
+                  style={{
+                    paddingLeft: 86,
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    marginBottom: 2,
+                    lineHeight: 1.76
+                  }}
+                >
+                  <span style={{ width: 18, flexShrink: 0 }}>-</span>
+                  <KhmerJustifiedText
+                    text={line}
+                    maxWidthPx={590}
+                    fontFamily={SIEMREAP_FONT}
+                    moulFontFamily={MOUL_FONT}
+                    fontSize={15.2}
+                    lineHeight={1.76}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                </div>
+              )
+            });
+          });
+        } else if (subKey === 'history_table' && includeHist && displayModel.schoolHistory) {
+          const cleanIntroStr = normalizeSingleSpaces(displayModel.schoolHistory.tableIntro || '').replace(
+            /^[ក-អ]\.\s*/,
+            ''
+          );
+          const dynamicPrefix = displayModel.section3HistoryPrefix || 'គ.';
+          if (cleanIntroStr) {
+            blocks.push({
+              id: 'hist-tbl-intro',
+              isHeading: true,
+              estPx: estimateVisualHeightPx(cleanIntroStr, 60, 14),
+              node: (
+                <KhmerJustifiedText
+                  key="hist-tbl-intro"
+                  text={cleanIntroStr}
+                  firstParagraphPrefixBold={dynamicPrefix}
+                  maxWidthPx={694}
+                  firstLineIndent={69.5}
+                  indentFirstParagraphOnly
+                  fontFamily={SIEMREAP_FONT}
+                  moulFontFamily={MOUL_FONT}
+                  fontSize={15.2}
+                  lineHeight={1.78}
+                  style={{ paddingTop: subIdx === 0 ? 2 : 6, marginBottom: 6 }}
+                />
+              )
+            });
+          }
+          blocks.push({
+            id: 'hist-16yr-table',
+            isSplittableHistoryTable: true,
+            rows: displayModel.schoolHistory.rows || [],
+            totals: displayModel.schoolHistory.totals || null,
+            estPx: 600,
+            node: null
+          });
+        } else if (subKey === 'appendix') {
+          blocks.push({
+            id: 'sec3-subCD',
+            isHeading: true,
+            estPx: 60,
+            node: (
+              <div key="sec3-subCD" style={{ paddingTop: subPadTop, marginBottom: 2 }}>
+                {renderAlignedLetterSubHeading(displayModel.section3SubCHeading, 3)}
+                {renderAlignedLetterSubHeading(displayModel.section3SubDHeading, 0)}
+              </div>
+            )
+          });
+          (displayModel.appendixItems || []).forEach((rawLine, idx) => {
+            const line = normalizeSingleSpaces(rawLine);
+            blocks.push({
+              id: `appx-${idx}`,
+              estPx: 29,
+              node: (
+                <div
+                  key={`appx-${idx}`}
+                  style={{
+                    paddingLeft: 86,
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    marginBottom: 2,
+                    lineHeight: 1.76
+                  }}
+                >
+                  <span style={{ width: 18, flexShrink: 0 }}>-</span>
+                  <KhmerJustifiedText
+                    text={line}
+                    maxWidthPx={590}
+                    fontFamily={SIEMREAP_FONT}
+                    moulFontFamily={MOUL_FONT}
+                    fontSize={15.2}
+                    lineHeight={1.76}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                </div>
+              )
+            });
+          });
+        }
+      });
+    };
+
+    const pushChallengesSection = (isFirstTop) => {
+      // Parent Top-Level Roman Heading (draggable as `top: challenges`)
+      blocks.push({
+        id: 'sec4-roman-head',
+        isHeading: true,
+        estPx: 34,
+        node: (
+          <div key="sec4-roman-head" style={{ paddingLeft: 28, paddingTop: isFirstTop ? 2 : 6, marginBottom: 3 }}>
+            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
+              {secNums.challenges}.
+            </span>
+            <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
+              បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
+            </span>
+          </div>
+        )
+      });
+
+      const subMap = {
+        challenges: {
+          headId: 'sec4-chal-head',
+          itemPrefix: 'chal',
+          heading: chalHeadings.challenges,
+          items: displayModel.challenges || []
+        },
+        solutions: {
+          headId: 'sec4-sol-head',
+          itemPrefix: 'sol',
+          heading: chalHeadings.solutions,
+          items: displayModel.solutions || []
+        },
+        requests: {
+          headId: 'sec4-req-head',
+          itemPrefix: 'req',
+          heading: chalHeadings.requests,
+          items: displayModel.requests || []
+        }
+      };
+
+      (resolvedOrder.challengesSub || ['challenges', 'solutions', 'requests']).forEach((subKey, subIdx) => {
+        const cfg = subMap[subKey];
+        if (!cfg) return;
         blocks.push({
-          id: 'sec-stats-subB',
+          id: cfg.headId,
           isHeading: true,
-          estPx: 32,
+          estPx: 34,
           node: (
             <div
-              key="sec-stats-subB-p2"
+              key={cfg.headId}
               style={{
-                paddingLeft: 68,
+                paddingLeft: 56,
                 fontWeight: 700,
+                paddingTop: subIdx === 0 ? 0 : 4,
                 marginBottom: 3
               }}
             >
-              ខ-ចំនួនថ្នាក់ សមណសិស្ស
+              {cfg.heading}
             </div>
           )
         });
-      }
-      // Remaining student stat lines from Section II (ខ)
-      page2CarryStudentLines.forEach((line, idx) => {
+
+        cfg.items.forEach((rawLine, idx) => {
+          const line = normalizeSingleSpaces(rawLine);
+          blocks.push({
+            id: `${cfg.itemPrefix}-${idx}`,
+            estPx: estimateVisualHeightPx(line, 60, 3),
+            node: (
+              <div
+                key={`${cfg.itemPrefix}-${idx}`}
+                style={{
+                  paddingLeft: 76,
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  marginBottom: 3,
+                  lineHeight: 1.78
+                }}
+              >
+                <span style={{ width: 16, flexShrink: 0 }}>-</span>
+                <KhmerJustifiedText
+                  text={line}
+                  maxWidthPx={602}
+                  fontFamily={SIEMREAP_FONT}
+                  moulFontFamily={MOUL_FONT}
+                  fontSize={15.2}
+                  lineHeight={1.78}
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+              </div>
+            )
+          });
+        });
+      });
+    };
+
+    const pushDirectionsSection = (isFirstTop) => {
+      blocks.push({
+        id: 'sec5-head',
+        isHeading: true,
+        estPx: 36,
+        node: (
+          <div key="sec5-head" style={{ paddingLeft: 28, paddingTop: isFirstTop ? 2 : 6, marginBottom: 3 }}>
+            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
+              {secNums.directions}.
+            </span>
+            <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>ទិសដៅបន្ត</span>
+          </div>
+        )
+      });
+
+      (displayModel.directions || []).forEach((rawLine, idx) => {
+        const line = normalizeSingleSpaces(rawLine);
         blocks.push({
-          id: `st-p2-${idx}`,
-          estPx: estimateVisualHeightPx(line, 66, 3),
+          id: `dir-${idx}`,
+          estPx: estimateVisualHeightPx(line, 60, 3),
           node: (
             <div
-              key={`st-p2-${idx}`}
+              key={`dir-${idx}`}
               style={{
-                paddingLeft: 68,
+                paddingLeft: 76,
                 display: 'flex',
                 alignItems: 'baseline',
                 marginBottom: 3,
                 lineHeight: 1.78
               }}
             >
-              <span style={{ width: 18, flexShrink: 0 }}>-</span>
+              <span style={{ width: 16, flexShrink: 0 }}>-</span>
               <KhmerJustifiedText
                 text={line}
-                maxWidthPx={608}
+                maxWidthPx={602}
                 fontFamily={SIEMREAP_FONT}
                 moulFontFamily={MOUL_FONT}
                 fontSize={15.2}
@@ -771,457 +991,49 @@ export default function OfficialAdminReportDocument({
           )
         });
       });
-    }
-
-    // Section III (or IV in Combined mode) Heading + Subheading ក
-    blocks.push({
-      id: 'sec3-head',
-      isHeading: true,
-      estPx: 62,
-      node: (
-        <div key="sec3-head" style={{ paddingTop: 6, marginBottom: 4 }}>
-          <div style={{ paddingLeft: 28, marginBottom: 3 }}>
-            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
-              {secNums.progress}.{' '}
-            </span>
-            <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
-              {String(displayModel.section3Heading || '').replace(/^[IVX]+\.+\s*/, '')}
-            </span>
-          </div>
-          <div style={{ paddingLeft: 68, fontWeight: 700 }}>
-            {displayModel.section3SubAHeading}
-          </div>
-        </div>
-      )
-    });
-
-    // Section III/IV (ក) Activities with ❖ bullet
-    (displayModel.activities || []).forEach((rawLine, idx) => {
-      const line = normalizeSingleSpaces(rawLine);
-      blocks.push({
-        id: `act-${idx}`,
-        estPx: estimateVisualHeightPx(line, 58, 3),
-        node: (
-          <div
-            key={`act-${idx}`}
-            style={{
-              paddingLeft: 86,
-              display: 'flex',
-              alignItems: 'baseline',
-              marginBottom: 3,
-              lineHeight: 1.78
-            }}
-          >
-            <span style={{ width: 22, flexShrink: 0, fontSize: 13 }}>❖</span>
-            <KhmerJustifiedText
-              text={line}
-              maxWidthPx={586}
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.78}
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </div>
-        )
-      });
-    });
-
-    // Section III/IV (ខ) Admin Docs (placed directly after ក, before 16-year history table)
-    blocks.push({
-      id: 'sec3-subB',
-      isHeading: true,
-      estPx: 34,
-      node: (
-        <div
-          key="sec3-subB"
-          style={{
-            paddingLeft: 68,
-            fontWeight: 700,
-            paddingTop: 4,
-            marginBottom: 3
-          }}
-        >
-          ខ. ការងារគ្រប់គ្រង តាក់តែងលិខិតរដ្ឋបាល កំណត់ហេតុ និងរបាយការណ៍
-        </div>
-      )
-    });
-
-    (displayModel.adminDocLines || []).forEach((rawLine, idx) => {
-      const line = normalizeSingleSpaces(rawLine);
-      blocks.push({
-        id: `doc-${idx}`,
-        estPx: estimateVisualHeightPx(line, 58, 3),
-        node: (
-          <div
-            key={`doc-${idx}`}
-            style={{
-              paddingLeft: 86,
-              display: 'flex',
-              alignItems: 'baseline',
-              marginBottom: 2,
-              lineHeight: 1.76
-            }}
-          >
-            <span style={{ width: 18, flexShrink: 0 }}>-</span>
-            <KhmerJustifiedText
-              text={line}
-              maxWidthPx={590}
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.76}
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </div>
-        )
-      });
-    });
-
-    // Combined Mode ONLY: ចំណុច គ. (Line 1 starts with គ. aligned straight under ខ. at 69.5px with locked space;
-    // Line 2+ & Enter lines align flush at 0px with table ល.រ left border)
-    if (includeHist) {
-      const introStr = normalizeSingleSpaces(displayModel.schoolHistory.tableIntro || '');
-      if (introStr) {
-        blocks.push({
-          id: 'hist-tbl-intro',
-          isHeading: true,
-          estPx: estimateVisualHeightPx(introStr, 60, 14),
-          node: (
-            <KhmerJustifiedText
-              key="hist-tbl-intro"
-              text={introStr}
-              firstParagraphPrefixBold="គ."
-              maxWidthPx={694}
-              firstLineIndent={69.5}
-              indentFirstParagraphOnly
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.78}
-              style={{ paddingTop: 6, marginBottom: 6 }}
-            />
-          )
-        });
-      }
-
-      blocks.push({
-        id: 'hist-16yr-table',
-        isSplittableHistoryTable: true,
-        rows: displayModel.schoolHistory.rows || [],
-        totals: displayModel.schoolHistory.totals || null,
-        estPx: 600,
-        node: null
-      });
-    }
-
-    // Section III (គ & ឃ, or ឃ & ង in Combined mode) Appendix — right-align prefix box so `.` and text align 100%
-    const renderAlignedLetterSubHeading = (headingText, marginBottom = 0) => {
-      const m = String(headingText || '').match(/^([ក-អ]\.)\s*(.*)$/);
-      if (!m) {
-        return (
-          <div style={{ paddingLeft: 68, fontWeight: 700, marginBottom }}>
-            {headingText}
-          </div>
-        );
-      }
-      return (
-        <div
-          style={{
-            paddingLeft: 68,
-            fontWeight: 700,
-            marginBottom,
-            display: 'flex',
-            alignItems: 'baseline'
-          }}
-        >
-          <span
-            style={{
-              display: 'inline-block',
-              width: 15.5,
-              textAlign: 'right',
-              marginRight: 4.5,
-              flexShrink: 0
-            }}
-          >
-            {m[1]}
-          </span>
-          <span>{m[2]}</span>
-        </div>
-      );
     };
 
-    blocks.push({
-      id: 'sec3-subCD',
-      isHeading: true,
-      estPx: 60,
-      node: (
-        <div key="sec3-subCD" style={{ paddingTop: 4, marginBottom: 2 }}>
-          {renderAlignedLetterSubHeading(displayModel.section3SubCHeading, 3)}
-          {renderAlignedLetterSubHeading(displayModel.section3SubDHeading, 0)}
-        </div>
-      )
-    });
-
-    (displayModel.appendixItems || []).forEach((rawLine, idx) => {
-      const line = normalizeSingleSpaces(rawLine);
+    const pushConclusionSection = (isFirstTop) => {
       blocks.push({
-        id: `appx-${idx}`,
-        estPx: 29,
+        id: 'sec6-conclusion',
+        estPx: estimateVisualHeightPx(displayModel.conclusionText, 62, 42),
         node: (
-          <div
-            key={`appx-${idx}`}
-            style={{
-              paddingLeft: 86,
-              display: 'flex',
-              alignItems: 'baseline',
-              marginBottom: 2,
-              lineHeight: 1.76
-            }}
-          >
-            <span style={{ width: 18, flexShrink: 0 }}>-</span>
-            <KhmerJustifiedText
-              text={line}
-              maxWidthPx={590}
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.76}
-              style={{ flex: 1, minWidth: 0 }}
-            />
+          <div key="sec6-conclusion" style={{ paddingTop: isFirstTop ? 2 : 6, marginBottom: 6 }}>
+            <div style={{ paddingLeft: 28, marginBottom: 3 }}>
+              <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
+                {secNums.conclusion}.
+              </span>
+              <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>សន្និដ្ឋាន</span>
+            </div>
+            <div style={{ paddingLeft: 28, boxSizing: 'border-box' }}>
+              <KhmerJustifiedText
+                text={displayModel.conclusionText}
+                maxWidthPx={666}
+                firstLineIndent={42}
+                fontFamily={SIEMREAP_FONT}
+                moulFontFamily={MOUL_FONT}
+                fontSize={15.2}
+                lineHeight={1.82}
+              />
+            </div>
           </div>
         )
       });
+    };
+
+    // Emit all Top-Level Roman sections in resolvedOptionB order
+    (resolvedOrder.top || []).forEach((topKey, idx) => {
+      const isFirstTop = idx === 0;
+      if (topKey === 'background') pushBackgroundSection(isFirstTop);
+      else if (topKey === 'management') pushManagementSection(isFirstTop);
+      else if (topKey === 'stats') pushStatsSection(isFirstTop);
+      else if (topKey === 'progress') pushProgressSection(isFirstTop);
+      else if (topKey === 'challenges') pushChallengesSection(isFirstTop);
+      else if (topKey === 'directions') pushDirectionsSection(isFirstTop);
+      else if (topKey === 'conclusion') pushConclusionSection(isFirstTop);
     });
 
-    // Section IV (or V in Combined mode) Heading + ១-បញ្ហាប្រឈម
-    blocks.push({
-      id: 'sec4-head',
-      isHeading: true,
-      estPx: 62,
-      node: (
-        <div key="sec4-head" style={{ paddingTop: 6, marginBottom: 3 }}>
-          <div style={{ paddingLeft: 28, marginBottom: 3 }}>
-            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
-              {secNums.challenges}.
-            </span>
-            <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>
-              បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ
-            </span>
-          </div>
-          <div style={{ paddingLeft: 56, fontWeight: 700 }}>
-            ១-បញ្ហាប្រឈម
-          </div>
-        </div>
-      )
-    });
-
-    (displayModel.challenges || []).forEach((rawLine, idx) => {
-      const line = normalizeSingleSpaces(rawLine);
-      blocks.push({
-        id: `chal-${idx}`,
-        estPx: estimateVisualHeightPx(line, 60, 3),
-        node: (
-          <div
-            key={`chal-${idx}`}
-            style={{
-              paddingLeft: 76,
-              display: 'flex',
-              alignItems: 'baseline',
-              marginBottom: 3,
-              lineHeight: 1.78
-            }}
-          >
-            <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <KhmerJustifiedText
-              text={line}
-              maxWidthPx={602}
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.78}
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </div>
-        )
-      });
-    });
-
-    // Section IV: ២-ដំណោះស្រាយ
-    blocks.push({
-      id: 'sec4-sol-head',
-      isHeading: true,
-      estPx: 34,
-      node: (
-        <div
-          key="sec4-sol-head"
-          style={{
-            paddingLeft: 56,
-            fontWeight: 700,
-            paddingTop: 4,
-            marginBottom: 3
-          }}
-        >
-          ២-ដំណោះស្រាយ
-        </div>
-      )
-    });
-
-    (displayModel.solutions || []).forEach((rawLine, idx) => {
-      const line = normalizeSingleSpaces(rawLine);
-      blocks.push({
-        id: `sol-${idx}`,
-        estPx: estimateVisualHeightPx(line, 60, 3),
-        node: (
-          <div
-            key={`sol-${idx}`}
-            style={{
-              paddingLeft: 76,
-              display: 'flex',
-              alignItems: 'baseline',
-              marginBottom: 3,
-              lineHeight: 1.78
-            }}
-          >
-            <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <KhmerJustifiedText
-              text={line}
-              maxWidthPx={602}
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.78}
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </div>
-        )
-      });
-    });
-
-    // Section IV: ៣-សំណូមពរ
-    blocks.push({
-      id: 'sec4-req-head',
-      isHeading: true,
-      estPx: 34,
-      node: (
-        <div
-          key="sec4-req-head"
-          style={{
-            paddingLeft: 56,
-            fontWeight: 700,
-            paddingTop: 4,
-            marginBottom: 3
-          }}
-        >
-          ៣-សំណូមពរ
-        </div>
-      )
-    });
-
-    (displayModel.requests || []).forEach((rawLine, idx) => {
-      const line = normalizeSingleSpaces(rawLine);
-      blocks.push({
-        id: `req-${idx}`,
-        estPx: estimateVisualHeightPx(line, 60, 3),
-        node: (
-          <div
-            key={`req-${idx}`}
-            style={{
-              paddingLeft: 76,
-              display: 'flex',
-              alignItems: 'baseline',
-              marginBottom: 3,
-              lineHeight: 1.78
-            }}
-          >
-            <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <KhmerJustifiedText
-              text={line}
-              maxWidthPx={602}
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.78}
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </div>
-        )
-      });
-    });
-
-    // Section V (or VI in Combined mode): ទិសដៅបន្ត
-    blocks.push({
-      id: 'sec5-head',
-      isHeading: true,
-      estPx: 36,
-      node: (
-        <div key="sec5-head" style={{ paddingLeft: 28, paddingTop: 6, marginBottom: 3 }}>
-          <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
-            {secNums.directions}.
-          </span>
-          <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>ទិសដៅបន្ត</span>
-        </div>
-      )
-    });
-
-    (displayModel.directions || []).forEach((rawLine, idx) => {
-      const line = normalizeSingleSpaces(rawLine);
-      blocks.push({
-        id: `dir-${idx}`,
-        estPx: estimateVisualHeightPx(line, 60, 3),
-        node: (
-          <div
-            key={`dir-${idx}`}
-            style={{
-              paddingLeft: 76,
-              display: 'flex',
-              alignItems: 'baseline',
-              marginBottom: 3,
-              lineHeight: 1.78
-            }}
-          >
-            <span style={{ width: 16, flexShrink: 0 }}>-</span>
-            <KhmerJustifiedText
-              text={line}
-              maxWidthPx={602}
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.78}
-              style={{ flex: 1, minWidth: 0 }}
-            />
-          </div>
-        )
-      });
-    });
-
-    // Section VI (or VII in Combined mode): សន្និដ្ឋាន + Closing + Signature
-    blocks.push({
-      id: 'sec6-conclusion',
-      estPx: estimateVisualHeightPx(displayModel.conclusionText, 62, 42),
-      node: (
-        <div key="sec6-conclusion" style={{ paddingTop: 6, marginBottom: 6 }}>
-          <div style={{ paddingLeft: 28, marginBottom: 3 }}>
-            <span style={{ fontFamily: ROMAN_FONT, fontWeight: 700, fontSize: 15.5 }}>
-              {secNums.conclusion}.
-            </span>
-            <span style={{ fontFamily: MOUL_FONT, fontSize: 15.2 }}>សន្និដ្ឋាន</span>
-          </div>
-          <div style={{ paddingLeft: 28, boxSizing: 'border-box' }}>
-            <KhmerJustifiedText
-              text={displayModel.conclusionText}
-              maxWidthPx={666}
-              firstLineIndent={42}
-              fontFamily={SIEMREAP_FONT}
-              moulFontFamily={MOUL_FONT}
-              fontSize={15.2}
-              lineHeight={1.82}
-            />
-          </div>
-        </div>
-      )
-    });
-
+    // Always anchor Closing Statement + Date + Signer cleanly at the end of the official report
     blocks.push({
       id: 'sec6-closing-signature',
       estPx: 162,
@@ -1282,7 +1094,7 @@ export default function OfficialAdminReportDocument({
     return { page1Node: p1Node, flowBlocks: blocks, isHistoryCombined: includeHist };
   }, [displayModel, editMode, activeEditSection, onSelectEditSection, adminSectionLabels]);
 
-  // Measure actual rendered DOM pixel heights of every block inside the 694px content width
+  // Measure actual rendered DOM pixel heights of every block + Page 1 header inside the 694px content width
   useLayoutEffect(() => {
     const el = measureContainerRef.current;
     if (!el || !flowBlocks.length) return;
@@ -1307,7 +1119,7 @@ export default function OfficialAdminReportDocument({
         return heights;
       });
 
-      if (isHistoryCombined && measureHeaderRef.current) {
+      if (measureHeaderRef.current) {
         const hdrH = Math.max(300, getH(measureHeaderRef.current));
         setMeasuredHeaderHeight(prev => (Math.abs(prev - hdrH) > 0.5 ? hdrH : prev));
       }
@@ -1352,61 +1164,8 @@ export default function OfficialAdminReportDocument({
       measuredHeights && measuredHeights[i] ? measuredHeights[i] : blk.estPx
     );
 
-    if (!isHistoryCombined) {
-      // Standard mode: preserve 100% original Page 1 + greedy Page 2..N pagination
-      const pagedBuckets = [];
-      let currentItems = [];
-      let currentPx = 0;
-
-      for (let i = 0; i < flowBlocks.length; i++) {
-        const blk = flowBlocks[i];
-        const blkPx = blockHeights[i];
-        const nextBlk = flowBlocks[i + 1];
-        const nextBlkPx = nextBlk ? blockHeights[i + 1] : 0;
-        const neededPx = blk.isHeading && nextBlk ? blkPx + nextBlkPx : blkPx;
-
-        if (currentItems.length > 0 && currentPx + neededPx > MAX_PAGE_CONTENT_PX) {
-          pagedBuckets.push({ items: currentItems, heightPx: currentPx });
-          currentItems = [blk];
-          currentPx = blkPx;
-        } else {
-          currentItems.push(blk);
-          currentPx += blkPx;
-        }
-      }
-      if (currentItems.length > 0) {
-        pagedBuckets.push({ items: currentItems, heightPx: currentPx });
-      }
-
-      return [
-        page1Node,
-        ...pagedBuckets.map((bucketObj, pIdx) => (
-          <div
-            key={`page-body-${pIdx + 2}`}
-            style={{
-              display: 'flex',
-              flexDirection: 'column'
-            }}
-          >
-            {renderBlocksWithEditZones(
-              bucketObj.items.map(b => ({
-                ...b,
-                editSectionId: mapAdminBlockIdToSection(b.id)
-              })),
-              {
-                editMode,
-                activeSectionId: activeEditSection,
-                onSelectSection: onSelectEditSection,
-                sectionLabels: adminSectionLabels
-              }
-            )}
-          </div>
-        ))
-      ];
-    }
-
-    // Combined Mode (Sem 1 + School History): continuous flow starting right below Page 1 Header +
-    // Splittable 16-year table with repeating <thead> header across page breaks
+    // Unified Continuous Flow starting right below Page 1 Header (works for BOTH Standard & Combined modes,
+    // supporting every custom Option-B section order + splittable 16-year table!)
     const pageNodesList = [];
     let currentItems = [{ id: 'page-1-header-wrap', editSectionId: null, node: page1Node }];
     let currentPx = measuredHeaderHeight || 440;
@@ -1457,6 +1216,9 @@ export default function OfficialAdminReportDocument({
           currentItems.push({
             id: chunkKey,
             editSectionId: 'history_table',
+            dragGroup: 'progressSub',
+            dragId: 'history_table',
+            fallbackTopId: 'progress',
             node: renderSchoolHistoryTableChunk({
               rowsChunk: chunk,
               totals: blk.totals,
@@ -1477,23 +1239,40 @@ export default function OfficialAdminReportDocument({
       }
 
       const blkPx = blockHeights[i];
-      const nextBlk = flowBlocks[i + 1];
-      let nextNeededPx = 0;
-      if (blk.isHeading && nextBlk) {
-        if (nextBlk.isSplittableHistoryTable) {
-          nextNeededPx = (measuredHistTable?.theadH || 36) + (measuredHistTable?.rowHeights?.[0] || 32) + 16;
-        } else {
-          nextNeededPx = blockHeights[i + 1] || 0;
+      let neededPx = blkPx;
+      // Keep consecutive heading blocks (e.g. Roman section heading + sub-heading + first item) together cleanly
+      if (blk.isHeading) {
+        let lookIdx = i + 1;
+        let lookLimit = 0;
+        while (lookIdx < flowBlocks.length && lookLimit < 3) {
+          const nxt = flowBlocks[lookIdx];
+          if (nxt.isSplittableHistoryTable) {
+            neededPx += (measuredHistTable?.theadH || 36) + (measuredHistTable?.rowHeights?.[0] || 32) + 16;
+            break;
+          }
+          neededPx += blockHeights[lookIdx] || 0;
+          lookLimit += 1;
+          if (!nxt.isHeading) break;
+          lookIdx += 1;
         }
       }
-      const neededPx = blkPx + nextNeededPx;
 
       if (currentItems.length > 0 && currentPx + neededPx > MAX_PAGE_CONTENT_PX) {
         flushPage();
       }
+      const meta = mapAdminBlockMeta(blk.id);
+      const zoneLabel = meta.useProgressRomanLabel
+        ? adminSectionLabels.progress_roman
+        : meta.useChallengesRomanLabel
+          ? adminSectionLabels.challenges_roman
+          : null;
       currentItems.push({
         id: blk.id,
-        editSectionId: mapAdminBlockIdToSection(blk.id),
+        editSectionId: meta.editSectionId,
+        dragGroup: meta.dragGroup,
+        dragId: meta.dragId,
+        fallbackTopId: meta.fallbackTopId || null,
+        zoneLabel,
         node: blk.node
       });
       currentPx += blkPx;
@@ -1503,7 +1282,7 @@ export default function OfficialAdminReportDocument({
 
     return pageNodesList.map((items, pIdx) => (
       <div
-        key={`comb-page-body-${pIdx + 1}`}
+        key={`admin-page-body-${pIdx + 1}`}
         style={{
           display: 'flex',
           flexDirection: 'column'
@@ -1513,7 +1292,9 @@ export default function OfficialAdminReportDocument({
           editMode,
           activeSectionId: activeEditSection,
           onSelectSection: onSelectEditSection,
-          sectionLabels: adminSectionLabels
+          sectionLabels: adminSectionLabels,
+          dragController,
+          isMobile
         })}
       </div>
     ));
@@ -1521,13 +1302,14 @@ export default function OfficialAdminReportDocument({
     page1Node,
     flowBlocks,
     measuredHeights,
-    isHistoryCombined,
     measuredHeaderHeight,
     measuredHistTable,
     editMode,
     activeEditSection,
     onSelectEditSection,
-    adminSectionLabels
+    adminSectionLabels,
+    dragController,
+    isMobile
   ]);
 
   if (!displayModel) return null;
@@ -1567,11 +1349,9 @@ export default function OfficialAdminReportDocument({
           textSizeAdjust: '100%'
         }}
       >
-        {isHistoryCombined && (
-          <div ref={measureHeaderRef} style={{ display: 'flow-root' }}>
-            {page1Node}
-          </div>
-        )}
+        <div ref={measureHeaderRef} style={{ display: 'flow-root' }}>
+          {page1Node}
+        </div>
         <div ref={measureContainerRef}>
           {flowBlocks.map(b => (
             <div key={`measure-${b.id}`} style={{ display: 'flow-root' }}>
