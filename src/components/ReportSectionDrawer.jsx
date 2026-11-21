@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Check, X, ChevronLeft, ChevronRight, Edit3, CheckCircle2, ArrowRightLeft } from 'lucide-react';
+import { Check, X, ChevronLeft, ChevronRight, Edit3, CheckCircle2, ArrowRightLeft, RotateCcw } from 'lucide-react';
 import { findTouchDropTargetAtPoint } from './ReportEditableZone';
 
 /**
@@ -13,14 +13,20 @@ export function ReportEditModeBar({
   activeSectionId = null,
   onSelectSection,
   onCloseEditMode,
+  onResetOverride = null,
+  resetLabel = 'បូកសរុបស្វ័យប្រវត្តិឡើងវិញ',
   isMobile = false,
   savedToastText = '',
   theme = 'amber', // 'amber' | 'sky'
   dragController = null,
-  supportsReorder = false
+  supportsReorder = false,
+  headerHeight = 76,
+  barRef = null,
+  pcLayoutStyle = null,
+  compact = false
 }) {
   const isSky = theme === 'sky';
-  const bg = isSky ? '#f0f9ff' : '#fffbeb';
+  const bg = isSky ? 'rgba(240, 249, 255, 0.97)' : 'rgba(255, 251, 235, 0.97)';
   const border = isSky ? '#7dd3fc' : '#fcd34d';
   const accent = isSky ? '#0369a1' : '#92400e';
   const chipActiveBg = isSky ? '#0284c7' : '#b45309';
@@ -43,14 +49,22 @@ export function ReportEditModeBar({
 
   return (
     <div
-      className="no-print"
+      ref={barRef}
+      className="no-print admin-report-paper-shift"
       style={{
+        position: 'sticky',
+        top: Math.max(0, Math.round(headerHeight) + (isMobile ? 2 : 4)),
+        zIndex: 85,
         background: bg,
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
         border: `1.5px solid ${border}`,
         borderRadius: 12,
-        padding: isMobile ? '9px 10px' : '10px 14px',
+        padding: isMobile ? '8px 10px' : compact ? '7px 12px' : '9px 14px',
         marginBottom: 12,
-        boxShadow: '0 3px 10px rgba(15, 23, 42, 0.06)'
+        boxShadow: '0 4px 14px rgba(15, 23, 42, 0.10)',
+        boxSizing: 'border-box',
+        ...(pcLayoutStyle || {})
       }}
     >
       <div
@@ -59,8 +73,8 @@ export function ReportEditModeBar({
           alignItems: 'center',
           justifyContent: 'space-between',
           flexWrap: 'wrap',
-          gap: 8,
-          marginBottom: 8
+          gap: 6,
+          marginBottom: compact ? 6 : 8
         }}
       >
         <div
@@ -68,24 +82,25 @@ export function ReportEditModeBar({
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            fontSize: isMobile ? 12 : 12.5,
+            fontSize: isMobile ? 11.5 : compact ? 12 : 12.5,
             fontWeight: 700,
-            color: accent
+            color: accent,
+            minWidth: 0
           }}
         >
-          <Edit3 size={14} />
+          <Edit3 size={14} style={{ flexShrink: 0 }} />
           <span>
             {isMobile
               ? supportsReorder
-                ? 'របៀបកែប្រែ៖ ចុចដើម្បីកែ • ចុចសង្កត់អូសដើម្បីប្ដូរទីតាំង'
-                : 'របៀបកែប្រែបើកហើយ៖ ចុចលើផ្នែកណាមួយ ឬជ្រើសខាងក្រោម'
+                ? 'របៀបកែប្រែ៖ ចុចកែ • ចុចសង្កត់អូសប្ដូរទីតាំង'
+                : 'របៀបកែប្រែ៖ ចុចលើផ្នែកណាមួយ ឬជ្រើសខាងក្រោម'
               : supportsReorder
                 ? 'របៀបកែប្រែ៖ ចុចលើចំណុចដើម្បីកែ • អូសទាញលើក្រដាស ឬបន្ទះខាងក្រោមដើម្បីប្ដូរទីតាំង • Ctrl+Z ត្រឡប់ក្រោយ'
                 : 'របៀបកែប្រែបើកហើយ — ចុចផ្ទាល់លើចំណុចណាមួយលើក្រដាស A4 ឬចុចជ្រើសផ្នែកខាងក្រោម (Ctrl+Z ត្រឡប់ក្រោយ)៖'}
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
           {savedToastText && (
             <span
               style={{
@@ -106,6 +121,31 @@ export function ReportEditModeBar({
             </span>
           )}
 
+          {onResetOverride && (
+            <button
+              type="button"
+              onClick={onResetOverride}
+              title={resetLabel}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                background: '#ffffff',
+                color: '#0369a1',
+                border: '1px solid #38bdf8',
+                borderRadius: 7,
+                padding: isMobile ? '4px 8px' : '4px 10px',
+                fontSize: 11.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <RotateCcw size={12.5} style={{ flexShrink: 0 }} />
+              <span>{resetLabel}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onCloseEditMode}
@@ -120,7 +160,8 @@ export function ReportEditModeBar({
               padding: '4px 10px',
               fontSize: 11.5,
               fontWeight: 700,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
             }}
           >
             <X size={13} />
@@ -272,9 +313,9 @@ export function ReportEditModeBar({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 4,
-                padding: isMobile ? '5px 10px' : '4px 10px',
+                padding: isMobile ? '4.5px 9px' : compact ? '3px 8px' : '4px 10px',
                 borderRadius: 999,
-                fontSize: 11.5,
+                fontSize: compact ? 11 : 11.5,
                 fontWeight: 700,
                 whiteSpace: 'nowrap',
                 flexShrink: 0,
@@ -495,17 +536,21 @@ export default function ReportSectionDrawer({
   onSave,
   onCancel,
   theme = 'amber',
+  headerHeight = 76,
+  drawerWidthPx = null,
+  hasUnsavedChanges = false,
   children
 }) {
   const [mobileExpanded, setMobileExpanded] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth : 1440
+    typeof window !== 'undefined' ? (document.documentElement?.clientWidth || window.innerWidth) : 1440
   );
   const sheetSwipeStartYRef = useRef(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-    const onResize = () => setViewportWidth(window.innerWidth);
+    const onResize = () =>
+      setViewportWidth(document.documentElement?.clientWidth || window.innerWidth);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -537,6 +582,7 @@ export default function ReportSectionDrawer({
   const headerBg = isSky ? '#f0f9ff' : '#fffbeb';
   const headerBorder = isSky ? '#bae6fd' : '#fde68a';
   const headerText = isSky ? '#0c4a6e' : '#92400e';
+  const safeHeaderHeight = Math.max(0, Math.round(headerHeight));
 
   const panelStyle = isMobile
     ? {
@@ -544,15 +590,15 @@ export default function ReportSectionDrawer({
         left: 0,
         right: 0,
         bottom: 0,
-        height: mobileExpanded ? '86vh' : '50vh',
-        maxHeight: '88vh',
+        height: mobileExpanded ? `min(86vh, calc(100vh - ${safeHeaderHeight + 8}px))` : '50vh',
+        maxHeight: `calc(100vh - ${safeHeaderHeight + 8}px)`,
         background: '#ffffff',
         borderRadius: '18px 18px 0 0',
         borderTop: `1.5px solid ${headerBorder}`,
         boxShadow: '0 -10px 30px rgba(15, 23, 42, 0.22)',
         display: 'flex',
         flexDirection: 'column',
-        zIndex: 1001,
+        zIndex: 95,
         overflow: 'hidden',
         transition: 'height 0.18s ease-out',
         animation: 'reportSheetSlideUp 0.18s ease-out'
@@ -571,22 +617,22 @@ export default function ReportSectionDrawer({
           border: `1.5px solid ${headerBorder}`,
           display: 'flex',
           flexDirection: 'column',
-          zIndex: 1001,
+          zIndex: 951,
           overflow: 'hidden'
         }
       : {
           position: 'fixed',
-          top: 0,
+          top: safeHeaderHeight,
           right: 0,
           bottom: 0,
-          width: isWide ? 'min(620px, 46vw)' : 'min(440px, 38vw)',
-          minWidth: isWide ? 500 : 350,
+          width: drawerWidthPx || (isWide ? 'min(580px, 42vw)' : 'min(440px, 34vw)'),
+          minWidth: isWide ? 440 : 340,
           background: '#ffffff',
-          boxShadow: '-8px 0 28px rgba(15, 23, 42, 0.16)',
+          boxShadow: '-6px 4px 24px rgba(15, 23, 42, 0.14)',
           borderLeft: `1.5px solid ${headerBorder}`,
           display: 'flex',
           flexDirection: 'column',
-          zIndex: 1001,
+          zIndex: 95,
           overflow: 'hidden',
           animation: 'reportDrawerSlideIn 0.18s ease-out'
         };
@@ -601,7 +647,7 @@ export default function ReportSectionDrawer({
             position: 'fixed',
             inset: 0,
             background: 'rgba(15, 23, 42, 0.32)',
-            zIndex: 1000
+            zIndex: 950
           }}
         />
       )}
@@ -660,8 +706,36 @@ export default function ReportSectionDrawer({
           }}
         >
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 2 }}>
-              កំពុងកែផ្នែកទី {currentIdx + 1} / {sections.length} • មើលផ្ទាល់លើក្រដាស
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#64748b',
+                marginBottom: 2
+              }}
+            >
+              <span>
+                កំពុងកែផ្នែកទី {currentIdx + 1} / {sections.length} • មើលផ្ទាល់លើក្រដាស
+              </span>
+              {hasUnsavedChanges && (
+                <span
+                  style={{
+                    background: '#fef3c7',
+                    color: '#b45309',
+                    border: '1px solid #fcd34d',
+                    borderRadius: 999,
+                    padding: '0.5px 7px',
+                    fontSize: 10.5,
+                    fontWeight: 700
+                  }}
+                >
+                  • មិនទាន់រក្សាទុក
+                </span>
+              )}
             </div>
             <h3
               className="font-moul"
@@ -697,12 +771,15 @@ export default function ReportSectionDrawer({
           </button>
         </div>
 
-        {/* Scrollable Focused Body */}
+        {/* Scrollable Focused Body (flex column so single-field editors fill Drawer height cleanly) */}
         <div
           style={{
             flex: 1,
+            minHeight: 0,
             overflowY: 'auto',
-            padding: isMobile ? '10px 14px 14px' : '16px 18px',
+            padding: isMobile ? '10px 14px 14px' : '14px 16px',
+            display: 'flex',
+            flexDirection: 'column',
             WebkitOverflowScrolling: 'touch'
           }}
         >

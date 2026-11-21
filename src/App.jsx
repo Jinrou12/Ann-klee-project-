@@ -570,6 +570,7 @@ export default function App() {
   // Hidden Ctrl+Z / Cmd+Z undo (no visible button). Native undo still works inside text inputs.
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (e.defaultPrevented) return;
       const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && String(e.key).toLowerCase() === 'z';
       if (!isUndo) return;
       const t = e.target;

@@ -569,26 +569,39 @@ input:focus, select:focus, textarea:focus {
 
 .monastic-app .report-edit-zone-badge {
   position: absolute;
-  top: -11px;
-  right: 4px;
+  top: 1px;
+  right: 2px;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 1.5px 8px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: #b45309;
+  background: rgba(180, 83, 9, 0.94);
   color: #ffffff;
   font-family: var(--font-ui);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1.35;
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(2px);
+  transform: translateY(-2px);
   transition: opacity 0.14s ease, transform 0.14s ease, background-color 0.14s ease;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.22);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
   z-index: 12;
+}
+
+/* Subject & Intro starts with full-width text on line 1; place badge in the empty left area above កម្មវត្ថុ៖ */
+.monastic-app .admin-a4-page-sheet .report-edit-zone[data-edit-section="subject_intro"] > .report-edit-zone-badge {
+  top: -17px;
+  left: 0;
+  right: auto;
+}
+
+/* Header docNumber line is narrow left-aligned; place badge slightly to the right so it never hides text */
+.monastic-app .admin-a4-page-sheet .report-edit-zone[data-edit-section="header"] > .report-edit-zone-badge {
+  top: -16px;
+  right: 0;
 }
 
 .monastic-app .report-edit-zone:hover > .report-edit-zone-badge,
@@ -598,7 +611,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .monastic-app .report-edit-zone[data-active="true"] > .report-edit-zone-badge {
-  background: #0284c7;
+  background: rgba(2, 132, 199, 0.94);
 }
 
 .monastic-app .report-edit-zone[data-draggable="true"] {
@@ -643,13 +656,15 @@ input:focus, select:focus, textarea:focus {
 }
 
 .monastic-app .admin-report-paper-shift {
-  transition: padding-right 0.2s ease;
+  transition: width 0.2s ease, margin-left 0.2s ease, padding-right 0.2s ease;
 }
 
 @media (hover: none), (max-width: 768px) {
   .monastic-app .report-edit-zone > .report-edit-zone-badge {
     opacity: 0.92;
     transform: translateY(0);
+    top: 4px;
+    right: 6px;
   }
 }
 
@@ -677,6 +692,16 @@ input:focus, select:focus, textarea:focus {
   to { transform: translateY(0); opacity: 1; }
 }
 
+.monastic-app .report-quick-edit-zone {
+  outline: none !important;
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  cursor: default;
+  user-select: text;
+}
+
 @media print {
   .monastic-app .report-edit-zone {
     outline: none !important;
@@ -684,5 +709,8 @@ input:focus, select:focus, textarea:focus {
   }
   .monastic-app .report-edit-zone-badge {
     display: none !important;
+  }
+  .monastic-app .report-quick-edit-zone {
+    cursor: default !important;
   }
 }

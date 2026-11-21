@@ -79,12 +79,14 @@ export function AdminSectionEditorContent({
   if (!sectionId) return null;
 
   if (sectionId === 'history_bg') {
+    const bgNum = displayModel?.sectionNumbers?.background || 'I';
     return (
       <SchoolHistoryEditorFields
         draft={historyEditDraft}
         onChangeDraft={setHistoryEditDraft}
         showStandaloneMeta={false}
         sectionMode="background"
+        backgroundLabel={`${bgNum}. សាវតារ`}
         isMobile={isMobile}
         fmtNum={fmtNum}
       />
@@ -92,12 +94,14 @@ export function AdminSectionEditorContent({
   }
 
   if (sectionId === 'history_table') {
+    const histPrefix = displayModel?.section3HistoryPrefix || 'គ.';
     return (
       <SchoolHistoryEditorFields
         draft={historyEditDraft}
         onChangeDraft={setHistoryEditDraft}
         showStandaloneMeta={false}
         sectionMode="table"
+        tableIntroLabel={`${histPrefix} អត្ថបទណែនាំមុនតារាងទិន្នន័យធនធានមនុស្ស (កែពាក្យ និងចុច Enter ចុះបន្ទាត់បាន)`}
         isMobile={isMobile}
         fmtNum={fmtNum}
       />
@@ -137,7 +141,15 @@ export function AdminSectionEditorContent({
       const introChanged =
         String(editDraft.introParagraph || '').trim() !== String(displayModel.defaultAutoIntroParagraph || '').trim();
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            flex: !isMobile ? 1 : undefined,
+            minHeight: !isMobile ? 0 : undefined
+          }}
+        >
           {(subjectChanged || introChanged) && (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
@@ -167,14 +179,22 @@ export function AdminSectionEditorContent({
             />
           </div>
 
-          <div>
+          <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
             <label style={fieldLabelStyle}>២. សេចក្ដីផ្ដើម — សេចក្ដីដូចមានចែង... (អាចចុច Enter ចុះបន្ទាត់បាន)</label>
             <textarea
-              rows={6}
+              rows={isMobile ? 6 : 12}
               value={editDraft.introParagraph ?? ''}
               onChange={e => setEditDraft(prev => ({ ...prev, introParagraph: e.target.value }))}
               placeholder={displayModel.defaultAutoIntroParagraph || ''}
-              style={{ ...inputBaseStyle, lineHeight: 1.6, fontFamily: 'inherit' }}
+              style={{
+                ...inputBaseStyle,
+                flex: !isMobile ? 1 : undefined,
+                minHeight: !isMobile ? 240 : undefined,
+                lineHeight: 1.68,
+                fontSize: 13.5,
+                fontFamily: 'inherit',
+                resize: 'vertical'
+              }}
             />
           </div>
         </div>
@@ -482,13 +502,15 @@ export function AdminSectionEditorContent({
 
     case 'activities':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>
             {displayModel.section3SubAHeading || 'ក. សកម្មភាពការងារ'} (❖ ចុច Enter ចុះបន្ទាត់ថ្មី)
           </label>
           <HangingBulletEditor
             rows={10}
-            maxHeight={460}
+            maxHeight={isMobile ? 280 : 460}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 340 : undefined}
             bullet="❖"
             value={editDraft.activitiesText}
             onChange={nextVal => setEditDraft(prev => ({ ...prev, activitiesText: nextVal }))}
@@ -581,12 +603,15 @@ export function AdminSectionEditorContent({
 
     case 'appendix':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>
             បញ្ជីចំណាយឧបសម្ព័ន្ធ ({displayModel.section3SubDHeading}) (- ចុច Enter ចុះបន្ទាត់ថ្មី)
           </label>
           <HangingBulletEditor
             rows={6}
+            maxHeight={isMobile ? 260 : 420}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 280 : undefined}
             bullet="-"
             value={editDraft.appendixText}
             onChange={nextVal => setEditDraft(prev => ({ ...prev, appendixText: nextVal }))}
@@ -596,13 +621,15 @@ export function AdminSectionEditorContent({
 
     case 'challenges':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>
             {displayModel.challengesSubHeadings?.challenges || '១-បញ្ហាប្រឈម'} (- ចុច Enter ចុះបន្ទាត់ថ្មី)
           </label>
           <HangingBulletEditor
             rows={9}
-            maxHeight={420}
+            maxHeight={isMobile ? 280 : 420}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 340 : undefined}
             bullet="-"
             value={editDraft.challengesText}
             onChange={nextVal => setEditDraft(prev => ({ ...prev, challengesText: nextVal }))}
@@ -612,13 +639,15 @@ export function AdminSectionEditorContent({
 
     case 'solutions':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>
             {displayModel.challengesSubHeadings?.solutions || '២-ដំណោះស្រាយ'} (- ចុច Enter ចុះបន្ទាត់ថ្មី)
           </label>
           <HangingBulletEditor
             rows={8}
-            maxHeight={420}
+            maxHeight={isMobile ? 280 : 420}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 340 : undefined}
             bullet="-"
             value={editDraft.solutionsText}
             onChange={nextVal => setEditDraft(prev => ({ ...prev, solutionsText: nextVal }))}
@@ -628,13 +657,15 @@ export function AdminSectionEditorContent({
 
     case 'requests':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>
             {displayModel.challengesSubHeadings?.requests || '៣-សំណូមពរ'} (- ចុច Enter ចុះបន្ទាត់ថ្មី)
           </label>
           <HangingBulletEditor
             rows={8}
-            maxHeight={420}
+            maxHeight={isMobile ? 280 : 420}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 340 : undefined}
             bullet="-"
             value={editDraft.requestsText}
             onChange={nextVal => setEditDraft(prev => ({ ...prev, requestsText: nextVal }))}
@@ -644,11 +675,13 @@ export function AdminSectionEditorContent({
 
     case 'directions':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>ទិសដៅបន្ត (- ចុច Enter ចុះបន្ទាត់ថ្មី)</label>
           <HangingBulletEditor
             rows={9}
-            maxHeight={420}
+            maxHeight={isMobile ? 280 : 420}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 340 : undefined}
             bullet="-"
             value={editDraft.directionsText}
             onChange={nextVal => setEditDraft(prev => ({ ...prev, directionsText: nextVal }))}
@@ -658,13 +691,21 @@ export function AdminSectionEditorContent({
 
     case 'conclusion':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>សេចក្ដីសន្និដ្ឋាន (អាចចុច Enter ចុះបន្ទាត់បាន)</label>
           <textarea
-            rows={9}
+            rows={isMobile ? 8 : 16}
             value={editDraft.conclusionText ?? ''}
             onChange={e => setEditDraft(prev => ({ ...prev, conclusionText: e.target.value }))}
-            style={{ ...inputBaseStyle, lineHeight: 1.68, fontFamily: 'inherit' }}
+            style={{
+              ...inputBaseStyle,
+              flex: !isMobile ? 1 : undefined,
+              minHeight: !isMobile ? 340 : undefined,
+              fontSize: 13.5,
+              lineHeight: 1.72,
+              fontFamily: 'inherit',
+              resize: !isMobile ? 'none' : 'vertical'
+            }}
           />
         </div>
       );
@@ -830,11 +871,13 @@ export function MinistrySectionEditorContent({
 
     case 'min_outside':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>គ. សកម្មភាពនៅក្រៅសាលា (- ចុច Enter ចុះបន្ទាត់ថ្មី)</label>
           <HangingBulletEditor
             rows={8}
-            maxHeight={420}
+            maxHeight={isMobile ? 280 : 420}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 340 : undefined}
             bullet="-"
             value={ministryEditDraft.outsideActivitiesText || ''}
             onChange={nextVal => setMinistryEditDraft(prev => ({ ...prev, outsideActivitiesText: nextVal }))}
@@ -844,11 +887,13 @@ export function MinistrySectionEditorContent({
 
     case 'min_abbot':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>ឃ.១. ការទទួលខុសត្រូវរបស់ព្រះគ្រូចៅអធិការ (- ចុច Enter ចុះបន្ទាត់ថ្មី)</label>
           <HangingBulletEditor
             rows={8}
-            maxHeight={420}
+            maxHeight={isMobile ? 280 : 420}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 340 : undefined}
             bullet="-"
             value={ministryEditDraft.abbotResponsibilitiesText || ''}
             onChange={nextVal => setMinistryEditDraft(prev => ({ ...prev, abbotResponsibilitiesText: nextVal }))}
@@ -973,11 +1018,13 @@ export function MinistrySectionEditorContent({
 
     case 'min_relations':
       return (
-        <div>
+        <div style={!isMobile ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } : undefined}>
           <label style={fieldLabelStyle}>ឆ. សកម្មភាពគ្រូបង្រៀនជាមួយសមណសិស្ស (- ចុច Enter ចុះបន្ទាត់ថ្មី)</label>
           <HangingBulletEditor
             rows={8}
-            maxHeight={420}
+            maxHeight={isMobile ? 280 : 420}
+            fillHeight={!isMobile}
+            minHeight={!isMobile ? 340 : undefined}
             bullet="-"
             value={ministryEditDraft.teacherRelationsText || ''}
             onChange={nextVal => setMinistryEditDraft(prev => ({ ...prev, teacherRelationsText: nextVal }))}

@@ -5,7 +5,15 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
  * matching the A4 document layout so wrapped 2nd/3rd lines align cleanly under the text,
  * never flush-left under the bullet symbol.
  */
-export default function HangingBulletEditor({ value = '', onChange, bullet = '-', rows = 5, maxHeight = 320 }) {
+export default function HangingBulletEditor({
+  value = '',
+  onChange,
+  bullet = '-',
+  rows = 5,
+  minHeight = null,
+  maxHeight = 320,
+  fillHeight = false
+}) {
   const rowRefs = useRef([]);
   const [isFocused, setIsFocused] = useState(false);
 
@@ -24,12 +32,19 @@ export default function HangingBulletEditor({ value = '', onChange, bullet = '-'
   };
 
   useEffect(() => {
-    rowRefs.current.forEach(el => {
-      if (el) {
-        el.style.height = 'auto';
-        el.style.height = `${Math.max(23, el.scrollHeight)}px`;
-      }
-    });
+    const resizeRows = () => {
+      rowRefs.current.length = items.length;
+      rowRefs.current.forEach(el => {
+        if (el) {
+          el.style.height = 'auto';
+          el.style.height = `${Math.max(23, el.scrollHeight)}px`;
+        }
+      });
+    };
+    resizeRows();
+    if (typeof window === 'undefined') return undefined;
+    window.addEventListener('resize', resizeRows);
+    return () => window.removeEventListener('resize', resizeRows);
   }, [items]);
 
   const focusRowAt = (targetIdx, cursorPos = null) => {
@@ -116,7 +131,7 @@ export default function HangingBulletEditor({ value = '', onChange, bullet = '-'
     }
   };
 
-  const minHeightPx = Math.max(115, rows * 25 + 16);
+  const minHeightVal = minHeight ?? Math.max(115, rows * 25 + 16);
 
   return (
     <div
@@ -127,8 +142,9 @@ export default function HangingBulletEditor({ value = '', onChange, bullet = '-'
       }}
       style={{
         width: '100%',
-        minHeight: minHeightPx,
-        maxHeight,
+        flex: fillHeight ? 1 : undefined,
+        minHeight: minHeightVal,
+        maxHeight: fillHeight ? undefined : maxHeight,
         overflowY: 'auto',
         padding: '8px 10px',
         borderRadius: 8,

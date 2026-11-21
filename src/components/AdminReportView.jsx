@@ -1,15 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   FileText,
   FileSpreadsheet,
   Upload,
   Edit3,
-  RotateCcw,
   BookOpen,
   Award,
   AlertTriangle,
   Compass,
-  CheckCircle2,
   Landmark
 } from 'lucide-react';
 import OfficialAdminReportDocument from './OfficialAdminReportDocument';
@@ -104,17 +102,44 @@ export default function AdminReportView({
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [viewportWidth, setViewportWidth] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth : 1440
+    typeof window !== 'undefined' ? (document.documentElement?.clientWidth || window.innerWidth) : 1440
   );
+  const [headerHeight, setHeaderHeight] = useState(() => (isMobile ? 68 : 76));
+  const [pcPaperHeight, setPcPaperHeight] = useState(0);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const fileInputRef = useRef(null);
   const savedToastTimerRef = useRef(null);
+  const editModeBarRef = useRef(null);
+  const pcPaperContentRef = useRef(null);
+  const draftBaselineRef = useRef({ admin: '', history: '', ministry: '' });
+  const dirtySectionsRef = useRef(new Set());
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-    const onResize = () => setViewportWidth(window.innerWidth);
+    const onResize = () =>
+      setViewportWidth(document.documentElement?.clientWidth || window.innerWidth);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // Dynamically track exact sticky <header> height so Edit Mode bar & Drawer dock right below it (never overlapping Header)
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const headerEl = document.querySelector('.monastic-app > header');
+    if (!headerEl) return undefined;
+    const syncH = () => {
+      const h = Math.round(headerEl.getBoundingClientRect().height);
+      if (h > 30) setHeaderHeight(prev => (prev !== h ? h : prev));
+    };
+    syncH();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(syncH);
+      ro.observe(headerEl);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', syncH);
+    return () => window.removeEventListener('resize', syncH);
+  }, [isMobile]);
 
   const showSavedToast = (msg = 'បានរក្សាទុក!') => {
     setSavedToastText(msg);
@@ -126,12 +151,28 @@ export default function AdminReportView({
     if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
   }, []);
 
-  const handleCloseEditMode = () => {
-    setIsEditing(false);
-    setActiveEditSection(null);
+  const clearAllDraftStates = () => {
+    setEditDraft(null);
+    setHistoryEditDraft(null);
+    setMinistryEditDraft(null);
     setLiveEditDraft(null);
     setLiveHistoryDraft(null);
     setLiveMinistryDraft(null);
+    draftBaselineRef.current = { admin: '', history: '', ministry: '' };
+    dirtySectionsRef.current.clear();
+    setHasUnsavedChanges(false);
+  };
+
+  const handleCloseEditMode = (force = false) => {
+    if (!force && hasUnsavedChanges && activeEditSection) {
+      const ok =
+        typeof window === 'undefined' ||
+        window.confirm('បងមានការកែប្រែមិនទាន់បានរក្សាទុក។ តើបងពិតជាចង់បិទ Edit Mode ដោយមិនរក្សាទុកមែនទេ?');
+      if (!ok) return;
+    }
+    setIsEditing(false);
+    setActiveEditSection(null);
+    clearAllDraftStates();
     setDragState({ group: null, fromId: null, overId: null });
     setPendingReorder(null);
   };
@@ -140,9 +181,15 @@ export default function AdminReportView({
   useEffect(() => {
     setIsEditing(false);
     setActiveEditSection(null);
+    setEditDraft(null);
+    setHistoryEditDraft(null);
+    setMinistryEditDraft(null);
     setLiveEditDraft(null);
     setLiveHistoryDraft(null);
     setLiveMinistryDraft(null);
+    draftBaselineRef.current = { admin: '', history: '', ministry: '' };
+    dirtySectionsRef.current.clear();
+    setHasUnsavedChanges(false);
     setDragState({ group: null, fromId: null, overId: null });
     setPendingReorder(null);
     setUndoStack([]);
@@ -388,46 +435,111 @@ export default function AdminReportView({
   };
 
   const initDraftsForCurrentMode = () => {
+    dirtySectionsRef.current.clear();
+    setHasUnsavedChanges(false);
     if (isHistoryOnly) {
-      setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
+      const freshHist = makeHistoryDraftFromModel(schoolHistoryModel);
+      setHistoryEditDraft(freshHist);
+      setEditDraft(null);
+      setMinistryEditDraft(null);
+      draftBaselineRef.current = { admin: '', history: JSON.stringify(freshHist), ministry: '' };
       return;
     }
     if (isMinistryActive) {
-      setMinistryEditDraft(buildFreshMinistryDraft());
+      const freshMin = buildFreshMinistryDraft();
+      setMinistryEditDraft(freshMin);
+      setEditDraft(null);
+      setHistoryEditDraft(null);
+      draftBaselineRef.current = { admin: '', history: '', ministry: JSON.stringify(freshMin) };
       return;
     }
-    setEditDraft(buildFreshAdminDraft());
-    if (isSem1Combined) {
-      setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
-    }
+    const freshAdmin = buildFreshAdminDraft();
+    const freshHist = isSem1Combined ? makeHistoryDraftFromModel(schoolHistoryModel) : null;
+    setEditDraft(freshAdmin);
+    setHistoryEditDraft(freshHist);
+    setMinistryEditDraft(null);
+    draftBaselineRef.current = {
+      admin: JSON.stringify(freshAdmin),
+      history: freshHist ? JSON.stringify(freshHist) : '',
+      ministry: ''
+    };
   };
 
+  // Track whether active draft has unsaved edits & how many sections were modified
+  useEffect(() => {
+    if (!isEditing || !activeEditSection) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+    const base = draftBaselineRef.current;
+    let dirty = false;
+    if (isHistoryOnly && historyEditDraft) {
+      dirty = Boolean(base.history && JSON.stringify(historyEditDraft) !== base.history);
+    } else if (isMinistryActive && ministryEditDraft) {
+      dirty = Boolean(base.ministry && JSON.stringify(ministryEditDraft) !== base.ministry);
+    } else if (!isHistoryOnly && !isMinistryActive) {
+      const adminDirty = Boolean(editDraft && base.admin && JSON.stringify(editDraft) !== base.admin);
+      const histDirty = Boolean(
+        isSem1Combined && historyEditDraft && base.history && JSON.stringify(historyEditDraft) !== base.history
+      );
+      dirty = adminDirty || histDirty;
+    }
+    setHasUnsavedChanges(dirty);
+    if (dirty) {
+      dirtySectionsRef.current.add(activeEditSection);
+    } else {
+      dirtySectionsRef.current.clear();
+    }
+  }, [
+    isEditing,
+    activeEditSection,
+    isHistoryOnly,
+    isMinistryActive,
+    isSem1Combined,
+    editDraft,
+    historyEditDraft,
+    ministryEditDraft
+  ]);
+
   const handleOpenEditor = () => {
+    if (!canEdit) return;
     initDraftsForCurrentMode();
     setActiveEditSection(null);
     setIsEditing(true);
   };
 
   const handleSelectEditSection = (sectionId) => {
-    if (!sectionId) return;
-    if (isHistoryOnly && !historyEditDraft) {
-      setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
-    } else if (isMinistryActive && !ministryEditDraft) {
-      setMinistryEditDraft(buildFreshMinistryDraft());
-    } else if (!isHistoryOnly && !isMinistryActive) {
-      if (!editDraft) setEditDraft(buildFreshAdminDraft());
-      if (isSem1Combined && !historyEditDraft) {
-        setHistoryEditDraft(makeHistoryDraftFromModel(schoolHistoryModel));
+    if (!canEdit || !sectionId) return;
+    if (!isEditing || !activeEditSection) {
+      // Always start from latest saved data whenever entering Edit Mode or opening a new drawer after Save/Undo/Cancel
+      initDraftsForCurrentMode();
+      setIsEditing(true);
+    } else {
+      if (isHistoryOnly && !historyEditDraft) {
+        initDraftsForCurrentMode();
+      } else if (isMinistryActive && !ministryEditDraft) {
+        initDraftsForCurrentMode();
+      } else if (!isHistoryOnly && !isMinistryActive && (!editDraft || (isSem1Combined && !historyEditDraft))) {
+        initDraftsForCurrentMode();
       }
     }
     setActiveEditSection(sectionId);
   };
 
+  const selectEditSectionRef = useRef(handleSelectEditSection);
+  selectEditSectionRef.current = handleSelectEditSection;
+  const handleSelectEditSectionStable = useCallback((sectionId) => {
+    if (selectEditSectionRef.current) selectEditSectionRef.current(sectionId);
+  }, []);
+
   const handleCancelActiveDrawer = () => {
-    initDraftsForCurrentMode();
-    setLiveEditDraft(null);
-    setLiveHistoryDraft(null);
-    setLiveMinistryDraft(null);
+    if (hasUnsavedChanges && dirtySectionsRef.current.size > 1) {
+      const ok =
+        typeof window === 'undefined' ||
+        window.confirm('បងបានកែប្រែច្រើនផ្នែកមិនទាន់បានរក្សាទុក។ តើបងពិតជាចង់បោះបង់ការកែប្រែទាំងអស់មែនទេ?');
+      if (!ok) return;
+    }
+    clearAllDraftStates();
     setActiveEditSection(null);
   };
 
@@ -666,7 +778,8 @@ export default function AdminReportView({
     canEdit && isEditing && activeEditSection && !isExportingPdf
   );
 
-  const liveAdminReports = (() => {
+  // Memoize liveAdminReports strictly on debounced live*Draft states so rapid typing NEVER triggers synchronous re-pagination!
+  const liveAdminReports = useMemo(() => {
     if (!isLivePreviewActive) return adminReports;
     let changed = false;
     const nextMap = { ...(adminReports || {}) };
@@ -687,7 +800,24 @@ export default function AdminReportView({
       }
     }
     return changed ? nextMap : adminReports;
-  })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isLivePreviewActive,
+    adminReports,
+    isHistoryOnly,
+    isMinistryActive,
+    isSem1Combined,
+    liveHistoryDraft,
+    liveMinistryDraft,
+    liveEditDraft,
+    displayModel,
+    ministryModel,
+    schoolHistoryModel,
+    periodType,
+    currentMonthKey,
+    activeYear,
+    useKhmerNumerals
+  ]);
 
   const liveSchoolHistoryModel = useMemo(() => {
     if (liveAdminReports === adminReports) return schoolHistoryModel;
@@ -734,24 +864,39 @@ export default function AdminReportView({
     });
   }, [liveAdminReports, adminReports, ministryModel, activeYear, studentMaster, allFinance, useKhmerNumerals]);
 
-  // Auto-scroll active section into view when opening/switching focused editor sections
+  // Header-aware smart auto-scroll when opening/switching focused editor sections (never hides active section behind sticky Header + Edit Bar!)
   useEffect(() => {
-    if (!isEditing || !activeEditSection || typeof document === 'undefined') return undefined;
+    if (!isEditing || !activeEditSection || typeof document === 'undefined' || typeof window === 'undefined') {
+      return undefined;
+    }
     const timer = setTimeout(() => {
       const containerSelector =
         !isMobile || mobilePreviewA4
           ? `.admin-a4-page-sheet [data-edit-section="${activeEditSection}"]`
           : `.admin-mobile-cards-list [data-edit-section="${activeEditSection}"]`;
       const targetEl = document.querySelector(containerSelector);
-      if (targetEl && typeof targetEl.scrollIntoView === 'function') {
-        targetEl.scrollIntoView({
-          behavior: 'smooth',
-          block: isMobile ? 'start' : 'center'
-        });
+      if (!targetEl) return;
+      const editBarH = editModeBarRef.current?.getBoundingClientRect().height || 0;
+      const stickyTopOffset = Math.round(headerHeight + editBarH + (isMobile ? 12 : 16));
+      const rect = targetEl.getBoundingClientRect();
+      const vh = window.innerHeight || 800;
+
+      if (isMobile) {
+        const desiredTop = Math.max(0, window.scrollY + rect.top - stickyTopOffset);
+        window.scrollTo({ top: desiredTop, behavior: 'smooth' });
+      } else {
+        const isTopHidden = rect.top < stickyTopOffset;
+        const isBelowFold = rect.top > vh - 120;
+        if (isTopHidden || isBelowFold) {
+          const availH = Math.max(200, vh - stickyTopOffset);
+          const pad = rect.height < availH * 0.72 ? Math.round((availH - rect.height) * 0.22) : 0;
+          const desiredTop = Math.max(0, window.scrollY + rect.top - stickyTopOffset - pad);
+          window.scrollTo({ top: desiredTop, behavior: 'smooth' });
+        }
       }
-    }, 60);
+    }, 70);
     return () => clearTimeout(timer);
-  }, [activeEditSection, isEditing, isMobile, mobilePreviewA4]);
+  }, [activeEditSection, isEditing, isMobile, mobilePreviewA4, headerHeight]);
 
   const activeEditSections = useMemo(() => {
     if (isHistoryOnly) {
@@ -983,15 +1128,13 @@ export default function AdminReportView({
       onUpdateAdminReport(snap.secondaryKey, JSON.parse(JSON.stringify(snap.secondaryData)));
     }
     setActiveEditSection(null);
-    setLiveEditDraft(null);
-    setLiveHistoryDraft(null);
-    setLiveMinistryDraft(null);
+    clearAllDraftStates();
   };
 
   const undoActionRef = useRef({ captureCurrentSnapshot, applySnapshot });
   undoActionRef.current = { captureCurrentSnapshot, applySnapshot };
 
-  // Global Ctrl+Z / Ctrl+Y (Cmd+Z / Cmd+Shift+Z) Undo-Redo inside Edit Mode
+  // Global Ctrl+Z / Ctrl+Y (Cmd+Z / Cmd+Shift+Z) Undo-Redo inside Edit Mode (capture phase prevents App.jsx double-trigger!)
   // Respects native browser text Undo/Redo whenever focused inside an <input> or <textarea>!
   useEffect(() => {
     if (!canEdit || !isEditing) return undefined;
@@ -1010,6 +1153,7 @@ export default function AdminReportView({
       if (isTypingField) return;
 
       e.preventDefault();
+      e.stopImmediatePropagation();
       if (isUndoKey) {
         if (undoStack.length === 0) {
           showSavedToast('គ្មានប្រវត្តិត្រឡប់ក្រោយទៀតទេ');
@@ -1034,8 +1178,8 @@ export default function AdminReportView({
         showSavedToast('↷ បានធ្វើឡើងវិញ (Ctrl+Y)');
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [canEdit, isEditing, pendingReorder, undoStack, redoStack]);
 
   // Option-B Drag & Drop Label Helper & Drop Confirmation Pipeline (Admin Reports only)
@@ -1157,14 +1301,65 @@ export default function AdminReportView({
     [activeEditSections, activeEditSection]
   );
 
-  const pcPaperRightPadding = useMemo(() => {
-    if (isMobile || !canEdit || !isEditing || !activeEditSection) return 0;
-    const isWide = Boolean(activeEditSecObj?.wide);
-    if (isWide) {
-      return viewportWidth >= 1280 ? 'min(636px, 47vw)' : 0;
+  // Compute exact viewport-aware PC docked layout so Edit Mode Bar + A4 paper stay 100% centered
+  // in the open left space beside the fixed right Drawer (zero clipping, zero dead grey space, zero Header overlap).
+  const pcDockedLayout = useMemo(() => {
+    if (isMobile || !canEdit || !isEditing || !activeEditSection || isExportingPdf) {
+      return { isDocked: false, drawerWidth: 0, boxStyle: null, paperFitScale: 1 };
     }
-    return 'min(456px, 39vw)';
-  }, [isMobile, canEdit, isEditing, activeEditSection, activeEditSecObj, viewportWidth]);
+    const isWide = Boolean(activeEditSecObj?.wide);
+    if (isWide && viewportWidth < 1280) {
+      // Wide table sections use centered modal on < 1280px, so paper remains centered underneath
+      return { isDocked: false, drawerWidth: 0, boxStyle: null, paperFitScale: 1 };
+    }
+    const drawerWidth = isWide
+      ? Math.round(Math.min(580, Math.max(460, viewportWidth * 0.40)))
+      : Math.round(Math.min(440, Math.max(350, viewportWidth * 0.31)));
+
+    const containerW = Math.min(Math.max(320, viewportWidth - 40), 1160);
+    const containerLeft = Math.max(20, (viewportWidth - containerW) / 2);
+    const availLeftPane = Math.max(320, viewportWidth - drawerWidth);
+    const availBoxW = Math.max(320, availLeftPane - 32);
+    const targetBoxW = Math.min(containerW, availBoxW);
+    const targetLeftInViewport = Math.max(16, Math.round((availLeftPane - targetBoxW) / 2));
+    const shiftLeft = Math.round(targetLeftInViewport - containerLeft);
+
+    // Inside .paper-sheet-wrapper (padding 16px left + 16px right = 32px), gently fit 794px A4 sheet only on narrow PC screens
+    const innerPaperW = Math.max(300, targetBoxW - 32);
+    const paperFitScale = innerPaperW < 794 ? Math.max(0.55, innerPaperW / 794) : 1;
+
+    return {
+      isDocked: true,
+      drawerWidth,
+      boxStyle: {
+        width: targetBoxW,
+        maxWidth: targetBoxW,
+        marginLeft: shiftLeft
+      },
+      paperFitScale
+    };
+  }, [isMobile, canEdit, isEditing, activeEditSection, activeEditSecObj, viewportWidth, isExportingPdf]);
+
+  // Measure unscaled paper height only when narrow-PC auto-fit scaling is active (prevents blank space under scaled paper)
+  useEffect(() => {
+    if (pcDockedLayout.paperFitScale >= 0.999) {
+      setPcPaperHeight(0);
+      return undefined;
+    }
+    const el = pcPaperContentRef.current;
+    if (!el) return undefined;
+    const syncH = () => {
+      const h = el.offsetHeight || 0;
+      if (h > 0) setPcPaperHeight(prev => (Math.abs(prev - h) > 1 ? h : prev));
+    };
+    syncH();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(syncH);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    return undefined;
+  }, [pcDockedLayout.paperFitScale, liveDisplayModel, liveSchoolHistoryModel, liveMinistryModel]);
 
   const handleTotalStudentsChange = (rawVal) => {
     setEditDraft(prev => {
@@ -1257,8 +1452,7 @@ export default function AdminReportView({
     if (isSem1Combined && historyEditDraft) {
       onUpdateAdminReport(SCHOOL_HISTORY_STORAGE_KEY, serializeHistoryDraft(historyEditDraft));
     }
-    setLiveEditDraft(null);
-    setLiveHistoryDraft(null);
+    clearAllDraftStates();
     setActiveEditSection(null);
     showSavedToast('បានរក្សាទុក! (Ctrl+Z ត្រឡប់ក្រោយ)');
   };
@@ -1268,7 +1462,7 @@ export default function AdminReportView({
     if (!historyEditDraft || !onUpdateAdminReport) return;
     pushUndoSnapshot();
     onUpdateAdminReport(SCHOOL_HISTORY_STORAGE_KEY, serializeHistoryDraft(historyEditDraft));
-    setLiveHistoryDraft(null);
+    clearAllDraftStates();
     setActiveEditSection(null);
     showSavedToast('បានរក្សាទុក! (Ctrl+Z ត្រឡប់ក្រោយ)');
   };
@@ -1279,7 +1473,7 @@ export default function AdminReportView({
     pushUndoSnapshot();
     const updatedMinistry = serializeMinistryDraft(ministryEditDraft);
     onUpdateAdminReport(ministryModel.storageKey, updatedMinistry);
-    setLiveMinistryDraft(null);
+    clearAllDraftStates();
     setActiveEditSection(null);
     showSavedToast('បានរក្សាទុក! (Ctrl+Z ត្រឡប់ក្រោយ)');
   };
@@ -1384,23 +1578,44 @@ export default function AdminReportView({
 
   const handleResetToAutoSynthesis = () => {
     if (periodType === 'month') return;
+    const confirmMsg = isHistoryOnly
+      ? 'តើបងពិតជាចង់ស្ដារឯកសារប្រវត្តិសាលាត្រឡប់ទៅទិន្នន័យដើមវិញមែនទេ? (បងអាចចុច Ctrl+Z ដើម្បីត្រឡប់ក្រោយបាន)'
+      : isSem1Combined && adminReports && adminReports[SCHOOL_HISTORY_STORAGE_KEY]
+        ? 'តើបងពិតជាចង់បូកសរុបរបាយការណ៍ឆមាសទី១ + ប្រវត្តិសាលាស្វ័យប្រវត្តិឡើងវិញ (លុបការកែប្រែដោយដៃ) មែនទេ? (បងអាចចុច Ctrl+Z ដើម្បីត្រឡប់ក្រោយបាន)'
+        : 'តើបងពិតជាចង់បូកសរុបរបាយការណ៍នេះស្វ័យប្រវត្តិឡើងវិញ (លុបការកែប្រែដោយដៃ) មែនទេ? (បងអាចចុច Ctrl+Z ដើម្បីត្រឡប់ក្រោយបាន)';
+    if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return;
+
+    pushUndoSnapshot();
+
     if (isHistoryOnly) {
       if (onResetSynthesizedReport) {
         onResetSynthesizedReport(SCHOOL_HISTORY_STORAGE_KEY);
       }
-      return;
+    } else {
+      const keyToReset = isMinistryActive ? ministryModel.storageKey : displayModel.storageKey;
+      if (onResetSynthesizedReport) {
+        onResetSynthesizedReport(keyToReset);
+        if (isSem1Combined && adminReports && adminReports[SCHOOL_HISTORY_STORAGE_KEY]) {
+          onResetSynthesizedReport(SCHOOL_HISTORY_STORAGE_KEY);
+        }
+      } else if (onUpdateAdminReport && !isMinistryActive) {
+        const fresh = synthesizeMultiMonthAdminReport({
+          periodType,
+          year: activeYear,
+          adminReports,
+          studentMaster
+        });
+        onUpdateAdminReport(displayModel.storageKey, fresh);
+      }
     }
-    const keyToReset = isMinistryActive ? ministryModel.storageKey : displayModel.storageKey;
-    if (onResetSynthesizedReport) {
-      onResetSynthesizedReport(keyToReset);
-    } else if (onUpdateAdminReport && !isMinistryActive) {
-      const fresh = synthesizeMultiMonthAdminReport({
-        periodType,
-        year: activeYear,
-        adminReports
-      });
-      onUpdateAdminReport(displayModel.storageKey, fresh);
-    }
+
+    setActiveEditSection(null);
+    clearAllDraftStates();
+    showSavedToast(
+      isHistoryOnly
+        ? 'បានស្ដារប្រវត្តិសាលាដើមវិញ! (Ctrl+Z ត្រឡប់ក្រោយ)'
+        : 'បានបូកសរុបស្វ័យប្រវត្តិឡើងវិញ! (Ctrl+Z ត្រឡប់ក្រោយ)'
+    );
   };
 
   const periodTabs = [
@@ -1453,7 +1668,7 @@ export default function AdminReportView({
                 type="button"
                 onClick={() => {
                   setPeriodType(tab.id);
-                  handleCloseEditMode();
+                  handleCloseEditMode(true);
                 }}
                 style={{
                   display: 'flex',
@@ -1526,7 +1741,7 @@ export default function AdminReportView({
                   type="button"
                   onClick={() => {
                     setSem1Mode(opt.id);
-                    handleCloseEditMode();
+                    handleCloseEditMode(true);
                   }}
                   style={{
                     display: 'flex',
@@ -1577,73 +1792,6 @@ export default function AdminReportView({
                 </button>
               );
             })}
-          </div>
-        )}
-
-        {/* Smart Synthesis Notice Banner when viewing Semester 1, Semester 2, or Annual */}
-        {periodType !== 'month' && (
-          <div
-            style={{
-              background: '#f0f9ff',
-              border: '1px solid #bae6fd',
-              borderRadius: 10,
-              padding: '8px 12px',
-              marginBottom: 12,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 8,
-              fontSize: 12.5,
-              color: '#0369a1'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <CheckCircle2 size={16} color="#0284c7" style={{ flexShrink: 0 }} />
-              {isMinistryActive ? (
-                <span>
-                  <strong>ប្រព័ន្ធសំយោគស្វ័យប្រវត្តិ (ទម្រង់មន្ទីរ — ប្រចាំឆ្នាំសិក្សា {ministryModel.yearKhmer})៖</strong>{' '}
-                  បានរៀបចំផ្នែក <strong>ក ដល់ ដ, តារាងហិរញ្ញវត្ថុទាំង {fmtNum(7)} ផ្នែក និងតារាងសង្ខេប {fmtNum(10)} ជួរ</strong> ដោយភ្ជាប់ទិន្នន័យស្វ័យប្រវត្តិពីរបាយការណ៍ប្រចាំខែ និងផ្ទាំងចំណូល-ចំណាយ។
-                </span>
-              ) : isHistoryOnly ? (
-                <span>
-                  <strong>ឯកសារប្រវត្តិសាលាសុទ្ធ (១.១. សាវតារ + តារាងធនធានមនុស្ស {fmtNum(schoolHistoryModel.rows.length)} ឆ្នាំ)៖</strong>{' '}
-                  តារាងបូកសរុបស្វ័យប្រវត្តិតាមគណិតវិទ្យា និងភ្ជាប់ទិន្នន័យរួមជាមួយទម្រង់ <strong>ឆមាសទី១ + ប្រវត្តិ</strong>។
-                </span>
-              ) : isSem1Combined ? (
-                <span>
-                  <strong>របាយការណ៍ឆមាសទី១ + ប្រវត្តិសាលា៖</strong>{' '}
-                  បានបញ្ចូល <strong>I. សាវតារ</strong>, រុញលេខរ៉ូម៉ាំង <strong>II–VII</strong> និងភ្ជាប់ <strong>តារាងធនធានមនុស្ស {fmtNum(schoolHistoryModel.rows.length)} ឆ្នាំ</strong> ក្រោមផ្នែក IV. ក ដោយស្វ័យប្រវត្តិ។
-                </span>
-              ) : (
-                <span>
-                  <strong>ប្រព័ន្ធសំយោគស្វ័យប្រវត្តិ ({displayModel.periodTitlePhrase})៖</strong>{' '}
-                  បានរៀបចំ និងច្រោះបន្ទាត់ស្ទួនត្រង់ <strong>III.វឌ្ឍនភាព, IV.បញ្ហាប្រឈម, V.ទិសដៅ និង VI.សេចក្ដីសន្និដ្ឋាន</strong> ឱ្យត្រូវតាមបទដ្ឋានរដ្ឋបាល។
-                </span>
-              )}
-            </div>
-            {hasCustomMultiMonthOverride && canEdit && (
-              <button
-                type="button"
-                onClick={handleResetToAutoSynthesis}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  background: '#ffffff',
-                  border: '1px solid #0284c7',
-                  color: '#0284c7',
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                <RotateCcw size={13} />
-                <span>{isHistoryOnly ? 'ស្ដារប្រវត្តិសាលាដើមវិញ' : 'បូកសរុបស្វ័យប្រវត្តិឡើងវិញ'}</span>
-              </button>
-            )}
           </div>
         )}
 
@@ -1899,19 +2047,33 @@ export default function AdminReportView({
       </div>
 
       {/* ================================================================== */}
-      {/* SMART CLICK-TO-EDIT MODE BAR (Quick Jump + Direct Chip Drag /mp)   */}
+      {/* SMART CLICK-TO-EDIT MODE BAR (Sticky below Header + Chip Drag /mp) */}
       {/* ================================================================== */}
       {canEdit && isEditing && (
         <ReportEditModeBar
+          barRef={editModeBarRef}
           sections={activeEditSections}
           activeSectionId={activeEditSection}
-          onSelectSection={handleSelectEditSection}
-          onCloseEditMode={handleCloseEditMode}
+          onSelectSection={handleSelectEditSectionStable}
+          onCloseEditMode={() => handleCloseEditMode(false)}
+          onResetOverride={hasCustomMultiMonthOverride ? handleResetToAutoSynthesis : null}
+          resetLabel={
+            isHistoryOnly
+              ? isMobile
+                ? 'ស្ដារប្រវត្តិដើម'
+                : 'ស្ដារប្រវត្តិសាលាដើមវិញ'
+              : isMobile
+                ? 'បូកសរុបឡើងវិញ'
+                : 'បូកសរុបស្វ័យប្រវត្តិឡើងវិញ'
+          }
           isMobile={isMobile}
           savedToastText={savedToastText}
           theme={isHistoryOnly || isSem1Combined ? 'sky' : 'amber'}
           dragController={dragController}
           supportsReorder={!isHistoryOnly && !isMinistryActive}
+          headerHeight={headerHeight}
+          pcLayoutStyle={pcDockedLayout.isDocked ? pcDockedLayout.boxStyle : null}
+          compact={pcDockedLayout.isDocked}
         />
       )}
 
@@ -1933,7 +2095,7 @@ export default function AdminReportView({
           isMobile={isMobile}
           sections={activeEditSections}
           activeSectionId={activeEditSection}
-          onSelectSection={handleSelectEditSection}
+          onSelectSection={handleSelectEditSectionStable}
           onSave={
             isHistoryOnly
               ? handleSaveHistoryEditor
@@ -1943,6 +2105,9 @@ export default function AdminReportView({
           }
           onCancel={handleCancelActiveDrawer}
           theme={isHistoryOnly || isSem1Combined ? 'sky' : 'amber'}
+          headerHeight={headerHeight}
+          drawerWidthPx={pcDockedLayout.isDocked ? pcDockedLayout.drawerWidth : null}
+          hasUnsavedChanges={hasUnsavedChanges}
         >
           {isHistoryOnly ? (
             <HistorySectionEditorContent
@@ -1995,9 +2160,9 @@ export default function AdminReportView({
             position: 'relative',
             display: 'flex',
             justifyContent: 'center',
-            overflowX: pcPaperRightPadding ? 'auto' : 'visible',
-            paddingRight: pcPaperRightPadding || undefined,
-            boxSizing: 'border-box'
+            overflowX: 'visible',
+            boxSizing: 'border-box',
+            ...(pcDockedLayout.isDocked ? pcDockedLayout.boxStyle : {})
           }}
         >
           {/* Floating Top-Left Summary/Full Switcher (សង្ខេប / ពេញ) when Ministry Template is active on Annual Tab */}
@@ -2042,7 +2207,7 @@ export default function AdminReportView({
               className="no-print"
               onClick={() => {
                 setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
-                handleCloseEditMode();
+                handleCloseEditMode(true);
               }}
               style={{
                 position: 'absolute',
@@ -2070,47 +2235,76 @@ export default function AdminReportView({
             </button>
           )}
 
-          <div style={{ margin: '0 auto' }}>
-            {isHistoryOnly ? (
-              <OfficialSchoolHistoryDocument
-                id="printable-school-history-document"
-                historyModel={liveSchoolHistoryModel}
-                useKhmerNumerals={useKhmerNumerals}
-                editMode={canEdit && isEditing && !isExportingPdf}
-                activeEditSection={activeEditSection}
-                onSelectEditSection={handleSelectEditSection}
-              />
-            ) : isMinistryActive ? (
-              ministryDocType === 'summary' ? (
-                <OfficialMinistrySummaryDocument
-                  id="printable-ministry-summary-document"
-                  ministryModel={liveMinistryModel}
-                  editMode={canEdit && isEditing && !isExportingPdf}
-                  activeEditSection={activeEditSection}
-                  onSelectEditSection={handleSelectEditSection}
-                />
-              ) : (
-                <OfficialMinistryReportDocument
-                  id="printable-ministry-report-document"
-                  ministryModel={liveMinistryModel}
+          <div
+            style={
+              pcDockedLayout.paperFitScale < 0.999
+                ? {
+                    width: Math.round(794 * pcDockedLayout.paperFitScale),
+                    height: pcPaperHeight ? Math.ceil(pcPaperHeight * pcDockedLayout.paperFitScale) : undefined,
+                    margin: '0 auto',
+                    position: 'relative',
+                    overflow: 'visible'
+                  }
+                : { margin: '0 auto' }
+            }
+          >
+            <div
+              ref={pcPaperContentRef}
+              style={
+                pcDockedLayout.paperFitScale < 0.999
+                  ? {
+                      width: 794,
+                      transform: `scale(${pcDockedLayout.paperFitScale})`,
+                      transformOrigin: 'top left'
+                    }
+                  : undefined
+              }
+            >
+              {isHistoryOnly ? (
+                <OfficialSchoolHistoryDocument
+                  id="printable-school-history-document"
+                  historyModel={liveSchoolHistoryModel}
                   useKhmerNumerals={useKhmerNumerals}
                   editMode={canEdit && isEditing && !isExportingPdf}
+                  canEdit={canEdit && !isExportingPdf}
                   activeEditSection={activeEditSection}
-                  onSelectEditSection={handleSelectEditSection}
+                  onSelectEditSection={handleSelectEditSectionStable}
                 />
-              )
-            ) : (
-              <OfficialAdminReportDocument
-                id="printable-admin-report-document"
-                displayModel={liveDisplayModel}
-                useKhmerNumerals={useKhmerNumerals}
-                editMode={canEdit && isEditing && !isExportingPdf}
-                activeEditSection={activeEditSection}
-                onSelectEditSection={handleSelectEditSection}
-                dragController={dragController}
-                isMobile={false}
-              />
-            )}
+              ) : isMinistryActive ? (
+                ministryDocType === 'summary' ? (
+                  <OfficialMinistrySummaryDocument
+                    id="printable-ministry-summary-document"
+                    ministryModel={liveMinistryModel}
+                    editMode={canEdit && isEditing && !isExportingPdf}
+                    canEdit={canEdit && !isExportingPdf}
+                    activeEditSection={activeEditSection}
+                    onSelectEditSection={handleSelectEditSectionStable}
+                  />
+                ) : (
+                  <OfficialMinistryReportDocument
+                    id="printable-ministry-report-document"
+                    ministryModel={liveMinistryModel}
+                    useKhmerNumerals={useKhmerNumerals}
+                    editMode={canEdit && isEditing && !isExportingPdf}
+                    canEdit={canEdit && !isExportingPdf}
+                    activeEditSection={activeEditSection}
+                    onSelectEditSection={handleSelectEditSectionStable}
+                  />
+                )
+              ) : (
+                <OfficialAdminReportDocument
+                  id="printable-admin-report-document"
+                  displayModel={liveDisplayModel}
+                  useKhmerNumerals={useKhmerNumerals}
+                  editMode={canEdit && isEditing && !isExportingPdf}
+                  canEdit={canEdit && !isExportingPdf}
+                  activeEditSection={activeEditSection}
+                  onSelectEditSection={handleSelectEditSectionStable}
+                  dragController={dragController}
+                  isMobile={false}
+                />
+              )}
+            </div>
           </div>
         </div>
       ) : mobilePreviewA4 ? (
@@ -2158,7 +2352,7 @@ export default function AdminReportView({
                 type="button"
                 onClick={() => {
                   setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
-                  handleCloseEditMode();
+                  handleCloseEditMode(true);
                 }}
                 style={{
                   display: 'inline-flex',
@@ -2188,8 +2382,9 @@ export default function AdminReportView({
                 historyModel={liveSchoolHistoryModel}
                 useKhmerNumerals={useKhmerNumerals}
                 editMode={canEdit && isEditing && !isExportingPdf}
+                canEdit={canEdit && !isExportingPdf}
                 activeEditSection={activeEditSection}
-                onSelectEditSection={handleSelectEditSection}
+                onSelectEditSection={handleSelectEditSectionStable}
               />
             ) : isMinistryActive ? (
               ministryDocType === 'summary' ? (
@@ -2197,8 +2392,9 @@ export default function AdminReportView({
                   id="printable-ministry-summary-document"
                   ministryModel={liveMinistryModel}
                   editMode={canEdit && isEditing && !isExportingPdf}
+                  canEdit={canEdit && !isExportingPdf}
                   activeEditSection={activeEditSection}
-                  onSelectEditSection={handleSelectEditSection}
+                  onSelectEditSection={handleSelectEditSectionStable}
                 />
               ) : (
                 <OfficialMinistryReportDocument
@@ -2206,8 +2402,9 @@ export default function AdminReportView({
                   ministryModel={liveMinistryModel}
                   useKhmerNumerals={useKhmerNumerals}
                   editMode={canEdit && isEditing && !isExportingPdf}
+                  canEdit={canEdit && !isExportingPdf}
                   activeEditSection={activeEditSection}
-                  onSelectEditSection={handleSelectEditSection}
+                  onSelectEditSection={handleSelectEditSectionStable}
                 />
               )
             ) : (
@@ -2216,8 +2413,9 @@ export default function AdminReportView({
                 displayModel={liveDisplayModel}
                 useKhmerNumerals={useKhmerNumerals}
                 editMode={canEdit && isEditing && !isExportingPdf}
+                canEdit={canEdit && !isExportingPdf}
                 activeEditSection={activeEditSection}
-                onSelectEditSection={handleSelectEditSection}
+                onSelectEditSection={handleSelectEditSectionStable}
                 dragController={dragController}
                 isMobile
               />
@@ -2279,7 +2477,7 @@ export default function AdminReportView({
                   type="button"
                   onClick={() => {
                     setAnnualTemplate(prev => (prev === 'anukon' ? 'ministry' : 'anukon'));
-                    handleCloseEditMode();
+                    handleCloseEditMode(true);
                   }}
                   style={{
                     display: 'inline-flex',
@@ -2310,7 +2508,8 @@ export default function AdminReportView({
                   sectionId="hist_title"
                   label="ចំណងជើងរបាយការណ៍"
                   activeSectionId={activeEditSection}
-                  onSelectSection={handleSelectEditSection}
+                  canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                   isMobile
                 >
                 <div
@@ -2365,7 +2564,8 @@ export default function AdminReportView({
                   sectionId="hist_bg"
                   label="១.១. សាវតារ"
                   activeSectionId={activeEditSection}
-                  onSelectSection={handleSelectEditSection}
+                  canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                   isMobile
                 >
                 <div
@@ -2416,7 +2616,8 @@ export default function AdminReportView({
                     sectionId="hist_table"
                     label="តារាង ១៦ ឆ្នាំ"
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     isMobile
                   >
                   {liveSchoolHistoryModel.tableIntro && (
@@ -2476,7 +2677,8 @@ export default function AdminReportView({
                     sectionId="hist_signature"
                     label="កាលបរិច្ឆេទ & ហត្ថលេខា"
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     isMobile
                   >
                   <div
@@ -2500,14 +2702,6 @@ export default function AdminReportView({
               </>
             ) : isMinistryActive ? (
               ministryDocType === 'summary' ? (
-                <ReportEditableZone
-                  editMode={canEdit && isEditing}
-                  sectionId="min_stats"
-                  label="តារាងសង្ខេប ១០ ជួរ"
-                  activeSectionId={activeEditSection}
-                  onSelectSection={handleSelectEditSection}
-                  isMobile
-                >
                 <div
                   style={{
                     background: '#ffffff',
@@ -2517,51 +2711,62 @@ export default function AdminReportView({
                     boxShadow: '0 2px 8px rgba(15, 23, 42, 0.06)'
                   }}
                 >
-                  <div className="font-moul" style={{ fontSize: 13.5, color: '#92400e', textAlign: 'center', marginBottom: 10 }}>
-                    {liveMinistryModel.summaryReportTitle} (មន្ទីរធម្មការ និងសាសនា)
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {(liveMinistryModel.summaryRows || []).map((row, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          background: '#f8fafc',
-                          border: '1px solid #e2e8f0',
-                          borderRadius: 8,
-                          padding: '8px 10px',
-                          fontSize: 12.5
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontWeight: 700, color: '#0f172a' }}>
-                            {row.no}. {row.desc}
-                          </div>
-                          {(row.subDescLines || []).map((s, si) => (
-                            <div key={si} style={{ paddingLeft: 14, color: '#475569', fontSize: 12 }}>
-                              {s}: {(row.subCountLines || [])[si]}
-                            </div>
-                          ))}
-                          {row.note && (
-                            <div style={{ fontSize: 11.5, color: '#b45309', marginTop: 2 }}>
-                              សម្គាល់៖ {row.note}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ fontWeight: 700, color: '#15803d', whiteSpace: 'nowrap', marginLeft: 8 }}>
-                          {row.count}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                   <ReportEditableZone
                     editMode={canEdit && isEditing}
+                    canEdit={canEdit}
+                    sectionId="min_stats"
+                    label="តារាងសង្ខេប ១០ ជួរ"
+                    activeSectionId={activeEditSection}
+                    onSelectSection={handleSelectEditSectionStable}
+                    isMobile
+                  >
+                    <div className="font-moul" style={{ fontSize: 13.5, color: '#92400e', textAlign: 'center', marginBottom: 10 }}>
+                      {liveMinistryModel.summaryReportTitle} (មន្ទីរធម្មការ និងសាសនា)
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {(liveMinistryModel.summaryRows || []).map((row, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            background: '#f8fafc',
+                            border: '1px solid #e2e8f0',
+                            borderRadius: 8,
+                            padding: '8px 10px',
+                            fontSize: 12.5
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                              {row.no}. {row.desc}
+                            </div>
+                            {(row.subDescLines || []).map((s, si) => (
+                              <div key={si} style={{ paddingLeft: 14, color: '#475569', fontSize: 12 }}>
+                                {s}: {(row.subCountLines || [])[si]}
+                              </div>
+                            ))}
+                            {row.note && (
+                              <div style={{ fontSize: 11.5, color: '#b45309', marginTop: 2 }}>
+                                សម្គាល់៖ {row.note}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ fontWeight: 700, color: '#15803d', whiteSpace: 'nowrap', marginLeft: 8 }}>
+                            {row.count}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ReportEditableZone>
+                  <ReportEditableZone
+                    editMode={canEdit && isEditing}
+                    canEdit={canEdit}
                     sectionId="min_signature"
                     label="លេខលិខិត & ហត្ថលេខា"
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    onSelectSection={handleSelectEditSectionStable}
                     isMobile
                   >
                     <div
@@ -2582,7 +2787,6 @@ export default function AdminReportView({
                     </div>
                   </ReportEditableZone>
                 </div>
-                </ReportEditableZone>
               ) : (
                 <>
                   <div
@@ -2606,7 +2810,8 @@ export default function AdminReportView({
                     sectionId="min_stats"
                     label="ក. ព័ត៌មានទូទៅ"
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     isMobile
                   >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
@@ -2627,7 +2832,8 @@ export default function AdminReportView({
                     sectionId="min_in_school"
                     label="ខ. ក្នុងសាលា"
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     isMobile
                   >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
@@ -2652,7 +2858,8 @@ export default function AdminReportView({
                       sectionId="min_outside"
                       label="គ. ក្រៅសាលា"
                       activeSectionId={activeEditSection}
-                      onSelectSection={handleSelectEditSection}
+                      canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                       isMobile
                     >
                       <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 6 }}>គ. សកម្មភាពនៅក្រៅសាលា</div>
@@ -2665,7 +2872,8 @@ export default function AdminReportView({
                       sectionId="min_abbot"
                       label="ឃ. ព្រះចៅអធិការ"
                       activeSectionId={activeEditSection}
-                      onSelectSection={handleSelectEditSection}
+                      canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                       isMobile
                     >
                       <div className="font-moul" style={{ fontSize: 13, color: '#92400e', marginBottom: 6 }}>ឃ.១. ការទទួលខុសត្រូវព្រះគ្រូចៅអធិការ</div>
@@ -2681,7 +2889,8 @@ export default function AdminReportView({
                     sectionId="min_management"
                     label="ង. គណៈគ្រប់គ្រង"
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     isMobile
                   >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
@@ -2705,7 +2914,8 @@ export default function AdminReportView({
                     sectionId="min_finance"
                     label="ច. ហិរញ្ញវត្ថុ"
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     isMobile
                   >
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}>
@@ -2729,7 +2939,8 @@ export default function AdminReportView({
                       sectionId="min_relations"
                       label="ឆ. គ្រូ & សិស្ស"
                       activeSectionId={activeEditSection}
-                      onSelectSection={handleSelectEditSection}
+                      canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                       isMobile
                     >
                       <div className="font-moul" style={{ fontSize: 13, color: '#0369a1', marginBottom: 6 }}>ឆ. សកម្មភាពគ្រូជាមួយសមណសិស្ស</div>
@@ -2742,7 +2953,8 @@ export default function AdminReportView({
                       sectionId="min_challenges"
                       label="ជ-ឈ. បញ្ហា & ដំណោះស្រាយ"
                       activeSectionId={activeEditSection}
-                      onSelectSection={handleSelectEditSection}
+                      canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                       isMobile
                     >
                       <div style={{ fontWeight: 700, fontSize: 12.5, color: '#991b1b', marginBottom: 4 }}>ជ. បញ្ហាប្រឈម</div>
@@ -2763,7 +2975,8 @@ export default function AdminReportView({
                       sectionId="min_conclusion"
                       label="ញ-ដ. សន្និដ្ឋាន & សំណូមពរ"
                       activeSectionId={activeEditSection}
-                      onSelectSection={handleSelectEditSection}
+                      canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                       isMobile
                     >
                       <div className="font-moul" style={{ fontSize: 13, color: '#78350f', marginBottom: 6 }}>ញ. សេចក្ដីសន្និដ្ឋាន</div>
@@ -2792,7 +3005,8 @@ export default function AdminReportView({
                       sectionId="min_signature"
                       label="ហត្ថលេខា & CC"
                       activeSectionId={activeEditSection}
-                      onSelectSection={handleSelectEditSection}
+                      canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                       isMobile
                     >
                       <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: 8, fontSize: 12, color: '#475569' }}>
@@ -2833,7 +3047,8 @@ export default function AdminReportView({
                 sectionId="header"
                 label="លេខ/អ្នកទទួល"
                 activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
+                canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                 isMobile
               >
               <div
@@ -2877,7 +3092,8 @@ export default function AdminReportView({
                 sectionId="subject_intro"
                 label="កម្មវត្ថុ & សេចក្ដីផ្ដើម"
                 activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
+                canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                 isMobile
               >
               <div className="font-moul" style={{ fontSize: 13.5, lineHeight: 1.5, marginBottom: 6 }}>
@@ -2912,7 +3128,8 @@ export default function AdminReportView({
                     sectionId="history_bg"
                     label={`${sn.background || 'I'}. សាវតារ`}
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     dragGroup="top"
                     dragId="background"
                     dragController={dragController}
@@ -2963,7 +3180,8 @@ export default function AdminReportView({
                     sectionId="management"
                     label={`${sn.management || 'I'}. តួនាទី និងភារកិច្ច`}
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     dragGroup="top"
                     dragId="management"
                     dragController={dragController}
@@ -3014,7 +3232,8 @@ export default function AdminReportView({
                     sectionId="stats"
                     label={`${sn.stats || 'II'}. ស្ថិតិ`}
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     dragGroup="top"
                     dragId="stats"
                     dragController={dragController}
@@ -3079,10 +3298,12 @@ export default function AdminReportView({
                   >
                     <ReportEditableZone
                       editMode={canEdit && isEditing}
+                      canEdit={canEdit}
                       sectionId="activities"
                       label={`${sn.progress || 'III'}. វឌ្ឍនភាពការងារ`}
                       activeSectionId={activeEditSection}
-                      onSelectSection={handleSelectEditSection}
+                      showActiveHighlight={false}
+                      onSelectSection={handleSelectEditSectionStable}
                       dragGroup="top"
                       dragId="progress"
                       dragController={dragController}
@@ -3106,7 +3327,8 @@ export default function AdminReportView({
                             sectionId="activities"
                             label={liveDisplayModel.section3SubAHeading || 'ក. សកម្មភាព'}
                             activeSectionId={activeEditSection}
-                            onSelectSection={handleSelectEditSection}
+                            canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                             dragGroup="progressSub"
                             dragId="activities"
                             fallbackTopId="progress"
@@ -3132,7 +3354,8 @@ export default function AdminReportView({
                             sectionId="admin_docs"
                             label={liveDisplayModel.section3SubBHeading || 'ខ. លិខិតរដ្ឋបាល'}
                             activeSectionId={activeEditSection}
-                            onSelectSection={handleSelectEditSection}
+                            canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                             dragGroup="progressSub"
                             dragId="admin_docs"
                             fallbackTopId="progress"
@@ -3172,7 +3395,8 @@ export default function AdminReportView({
                             sectionId="history_table"
                             label={`${histPrefix} តារាង ១៦ ឆ្នាំ`}
                             activeSectionId={activeEditSection}
-                            onSelectSection={handleSelectEditSection}
+                            canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                             dragGroup="progressSub"
                             dragId="history_table"
                             fallbackTopId="progress"
@@ -3244,7 +3468,8 @@ export default function AdminReportView({
                             sectionId="appendix"
                             label={`${ro.progressSubLetters?.appendix?.letterC || 'គ'}-${ro.progressSubLetters?.appendix?.letterD || 'ឃ'}. ឧបសម្ព័ន្ធ`}
                             activeSectionId={activeEditSection}
-                            onSelectSection={handleSelectEditSection}
+                            canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                             dragGroup="progressSub"
                             dragId="appendix"
                             fallbackTopId="progress"
@@ -3303,10 +3528,12 @@ export default function AdminReportView({
                   >
                     <ReportEditableZone
                       editMode={canEdit && isEditing}
+                      canEdit={canEdit}
                       sectionId="challenges"
                       label={`${sn.challenges || 'IV'}. បញ្ហាប្រឈម ដំណោះស្រាយ និងសំណូមពរ`}
                       activeSectionId={activeEditSection}
-                      onSelectSection={handleSelectEditSection}
+                      showActiveHighlight={false}
+                      onSelectSection={handleSelectEditSectionStable}
                       dragGroup="top"
                       dragId="challenges"
                       dragController={dragController}
@@ -3331,7 +3558,8 @@ export default function AdminReportView({
                           sectionId={cfg.sectionId}
                           label={cfg.heading}
                           activeSectionId={activeEditSection}
-                          onSelectSection={handleSelectEditSection}
+                          canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                           dragGroup="challengesSub"
                           dragId={subKey}
                           fallbackTopId="challenges"
@@ -3361,7 +3589,8 @@ export default function AdminReportView({
                     sectionId="directions"
                     label={`${sn.directions || 'V'}. ទិសដៅបន្ត`}
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     dragGroup="top"
                     dragId="directions"
                     dragController={dragController}
@@ -3400,7 +3629,8 @@ export default function AdminReportView({
                     sectionId="conclusion"
                     label={`${sn.conclusion || 'VI'}. សន្និដ្ឋាន`}
                     activeSectionId={activeEditSection}
-                    onSelectSection={handleSelectEditSection}
+                    canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                     dragGroup="top"
                     dragId="conclusion"
                     dragController={dragController}
@@ -3447,7 +3677,8 @@ export default function AdminReportView({
                 sectionId="signature"
                 label="កាលបរិច្ឆេទ & ហត្ថលេខា"
                 activeSectionId={activeEditSection}
-                onSelectSection={handleSelectEditSection}
+                canEdit={canEdit}
+                  onSelectSection={handleSelectEditSectionStable}
                 isMobile
               >
                 <div
@@ -3493,18 +3724,21 @@ export default function AdminReportView({
               id="printable-school-history-mobile-hidden"
               historyModel={schoolHistoryModel}
               useKhmerNumerals={useKhmerNumerals}
+              canEdit={false}
             />
           ) : isMinistryActive ? (
             ministryDocType === 'summary' ? (
               <OfficialMinistrySummaryDocument
                 id="printable-ministry-summary-mobile-hidden"
                 ministryModel={ministryModel}
+                canEdit={false}
               />
             ) : (
               <OfficialMinistryReportDocument
                 id="printable-ministry-report-mobile-hidden"
                 ministryModel={ministryModel}
                 useKhmerNumerals={useKhmerNumerals}
+                canEdit={false}
               />
             )
           ) : (
@@ -3512,6 +3746,7 @@ export default function AdminReportView({
               id="printable-admin-report-mobile-hidden"
               displayModel={displayModel}
               useKhmerNumerals={useKhmerNumerals}
+              canEdit={false}
             />
           )}
         </div>

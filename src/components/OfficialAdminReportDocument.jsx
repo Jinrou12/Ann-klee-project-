@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import KhmerRoyalDivider from './KhmerRoyalDivider';
 import KhmerJustifiedText from './KhmerJustifiedText';
 import ReportEditableZone, { renderBlocksWithEditZones } from './ReportEditableZone';
@@ -18,7 +18,13 @@ function mapAdminBlockMeta(blockId = '') {
     return { editSectionId: 'stats', dragGroup: 'top', dragId: 'stats' };
   }
   if (id === 'sec3-roman-head') {
-    return { editSectionId: 'activities', dragGroup: 'top', dragId: 'progress', useProgressRomanLabel: true };
+    return {
+      editSectionId: 'activities',
+      dragGroup: 'top',
+      dragId: 'progress',
+      useProgressRomanLabel: true,
+      showActiveHighlight: false
+    };
   }
   if (id === 'sec3-subA-head' || id.startsWith('act-')) {
     return { editSectionId: 'activities', dragGroup: 'progressSub', dragId: 'activities', fallbackTopId: 'progress' };
@@ -33,7 +39,13 @@ function mapAdminBlockMeta(blockId = '') {
     return { editSectionId: 'appendix', dragGroup: 'progressSub', dragId: 'appendix', fallbackTopId: 'progress' };
   }
   if (id === 'sec4-roman-head') {
-    return { editSectionId: 'challenges', dragGroup: 'top', dragId: 'challenges', useChallengesRomanLabel: true };
+    return {
+      editSectionId: 'challenges',
+      dragGroup: 'top',
+      dragId: 'challenges',
+      useChallengesRomanLabel: true,
+      showActiveHighlight: false
+    };
   }
   if (id === 'sec4-chal-head' || id.startsWith('chal-')) {
     return { editSectionId: 'challenges', dragGroup: 'challengesSub', dragId: 'challenges', fallbackTopId: 'challenges' };
@@ -125,16 +137,25 @@ function estimateVisualHeightPx(text = '', visualCharsPerLine = 64, extraPx = 4)
  * - Authentic Fonts (`Khmer OS Siemreap` & `Khmer OS Muol Light`)
  * - Real DOM pixel height pagination so every A4 page fills naturally (no large empty gaps and 0% cut-off text)
  */
-export default function OfficialAdminReportDocument({
+const OfficialAdminReportDocument = React.memo(function OfficialAdminReportDocument({
   id = 'printable-admin-report-document',
   displayModel,
   useKhmerNumerals = true,
   editMode = false,
+  canEdit = true,
   activeEditSection = null,
   onSelectEditSection = null,
   dragController = null,
   isMobile = false
 }) {
+  const onSelectEditSectionRef = useRef(onSelectEditSection);
+  useLayoutEffect(() => {
+    onSelectEditSectionRef.current = onSelectEditSection;
+  }, [onSelectEditSection]);
+  const stableSelectSection = useCallback((sid) => {
+    if (onSelectEditSectionRef.current) onSelectEditSectionRef.current(sid);
+  }, []);
+  const hasSelectHandler = Boolean(onSelectEditSection);
   const fmtNum = (n) => (useKhmerNumerals !== false ? toKhmerDigits(n) : String(n));
   const secNumsForLabels = displayModel?.sectionNumbers || {
     background: null,
@@ -288,10 +309,11 @@ export default function OfficialAdminReportDocument({
             </div>
             <ReportEditableZone
               editMode={editMode}
+              canEdit={canEdit}
               sectionId="header"
-              label={adminSectionLabels.header}
+              label="លេខលិខិត"
               activeSectionId={activeEditSection}
-              onSelectSection={onSelectEditSection}
+              onSelectSection={hasSelectHandler ? stableSelectSection : null}
             >
               <div style={{ fontFamily: SIEMREAP_FONT, fontSize: 15 }}>
                 លេខ {displayModel.docNumber || '......................'}ព.ប.ហ.ណ
@@ -303,10 +325,11 @@ export default function OfficialAdminReportDocument({
         {/* 3. Salutation & Recipient Block */}
         <ReportEditableZone
           editMode={editMode}
+          canEdit={canEdit}
           sectionId="header"
-          label={adminSectionLabels.header}
+          label="ព្រះនាមអ្នកទទួល"
           activeSectionId={activeEditSection}
-          onSelectSection={onSelectEditSection}
+          onSelectSection={hasSelectHandler ? stableSelectSection : null}
         >
           <div style={{ textAlign: 'center', marginBottom: 8, lineHeight: 1.62 }}>
             <div
@@ -348,10 +371,11 @@ export default function OfficialAdminReportDocument({
         {/* 4 & 5. Subject & Intro Paragraph */}
         <ReportEditableZone
           editMode={editMode}
+          canEdit={canEdit}
           sectionId="subject_intro"
           label={adminSectionLabels.subject_intro}
           activeSectionId={activeEditSection}
-          onSelectSection={onSelectEditSection}
+          onSelectSection={hasSelectHandler ? stableSelectSection : null}
         >
           <div
             style={{
@@ -1092,7 +1116,7 @@ export default function OfficialAdminReportDocument({
     });
 
     return { page1Node: p1Node, flowBlocks: blocks, isHistoryCombined: includeHist };
-  }, [displayModel, editMode, activeEditSection, onSelectEditSection, adminSectionLabels]);
+  }, [displayModel, editMode, canEdit, activeEditSection, hasSelectHandler, stableSelectSection, adminSectionLabels]);
 
   // Measure actual rendered DOM pixel heights of every block + Page 1 header inside the 694px content width
   useLayoutEffect(() => {
@@ -1273,6 +1297,7 @@ export default function OfficialAdminReportDocument({
         dragId: meta.dragId,
         fallbackTopId: meta.fallbackTopId || null,
         zoneLabel,
+        showActiveHighlight: meta.showActiveHighlight !== false,
         node: blk.node
       });
       currentPx += blkPx;
@@ -1290,8 +1315,9 @@ export default function OfficialAdminReportDocument({
       >
         {renderBlocksWithEditZones(items, {
           editMode,
+          canEdit,
           activeSectionId: activeEditSection,
-          onSelectSection: onSelectEditSection,
+          onSelectSection: hasSelectHandler ? stableSelectSection : null,
           sectionLabels: adminSectionLabels,
           dragController,
           isMobile
@@ -1305,8 +1331,10 @@ export default function OfficialAdminReportDocument({
     measuredHeaderHeight,
     measuredHistTable,
     editMode,
+    canEdit,
     activeEditSection,
-    onSelectEditSection,
+    hasSelectHandler,
+    stableSelectSection,
     adminSectionLabels,
     dragController,
     isMobile
@@ -1453,4 +1481,6 @@ export default function OfficialAdminReportDocument({
       ))}
     </div>
   );
-}
+});
+
+export default OfficialAdminReportDocument;

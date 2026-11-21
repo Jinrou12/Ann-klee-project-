@@ -49,9 +49,11 @@ export function findTouchDropTargetAtPoint(clientX, clientY, activeGroup) {
  */
 export default function ReportEditableZone({
   editMode = false,
+  canEdit = true,
   sectionId,
   label = 'កែប្រែ',
   activeSectionId = null,
+  showActiveHighlight = true,
   onSelectSection = null,
   dragGroup = null,
   dragId = null,
@@ -65,12 +67,67 @@ export default function ReportEditableZone({
   const touchOriginRef = useRef(null);
   const touchDraggingRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const lastTapRef = useRef({ time: 0, x: 0, y: 0 });
 
-  if (!editMode || !sectionId) {
-    return <>{children}</>;
+  const handleQuickDoubleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof window !== 'undefined' && window.getSelection) {
+      try {
+        const sel = window.getSelection();
+        if (sel) sel.removeAllRanges();
+      } catch {
+        // Ignore selection clearance error
+      }
+    }
+    if (onSelectSection) onSelectSection(sectionId);
+  };
+
+  const handleQuickTouchEnd = (e) => {
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+    const now = Date.now();
+    const dt = now - lastTapRef.current.time;
+    const dx = Math.abs(t.clientX - lastTapRef.current.x);
+    const dy = Math.abs(t.clientY - lastTapRef.current.y);
+
+    if (dt > 40 && dt < 320 && dx < 28 && dy < 28) {
+      lastTapRef.current = { time: 0, x: 0, y: 0 };
+      if (typeof window !== 'undefined' && window.getSelection) {
+        try {
+          const sel = window.getSelection();
+          if (sel) sel.removeAllRanges();
+        } catch {
+          // Ignore selection clearance error
+        }
+      }
+      if (onSelectSection) onSelectSection(sectionId);
+      return;
+    }
+    lastTapRef.current = { time: now, x: t.clientX, y: t.clientY };
+  };
+
+  if (!editMode) {
+    if (!canEdit || !sectionId || !onSelectSection) {
+      return <>{children}</>;
+    }
+
+    return (
+      <div
+        className="report-quick-edit-zone"
+        data-edit-section={sectionId}
+        data-quick-editable="true"
+        title="ចុច ២ ដង (Double-click) ដើម្បីកែប្រែ"
+        style={style || undefined}
+        onDoubleClick={handleQuickDoubleClick}
+        onTouchEnd={handleQuickTouchEnd}
+      >
+        {children}
+      </div>
+    );
   }
 
-  const isActive = activeSectionId === sectionId;
+  const isActive = Boolean(showActiveHighlight && activeSectionId === sectionId);
   const canDrag = Boolean(dragController && dragGroup && dragId);
   const dragState = dragController?.dragState || null;
   const isDraggingSelf = Boolean(
@@ -216,6 +273,7 @@ export default function ReportEditableZone({
         }
         if (onSelectSection) onSelectSection(sectionId);
       }}
+      onDoubleClick={handleQuickDoubleClick}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -235,12 +293,13 @@ export default function ReportEditableZone({
 /**
  * Group consecutive flow blocks sharing the same `editSectionId` + `dragGroup` + `dragId`
  * on a single rendered A4 page into one cohesive clickable/draggable `<ReportEditableZone>` (0px height/margin impact).
- * When `!editMode`, returns raw `b.node` elements directly.
+ * When `!editMode`, enables quick double-click / double-tap editing if `canEdit` is true, otherwise returns raw `b.node`.
  */
 export function renderBlocksWithEditZones(
   items = [],
   {
     editMode = false,
+    canEdit = true,
     activeSectionId = null,
     onSelectSection = null,
     sectionLabels = {},
@@ -248,7 +307,7 @@ export function renderBlocksWithEditZones(
     isMobile = false
   } = {}
 ) {
-  if (!editMode) {
+  if (!editMode && (!canEdit || !onSelectSection)) {
     return items.map(b => b.node);
   }
 
@@ -260,6 +319,7 @@ export function renderBlocksWithEditZones(
     const di = item.dragId || null;
     const fb = item.fallbackTopId || null;
     const zoneLabel = item.zoneLabel || null;
+    const showActiveHighlight = item.showActiveHighlight !== false;
     const prev = groups[groups.length - 1];
     if (
       prev &&
@@ -267,7 +327,8 @@ export function renderBlocksWithEditZones(
       prev.sectionId === sid &&
       prev.dragGroup === dg &&
       prev.dragId === di &&
-      prev.fallbackTopId === fb
+      prev.fallbackTopId === fb &&
+      prev.showActiveHighlight === showActiveHighlight
     ) {
       prev.items.push(item);
     } else {
@@ -278,6 +339,7 @@ export function renderBlocksWithEditZones(
         dragId: di,
         fallbackTopId: fb,
         zoneLabel,
+        showActiveHighlight,
         items: [item]
       });
     }
@@ -291,10 +353,12 @@ export function renderBlocksWithEditZones(
     return (
       <ReportEditableZone
         key={grp.key}
-        editMode
+        editMode={editMode}
+        canEdit={canEdit}
         sectionId={grp.sectionId}
         label={label}
         activeSectionId={activeSectionId}
+        showActiveHighlight={grp.showActiveHighlight}
         onSelectSection={onSelectSection}
         dragGroup={grp.dragGroup}
         dragId={grp.dragId}

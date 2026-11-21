@@ -36,6 +36,8 @@ export default function SchoolHistoryEditorFields({
   onChangeDraft,
   showStandaloneMeta = false,
   sectionMode = 'all', // 'all' | 'title' | 'background' | 'table' | 'signature'
+  backgroundLabel = null,
+  tableIntroLabel = null,
   isMobile = false,
   fmtNum = (n) => toKhmerDigits(n)
 }) {
@@ -100,8 +102,18 @@ export default function SchoolHistoryEditorFields({
     background: '#ffffff'
   };
 
+  const isFullBgMode = sectionMode === 'background' && !isMobile;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        flex: isFullBgMode ? 1 : undefined,
+        minHeight: isFullBgMode ? 0 : undefined
+      }}
+    >
       {showTitle && (
         <div>
           <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
@@ -125,23 +137,32 @@ export default function SchoolHistoryEditorFields({
 
       {/* Background (I. សាវតារ / ១.១. សាវតារ) */}
       {showBackground && (
-        <div>
-          <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-            {showStandaloneMeta ? '១.១. សាវតារ' : 'I. សាវតារ'} (ចុច Enter ដើម្បីចុះកថាខណ្ឌថ្មី)
+        <div
+          style={
+            isFullBgMode
+              ? { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
+              : undefined
+          }
+        >
+          <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 6 }}>
+            {backgroundLabel || (showStandaloneMeta ? '១.១. សាវតារ' : 'I. សាវតារ')} (ចុច Enter ដើម្បីចុះកថាខណ្ឌថ្មី)
           </label>
           <textarea
-            rows={sectionMode === 'background' ? (isMobile ? 10 : 12) : (isMobile ? 7 : 6)}
+            rows={sectionMode === 'background' ? (isMobile ? 9 : 18) : (isMobile ? 7 : 6)}
             value={draft.backgroundText ?? ''}
             onChange={e => onChangeDraft(prev => ({ ...prev, backgroundText: e.target.value }))}
             style={{
               width: '100%',
-              padding: 9,
+              flex: isFullBgMode ? 1 : undefined,
+              minHeight: isFullBgMode ? 360 : undefined,
+              padding: 10,
               borderRadius: 8,
               border: '1px solid #cbd5e1',
-              fontSize: 13,
-              lineHeight: 1.65,
+              fontSize: 13.5,
+              lineHeight: 1.72,
               boxSizing: 'border-box',
-              fontFamily: 'inherit'
+              fontFamily: 'inherit',
+              resize: isFullBgMode ? 'none' : 'vertical'
             }}
           />
         </div>
@@ -151,9 +172,10 @@ export default function SchoolHistoryEditorFields({
       {showTable && (
         <div>
           <label style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 4 }}>
-            {showStandaloneMeta
-              ? 'អត្ថបទណែនាំមុនតារាងទិន្នន័យធនធានមនុស្ស (កែពាក្យ និងចុច Enter ចុះបន្ទាត់បាន)'
-              : 'គ. អត្ថបទណែនាំមុនតារាងទិន្នន័យធនធានមនុស្ស (កែពាក្យ និងចុច Enter ចុះបន្ទាត់បាន)'}
+            {tableIntroLabel ||
+              (showStandaloneMeta
+                ? 'អត្ថបទណែនាំមុនតារាងទិន្នន័យធនធានមនុស្ស (កែពាក្យ និងចុច Enter ចុះបន្ទាត់បាន)'
+                : 'គ. អត្ថបទណែនាំមុនតារាងទិន្នន័យធនធានមនុស្ស (កែពាក្យ និងចុច Enter ចុះបន្ទាត់បាន)')}
           </label>
           <textarea
             rows={4}

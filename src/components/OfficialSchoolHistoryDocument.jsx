@@ -150,10 +150,11 @@ export function renderSchoolHistoryTableChunk({
  * - Auto-paginated 16-year student training table with repeating table header (`<thead>`) on continuation pages
  * - Right-aligned Lunar/Solar date & `នាយកសាលា` signature block
  */
-export default function OfficialSchoolHistoryDocument({
+const OfficialSchoolHistoryDocument = React.memo(function OfficialSchoolHistoryDocument({
   id = 'printable-school-history-document',
   historyModel,
   useKhmerNumerals = true,
+  canEdit = true,
   editMode = false,
   activeEditSection = null,
   onSelectEditSection = null
@@ -646,6 +647,7 @@ export default function OfficialSchoolHistoryDocument({
           >
             {renderBlocksWithEditZones(pageNodes, {
               editMode,
+              canEdit,
               activeSectionId: activeEditSection,
               onSelectSection: onSelectEditSection,
               sectionLabels: HIST_SECTION_LABELS
@@ -673,5 +675,7 @@ export default function OfficialSchoolHistoryDocument({
       ))}
     </div>
   );
-}
+});
+
+export default OfficialSchoolHistoryDocument;
 

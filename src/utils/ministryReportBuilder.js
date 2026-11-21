@@ -1,10 +1,10 @@
 // Ministry (មន្ទីរធម្មការ និងសាសនា) Annual Report Builder — Full Report (A4) & 10-Row Summary (Letter)
 import {
   toKhmerDigits,
+  toEnglishDigits,
   parseKhmerNumber,
   sumByCurrency,
-  combineCurrencyTotals,
-  formatCurrencyTotals
+  combineCurrencyTotals
 } from './khmerNumerals.js';
 import {
   isCarryoverIncomeItem,
@@ -12,23 +12,24 @@ import {
 } from './financeSummaryBuilder.js';
 import {
   synthesizeMultiMonthAdminReport,
+  computeStudentStatsFromMaster,
   INITIAL_ADMIN_REPORTS
 } from './adminReportBuilder.js';
 
 export const MINISTRY_SEM1_MONTHS = [
-  { num: '05', name: 'ខែឧសភា', shortName: 'ឧសភា' },
-  { num: '06', name: 'ខែមិថុនា', shortName: 'មិថុនា' },
-  { num: '07', name: 'ខែកក្កដា', shortName: 'កក្កដា' },
-  { num: '08', name: 'ខែសីហា', shortName: 'សីហា' },
-  { num: '09', name: 'ខែកញ្ញា', shortName: 'កញ្ញា' },
-  { num: '10', name: 'ខែតុលា', shortName: 'តុលា' }
+  { num: '05', name: 'ខែឧសភា', shortName: 'ឧសភា', fullLabel: 'ខែឧសភា' },
+  { num: '06', name: 'ខែមិថុនា', shortName: 'មិថុនា', fullLabel: 'ខែមិថុនា' },
+  { num: '07', name: 'ខែកក្កដា', shortName: 'កក្កដា', fullLabel: 'ខែកក្កដា' },
+  { num: '08', name: 'ខែសីហា', shortName: 'សីហា', fullLabel: 'ខែសីហា' },
+  { num: '09', name: 'ខែកញ្ញា', shortName: 'កញ្ញា', fullLabel: 'ខែកញ្ញា' },
+  { num: '10', name: 'ខែតុលា', shortName: 'តុលា', fullLabel: 'ខែតុលា' }
 ];
 
 export const MINISTRY_SEM2_MONTHS = [
-  { num: '11', name: 'វិច្ឆិកា', fullLabel: 'ខែវិច្ឆិកា' },
-  { num: '12', name: 'ធ្នូ', fullLabel: 'ខែធ្នូ' },
-  { num: '01', name: 'មករា', fullLabel: 'ខែមករា' },
-  { num: '02', name: 'កុម្ភៈ', fullLabel: 'ខែកុម្ភៈ' }
+  { num: '11', name: 'ខែវិច្ឆិកា', shortName: 'វិច្ឆិកា', fullLabel: 'ខែវិច្ឆិកា' },
+  { num: '12', name: 'ខែធ្នូ', shortName: 'ធ្នូ', fullLabel: 'ខែធ្នូ' },
+  { num: '01', name: 'ខែមករា', shortName: 'មករា', fullLabel: 'ខែមករា' },
+  { num: '02', name: 'ខែកុម្ភៈ', shortName: 'កុម្ភៈ', fullLabel: 'ខែកុម្ភៈ' }
 ];
 
 export const DEFAULT_MINISTRY_TEACHER_ACTIVITIES = [
@@ -94,15 +95,14 @@ export const DEFAULT_MINISTRY_MANAGEMENT_ROUTINE = [
 ];
 
 export const DEFAULT_MINISTRY_LIBRARY_LINES = [
-  'បណ្ណាល័យឧត្តមមុនី ម៉ែន នួន សមណសិស្ស សិស្ស ដែលបានចូលអានចំនួន ១.០០៦អង្គ/នាក់',
-  'ចំនួនអ្នកខ្ចីសៀវភៅយកទៅអានមានចំនួន ៤៩ អង្គ/នាក់',
-  'ចែកសៀវភៅសរសេរដល់លោកគ្រូ អ្នកគ្រូ ក្នុងម្នាក់មួយក្បាល',
-  'បណ្ណាល័យមានសៀវភៅសរុបទាំងអស់មានចំនួន ៤ ៧៨៩ក្បាល',
-  'ចំណងជើងសៀវភៅមាន ៣ ៧៤៧ ចំណងជើង'
+  'បណ្ណាល័យឧត្តមមុនី ម៉ែន នួន សមណសិស្ស សិស្ស ដែលបានចូលអានចំនួន ............ អង្គ/នាក់',
+  'ចំនួនអ្នកខ្ចីសៀវភៅយកទៅអានមានចំនួន ............ អង្គ/នាក់',
+  'បណ្ណាល័យមានសៀវភៅសរុបទាំងអស់មានចំនួន ............ ក្បាល',
+  'ចំណងជើងសៀវភៅមាន ............ ចំណងជើង'
 ];
 
 export const DEFAULT_MINISTRY_DONATION_LINES = [
-  'ចំណូលសៀវភៅក្នុងឆមាសទី១ មានចំនួន៣៥ ក្បាល។'
+  'មិនទាន់មានទិន្នន័យជំនួយពីសប្បុរសជន (អាចកែបន្ថែមក្នុងរបៀបកែប្រែ)'
 ];
 
 export const DEFAULT_MINISTRY_TEACHER_RELATIONS = [
@@ -177,6 +177,22 @@ export function formatSpaceRiel(amount, useKhmerNumerals = true) {
 }
 
 /**
+ * Format multi-currency totals (KHR with space-separated thousands + optional USD) cleanly for Ministry tables
+ */
+function formatSpaceCurrencyTotals(totals = { KHR: 0, USD: 0 }, useKhmerNumerals = true, emptyLabel = 'គ្មាន') {
+  const khr = Math.round(Number(totals?.KHR) || 0);
+  const usd = Math.round((Number(totals?.USD) || 0) * 100) / 100;
+  const parts = [];
+  if (khr !== 0) parts.push(formatSpaceRiel(khr, useKhmerNumerals));
+  if (usd !== 0) {
+    const usdStr = Number.isInteger(usd) ? String(usd) : usd.toFixed(2);
+    parts.push(`$${useKhmerNumerals ? toKhmerDigits(usdStr) : usdStr}`);
+  }
+  if (parts.length === 0) return emptyLabel;
+  return parts.join(' + ');
+}
+
+/**
  * Detect if an income row in Finance is specifically earmarked for hourly teacher pay
  */
 function isTeacherHourlyIncomeItem(item) {
@@ -190,16 +206,70 @@ function isTeacherHourlyIncomeItem(item) {
 }
 
 /**
- * Extract teacher hours from an expense row's qty or total
+ * Detect if an income row in Finance represents a donor / sponsor / in-kind contribution
+ * (used to auto-populate Section ង.២ from real Finance records instead of old 2025 placeholders)
+ */
+function isDonorContributionIncomeItem(item) {
+  const desc = String(item?.desc || '').trim();
+  const isInKind = (Number(item?.total) || 0) === 0 && Boolean(String(item?.totalLabel || '').trim());
+  if (isInKind) return true;
+  if (!desc) return false;
+  if (
+    desc.includes('ដាក់ពាក្យចូលរៀន') ||
+    desc.includes('ដាក់ច្បាប់') ||
+    desc.includes('ជាវ ID') ||
+    desc.includes('ជាវID') ||
+    desc.includes('ប័ណ្ណសម្គាល់')
+  ) {
+    return false;
+  }
+  return (
+    desc.includes('សប្បុរសជន') ||
+    desc.includes('ឧបត្ថម្ភ') ||
+    desc.includes('អំណោយ') ||
+    desc.includes('ជំនួយ') ||
+    desc.includes('ប្រគេន') ||
+    desc.includes('ចៅអធិការ')
+  );
+}
+
+/**
+ * Extract teacher hours from an expense row's qty or total (matches financeSummaryBuilder guards)
  */
 function parseTeacherHoursFromItem(item) {
-  const qtyParsed = parseKhmerNumber(item?.qty);
+  const qtyRaw = String(item?.qty || '').trim();
+  const qtyParsed = parseKhmerNumber(qtyRaw);
   const unitVal = parseKhmerNumber(item?.unitPrice);
   const totalVal = Number(item?.total) || 0;
-  if (qtyParsed > 0) return qtyParsed;
-  const hourlyRate = unitVal > 0 ? unitVal : 4000;
+  const hourlyRate = unitVal > 0 && unitVal <= 20000 ? unitVal : 4000;
+  if (
+    qtyParsed > 0 &&
+    !/អង្គ|នាក់|រូប|ខែ/.test(qtyRaw) &&
+    !(qtyParsed === 1 && totalVal > hourlyRate * 2)
+  ) {
+    return qtyParsed;
+  }
   if (totalVal > 0 && hourlyRate > 0) return Math.round(totalVal / hourlyRate);
   return 0;
+}
+
+/**
+ * Parse real teacher counts (ក្របខណ្ឌ, កិច្ចសន្យា, ស្ម័គ្រចិត្ត/ប្រាក់ម៉ោង) from admin report staffStats lines
+ */
+function parseTeacherCountsFromStaffStats(staffStats = []) {
+  const joined = toEnglishDigits((Array.isArray(staffStats) ? staffStats : []).join(' '));
+  const fwMatch = joined.match(/គ្រូក្របខណ្ឌ[^\d]*(\d+)/);
+  const ctMatch = joined.match(/គ្រូ(?:ជាប់)?កិច្ចសន្យា[^\d]*(\d+)/);
+  const hrMatch = joined.match(/គ្រូ(?:ស្ម័គ្រចិត្ត|ស្ម័ក្រចិត្ត|ប្រាក់ម៉ោង)[^\d]*(\d+)/);
+  const framework = fwMatch ? parseInt(fwMatch[1], 10) : 2;
+  const contract = ctMatch ? parseInt(ctMatch[1], 10) : 2;
+  const hourly = hrMatch ? parseInt(hrMatch[1], 10) : 6;
+  return {
+    framework,
+    contract,
+    hourly,
+    total: framework + contract + hourly
+  };
 }
 
 /**
@@ -223,7 +293,7 @@ export function buildMinistryReportModel({
   const storageKey = `ministry-${year}`;
   const savedOverride = (adminReports && adminReports[storageKey]) || {};
 
-  // 1. Synthesize base annual report from monthly admin reports
+  // 1. Synthesize base annual report from monthly admin reports + live studentMaster roster
   const mergedReports = {
     ...INITIAL_ADMIN_REPORTS,
     ...(adminReports || {})
@@ -231,10 +301,13 @@ export function buildMinistryReportModel({
   const synthesizedAnnual = synthesizeMultiMonthAdminReport({
     periodType: 'year',
     year,
-    adminReports: mergedReports
+    adminReports: mergedReports,
+    studentMaster
   });
 
+  const liveMasterStats = computeStudentStatsFromMaster(studentMaster);
   const stStats = synthesizedAnnual.studentStats || {};
+  const classCount = Number(stStats.classCount) || 4;
 
   // 2. Detect applicant count from May finance income ("វិភាគទានសមណសិស្សដាក់ពាក្យចូលរៀន ១០១អង្គ")
   const mayFinance = allFinance?.[`${year}-05`];
@@ -252,18 +325,18 @@ export function buildMinistryReportModel({
   const autoAppliedStudents =
     detectedApplicantCount ||
     Number(stStats.startTotalStudents) ||
+    Number(liveMasterStats?.totalStudents) ||
     Number(stStats.totalStudents) ||
     101;
-  const rawAutoRemaining = Number(stStats.totalStudents) || 81;
   const autoRemainingStudents =
-    autoAppliedStudents === 101 && (rawAutoRemaining === 80 || rawAutoRemaining === 81)
-      ? 81
-      : rawAutoRemaining;
-  const autoGrade1 = Number(stStats.grade1) || 15;
-  const autoGrade2 = Number(stStats.grade2) || 30;
-  const autoGrade3 = Number(stStats.grade3) || 21;
+    Number(stStats.totalStudents) ||
+    Number(liveMasterStats?.totalStudents) ||
+    80;
+  const autoGrade1 = Number(stStats.grade1 ?? liveMasterStats?.grade1 ?? 14);
+  const autoGrade2 = Number(stStats.grade2 ?? liveMasterStats?.grade2 ?? 30);
+  const autoGrade3 = Number(stStats.grade3 ?? liveMasterStats?.grade3 ?? 21);
 
-  // Student & Teacher general stats (with manual override support)
+  // Student & Teacher general stats (100% live from studentMaster / adminReports / May finance, with manual override support)
   const appliedStudents =
     savedOverride.appliedStudents !== undefined && savedOverride.appliedStudents !== ''
       ? Number(savedOverride.appliedStudents)
@@ -285,7 +358,14 @@ export function buildMinistryReportModel({
       ? Number(savedOverride.dropoutStudents)
       : Math.max(0, appliedStudents - remainingStudents);
 
-  const autoOldStudents = Math.min(appliedStudents, autoGrade1 + autoGrade2 + autoGrade3);
+  const startGrades123 =
+    (Number(stStats.startGrade1) || 0) +
+    (Number(stStats.startGrade2) || 0) +
+    (Number(stStats.startGrade3) || 0);
+  const autoOldStudents = Math.min(
+    appliedStudents,
+    startGrades123 > 0 ? startGrades123 : (autoGrade1 + autoGrade2 + autoGrade3)
+  );
   const oldStudents =
     savedOverride.oldStudents !== undefined && savedOverride.oldStudents !== ''
       ? Number(savedOverride.oldStudents)
@@ -300,23 +380,24 @@ export function buildMinistryReportModel({
       ? Number(savedOverride.offCampusStudents)
       : 8;
 
-  // Teachers count
-  const teacherTotal =
-    savedOverride.teacherTotal !== undefined && savedOverride.teacherTotal !== ''
-      ? Number(savedOverride.teacherTotal)
-      : 10;
+  // Teachers count parsed live from synthesizedAnnual.staffStats
+  const parsedTeachers = parseTeacherCountsFromStaffStats(synthesizedAnnual.staffStats);
   const teacherFramework =
     savedOverride.teacherFramework !== undefined && savedOverride.teacherFramework !== ''
       ? Number(savedOverride.teacherFramework)
-      : 2;
+      : parsedTeachers.framework;
   const teacherContract =
     savedOverride.teacherContract !== undefined && savedOverride.teacherContract !== ''
       ? Number(savedOverride.teacherContract)
-      : 2;
+      : parsedTeachers.contract;
   const teacherHourly =
     savedOverride.teacherHourly !== undefined && savedOverride.teacherHourly !== ''
       ? Number(savedOverride.teacherHourly)
-      : 6;
+      : parsedTeachers.hourly;
+  const teacherTotal =
+    savedOverride.teacherTotal !== undefined && savedOverride.teacherTotal !== ''
+      ? Number(savedOverride.teacherTotal)
+      : (teacherFramework + teacherContract + teacherHourly);
 
   // Exam stats (Pali & Dhamma-Vinaya)
   const paliExamTotal =
@@ -363,26 +444,43 @@ export function buildMinistryReportModel({
       ? String(savedOverride.computerNoteText).trim()
       : `ប្រើប្រាស់បាន${fmt(8)}គ្រឿងខូច${fmt(2)}គ្រឿង`;
 
-  // 3. Extract special dated events ("នៅថ្ងៃ...") from monthly adminReports to append to Section ង
-  const autoSpecialEvents = [];
-  const seenEvents = new Set();
-  const allMonthNums = [...MINISTRY_SEM1_MONTHS.map(m => m.num), ...MINISTRY_SEM2_MONTHS.map(m => m.num)];
-  allMonthNums.forEach(mNum => {
-    const rep = mergedReports[`${year}-${mNum}`];
-    if (!rep || !Array.isArray(rep.activities)) return;
-    rep.activities.forEach(rawLine => {
-      const clean = String(rawLine || '').replace(/^[-•❖▪◦\s]+/, '').trim();
-      if (clean.startsWith('នៅថ្ងៃ') && !seenEvents.has(clean)) {
-        seenEvents.add(clean);
-        autoSpecialEvents.push(clean);
+  // 3. Build REAL Section ង (Management Activities) from synthesized monthly admin reports (May–Feb)
+  //    and REAL Section ង.២ (Donor Contributions) from allFinance income rows!
+  const allMonthsOrdered = [...MINISTRY_SEM1_MONTHS, ...MINISTRY_SEM2_MONTHS];
+  const synthesizedMgmtActivities = Array.isArray(synthesizedAnnual.activities)
+    ? synthesizedAnnual.activities.map(s => String(s || '').replace(/^[-•❖▪◦\s]+/, '').trim()).filter(Boolean)
+    : [];
+  const defaultManagementActivities =
+    synthesizedMgmtActivities.length > 0
+      ? synthesizedMgmtActivities
+      : DEFAULT_MINISTRY_MANAGEMENT_ROUTINE;
+
+  const autoDonationLines = [];
+  const seenDonationKeys = new Set();
+  allMonthsOrdered.forEach(mDef => {
+    const mk = `${year}-${mDef.num}`;
+    const mFin = allFinance?.[mk];
+    if (!mFin || !Array.isArray(mFin.income)) return;
+    mFin.income.forEach(it => {
+      if (!it || isCarryoverIncomeItem(it) || !isDonorContributionIncomeItem(it)) return;
+      const desc = String(it.desc || '').trim();
+      const amt = Number(it.total) || 0;
+      const isUsd = String(it.currency || 'KHR').toUpperCase() === 'USD';
+      const inKind = amt === 0 && it.totalLabel ? String(it.totalLabel).trim() : '';
+      const valStr = inKind
+        ? (useKhmerNumerals ? toKhmerDigits(inKind) : inKind)
+        : isUsd
+          ? `$${fmt(amt)}`
+          : formatSpaceRiel(amt, useKhmerNumerals);
+      const line = valStr
+        ? `${mDef.fullLabel || mDef.name}៖ ${desc} (${valStr})`
+        : `${mDef.fullLabel || mDef.name}៖ ${desc}`;
+      if (!seenDonationKeys.has(line)) {
+        seenDonationKeys.add(line);
+        autoDonationLines.push(line);
       }
     });
   });
-
-  const defaultManagementActivities = [
-    ...DEFAULT_MINISTRY_MANAGEMENT_ROUTINE,
-    ...autoSpecialEvents
-  ];
 
   // 4. Financial Tables Computation (ច, ច.១, ច.២, ច.៣, ច.៤, ច.៥, បណ្ណសរសើរ, សរុបរួមប្រចាំឆ្នាំ)
   const hourlyIncomeOverrides = savedOverride.hourlyIncomeByMonth || {};
@@ -407,7 +505,8 @@ export function buildMinistryReportModel({
       const incomeVal = hasManualIncome ? Number(rawOverride) || 0 : autoIncVal;
 
       const hasAnyData = incomeVal > 0 || expenseVal > 0 || hoursVal > 0;
-      const balanceVal = incomeVal - expenseVal;
+      const fundedBySchoolPool = incomeVal === 0 && expenseVal > 0;
+      const balanceVal = fundedBySchoolPool ? 0 : (incomeVal - expenseVal);
 
       sumIncome += incomeVal;
       sumExpense += expenseVal;
@@ -421,25 +520,43 @@ export function buildMinistryReportModel({
         expenseVal,
         hoursVal,
         balanceVal,
-        incomeText: incomeVal > 0 ? formatSpaceRiel(incomeVal, useKhmerNumerals) : 'គ្មាន',
+        incomeText: incomeVal > 0
+          ? formatSpaceRiel(incomeVal, useKhmerNumerals)
+          : fundedBySchoolPool
+            ? 'ថវិកាសាលា'
+            : 'គ្មាន',
         expenseText: hasAnyData ? formatSpaceRiel(expenseVal, useKhmerNumerals) : 'គ្មាន',
         hoursText: hasAnyData ? `${fmt(hoursVal)} ម៉ោង` : 'គ្មាន',
-        balanceText: hasAnyData ? formatSpaceRiel(balanceVal, useKhmerNumerals) : 'គ្មាន',
+        balanceText: !hasAnyData
+          ? 'គ្មាន'
+          : fundedBySchoolPool
+            ? '—'
+            : formatSpaceRiel(balanceVal, useKhmerNumerals),
         note: ''
       };
     });
 
-    const totalBalance = sumIncome - sumExpense;
+    const hasAnySemData = sumIncome > 0 || sumExpense > 0 || sumHours > 0;
+    const semFundedBySchoolPool = sumIncome === 0 && sumExpense > 0;
+    const totalBalance = semFundedBySchoolPool ? 0 : (sumIncome - sumExpense);
     return {
       rows,
       sumIncome,
       sumExpense,
       sumHours,
       totalBalance,
-      sumIncomeText: sumIncome > 0 ? formatSpaceRiel(sumIncome, useKhmerNumerals) : 'គ្មាន',
-      sumExpenseText: formatSpaceRiel(sumExpense, useKhmerNumerals),
-      sumHoursText: `${fmt(sumHours)} ម៉ោង`,
-      totalBalanceText: formatSpaceRiel(totalBalance, useKhmerNumerals)
+      sumIncomeText: sumIncome > 0
+        ? formatSpaceRiel(sumIncome, useKhmerNumerals)
+        : semFundedBySchoolPool
+          ? 'ថវិកាសាលា'
+          : 'គ្មាន',
+      sumExpenseText: hasAnySemData ? formatSpaceRiel(sumExpense, useKhmerNumerals) : 'គ្មាន',
+      sumHoursText: hasAnySemData ? `${fmt(sumHours)} ម៉ោង` : 'គ្មាន',
+      totalBalanceText: !hasAnySemData
+        ? 'គ្មាន'
+        : semFundedBySchoolPool
+          ? '—'
+          : formatSpaceRiel(totalBalance, useKhmerNumerals)
     };
   };
 
@@ -449,7 +566,9 @@ export function buildMinistryReportModel({
   const hourlyAnnualSumIncome = hourlySem1.sumIncome + hourlySem2.sumIncome;
   const hourlyAnnualSumExpense = hourlySem1.sumExpense + hourlySem2.sumExpense;
   const hourlyAnnualSumHours = hourlySem1.sumHours + hourlySem2.sumHours;
-  const hourlyAnnualBalance = hourlyAnnualSumIncome - hourlyAnnualSumExpense;
+  const hourlyAnnualHasData = hourlyAnnualSumIncome > 0 || hourlyAnnualSumExpense > 0 || hourlyAnnualSumHours > 0;
+  const hourlyAnnualFundedBySchool = hourlyAnnualSumIncome === 0 && hourlyAnnualSumExpense > 0;
+  const hourlyAnnualBalance = hourlyAnnualFundedBySchool ? 0 : (hourlyAnnualSumIncome - hourlyAnnualSumExpense);
 
   const hourlyAnnual = {
     rows: [
@@ -474,10 +593,18 @@ export function buildMinistryReportModel({
     sumExpense: hourlyAnnualSumExpense,
     sumHours: hourlyAnnualSumHours,
     totalBalance: hourlyAnnualBalance,
-    sumIncomeText: hourlyAnnualSumIncome > 0 ? formatSpaceRiel(hourlyAnnualSumIncome, useKhmerNumerals) : 'គ្មាន',
-    sumExpenseText: formatSpaceRiel(hourlyAnnualSumExpense, useKhmerNumerals),
-    sumHoursText: `${fmt(hourlyAnnualSumHours)} ម៉ោង`,
-    totalBalanceText: formatSpaceRiel(hourlyAnnualBalance, useKhmerNumerals)
+    sumIncomeText: hourlyAnnualSumIncome > 0
+      ? formatSpaceRiel(hourlyAnnualSumIncome, useKhmerNumerals)
+      : hourlyAnnualFundedBySchool
+        ? 'ថវិកាសាលា'
+        : 'គ្មាន',
+    sumExpenseText: hourlyAnnualHasData ? formatSpaceRiel(hourlyAnnualSumExpense, useKhmerNumerals) : 'គ្មាន',
+    sumHoursText: hourlyAnnualHasData ? `${fmt(hourlyAnnualSumHours)} ម៉ោង` : 'គ្មាន',
+    totalBalanceText: !hourlyAnnualHasData
+      ? 'គ្មាន'
+      : hourlyAnnualFundedBySchool
+        ? '—'
+        : formatSpaceRiel(hourlyAnnualBalance, useKhmerNumerals)
   };
 
   // Build Office Supplies & Non-Carryover Income Tables per Semester (ច.៣ & ច.៤)
@@ -511,16 +638,35 @@ export function buildMinistryReportModel({
       });
     });
 
+    const formatRowMoney = (val, isUsdFlag, allowZero = false) => {
+      const n = Number(val) || 0;
+      if (n === 0 && !allowZero) return '';
+      if (isUsdFlag) {
+        const rounded = Math.round(n * 100) / 100;
+        const s = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+        return `$${useKhmerNumerals ? toKhmerDigits(s) : s}`;
+      }
+      return formatSpaceRiel(n, useKhmerNumerals);
+    };
+
     const expenseRows = supplyExpenseItems.map((it, idx) => {
       const amt = Number(it.total) || 0;
+      const isUsd = String(it.currency || 'KHR').toUpperCase() === 'USD';
+      const rawUnit = it.unitPrice;
+      const unitVal =
+        typeof rawUnit === 'number'
+          ? rawUnit
+          : Number(toEnglishDigits(String(rawUnit ?? '')).replace(/[^0-9.-]/g, '')) || 0;
       const qtyRaw = String(it.qty || '').trim();
       return {
         no: fmt(idx + 1),
         desc: String(it.desc || '').trim(),
         source: String(it.source || 'សាលា').trim(),
-        amountVal: amt,
-        amountText: formatSpaceRiel(amt, useKhmerNumerals),
         qty: useKhmerNumerals ? toKhmerDigits(qtyRaw) : qtyRaw,
+        unitPriceVal: unitVal,
+        unitPriceText: formatRowMoney(unitVal, isUsd, false),
+        amountVal: amt,
+        amountText: formatRowMoney(amt, isUsd, true),
         balance: '',
         note: String(it.note || '').trim()
       };
@@ -554,10 +700,10 @@ export function buildMinistryReportModel({
       incomeTotals,
       totalExpenseKHR: expenseTotals.KHR || 0,
       totalIncomeKHR: incomeTotals.KHR || 0,
-      totalExpenseText: formatCurrencyTotals(expenseTotals, useKhmerNumerals),
+      totalExpenseText: formatSpaceCurrencyTotals(expenseTotals, useKhmerNumerals, 'គ្មាន'),
       totalIncomeKHRText: (incomeTotals.KHR || 0) > 0 ? formatSpaceRiel(incomeTotals.KHR, useKhmerNumerals) : '',
       totalIncomeUSDText: (incomeTotals.USD || 0) > 0 ? `$${fmt(incomeTotals.USD)}` : '',
-      totalIncomeText: formatCurrencyTotals(incomeTotals, useKhmerNumerals),
+      totalIncomeText: formatSpaceCurrencyTotals(incomeTotals, useKhmerNumerals, 'គ្មាន'),
       inKindSummary
     };
   };
@@ -588,8 +734,8 @@ export function buildMinistryReportModel({
     ],
     totalIncomeTotals: officeAnnualIncomeTotals,
     totalExpenseTotals: officeAnnualExpenseTotals,
-    totalIncomeText: formatCurrencyTotals(officeAnnualIncomeTotals, useKhmerNumerals),
-    totalExpenseText: formatCurrencyTotals(officeAnnualExpenseTotals, useKhmerNumerals),
+    totalIncomeText: formatSpaceCurrencyTotals(officeAnnualIncomeTotals, useKhmerNumerals, 'គ្មាន'),
+    totalExpenseText: formatSpaceCurrencyTotals(officeAnnualExpenseTotals, useKhmerNumerals, 'គ្មាន'),
     inKindSummary: officeAnnualInKind
   };
 
@@ -667,7 +813,9 @@ export function buildMinistryReportModel({
   const donationLines =
     Array.isArray(savedOverride.donationLines) && savedOverride.donationLines.length > 0
       ? savedOverride.donationLines
-      : DEFAULT_MINISTRY_DONATION_LINES;
+      : autoDonationLines.length > 0
+        ? autoDonationLines
+        : DEFAULT_MINISTRY_DONATION_LINES;
 
   const teacherRelations =
     Array.isArray(savedOverride.teacherRelations) && savedOverride.teacherRelations.length > 0
@@ -718,11 +866,11 @@ export function buildMinistryReportModel({
   const signerTitle = String(savedOverride.signerTitle || 'ព្រះនាយក').trim();
   const reporterTitle = String(savedOverride.reporterTitle || 'អ្នកធ្វើរបាយការណ៍').trim();
 
-  // 6. Section ក General Info Lines (matching full2025.txt lines 11-19)
+  // 6. Section ក General Info Lines (100% synced from real classCount, staffStats, studentMaster & Finance)
   const generalInfoLines = [
     { label: `សាលាកម្រង មានចំនួន ${fmtPad2(1)} សាលា`, value: '' },
     {
-      label: `ចំនួនថ្នាក់${fmtPad2(4)} ថ្នាក់ទីមត្តេយ្យ ${fmt(1)}បន្ទប់, ថ្នាក់ទី${fmt(1)} ${fmt(1)}បន្ទប់, ថ្នាក់ទី${fmt(2)} ${fmt(1)}បន្ទប់, ថ្នាក់ទី${fmt(3)} ${fmt(1)}បន្ទប់`,
+      label: `ចំនួនថ្នាក់${fmtPad2(classCount)} ថ្នាក់ទីមត្តេយ្យ ${fmt(1)}បន្ទប់, ថ្នាក់ទី${fmt(1)} ${fmt(1)}បន្ទប់, ថ្នាក់ទី${fmt(2)} ${fmt(1)}បន្ទប់, ថ្នាក់ទី${fmt(3)} ${fmt(1)}បន្ទប់`,
       value: ''
     },
     {

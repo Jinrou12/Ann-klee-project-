@@ -22,9 +22,10 @@ function formatCompactDots(text = '', dotCount = 16) {
  * 1-Page Letter Portrait (8.5in × 11in = 816px × 1056px) Replica of
  * របាយការណ៍សង្ខេបប្រចាំឆ្នាំ (Provincial Department of Cults and Religion — មន្ទីរធម្មការ និងសាសនា)
  */
-export default function OfficialMinistrySummaryDocument({
+const OfficialMinistrySummaryDocument = React.memo(function OfficialMinistrySummaryDocument({
   id = 'printable-ministry-summary-document',
   ministryModel,
+  canEdit = true,
   editMode = false,
   activeEditSection = null,
   onSelectEditSection = null
@@ -156,6 +157,7 @@ export default function OfficialMinistrySummaryDocument({
         {/* 3. 10-Row Summary Table (WYSIWYG single-edge hairline borders) */}
         <ReportEditableZone
           editMode={editMode}
+          canEdit={canEdit}
           sectionId="min_stats"
           label="តារាងសង្ខេប ១០ ជួរ (ស្ថិតិ)"
           activeSectionId={activeEditSection}
@@ -211,6 +213,7 @@ export default function OfficialMinistrySummaryDocument({
             - Right: Lunar Date + Solar Date + អ្នកធ្វើរបាយការណ៍ */}
         <ReportEditableZone
           editMode={editMode}
+          canEdit={canEdit}
           sectionId="min_signature"
           label="លេខលិខិត កាលបរិច្ឆេទ & ហត្ថលេខា"
           activeSectionId={activeEditSection}
@@ -258,5 +261,7 @@ export default function OfficialMinistrySummaryDocument({
       </div>
     </div>
   );
-}
+});
+
+export default OfficialMinistrySummaryDocument;
 

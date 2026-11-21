@@ -1490,7 +1490,7 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
     const expColHdrR = rows.length + 1;
     rows.push({
       height: 26,
-      cells: ['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'ផ្សេងៗ', ''].map(h => ({ v: h, s: 4 }))
+      cells: ['ល.រ', 'បរិយាយ', 'ចំនួន', 'តម្លៃរាយ', 'តម្លៃសរុប', 'ផ្សេងៗ', ''].map(h => ({ v: h, s: 4 }))
     });
     merges.push(`${cellRef(expColHdrR, 5)}:${cellRef(expColHdrR, 6)}`);
 
@@ -1509,9 +1509,9 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
           cells: [
             { v: r.no, s: 5 },
             { v: r.desc, s: 6 },
-            { v: r.source, s: 5 },
-            { v: r.amountText, s: 5 },
             { v: r.qty, s: 5 },
+            { v: r.unitPriceText, s: 5 },
+            { v: r.amountText, s: 5 },
             { v: r.note || '', s: 5 },
             { v: '', s: 5 }
           ]
@@ -1527,14 +1527,14 @@ export async function exportMinistryReportToExcel(ministryModel, metadata = {}) 
         { v: 'ចំណាយសរុប', s: 9 },
         { v: '', s: 9 },
         { v: '', s: 9 },
-        { v: semData?.totalExpenseText, s: 9 },
         { v: '', s: 9 },
+        { v: semData?.totalExpenseText, s: 9 },
         { v: '', s: 9 },
         { v: '', s: 9 }
       ]
     });
-    merges.push(`${cellRef(expTotR, 0)}:${cellRef(expTotR, 2)}`);
-    merges.push(`${cellRef(expTotR, 4)}:${cellRef(expTotR, 6)}`);
+    merges.push(`${cellRef(expTotR, 0)}:${cellRef(expTotR, 3)}`);
+    merges.push(`${cellRef(expTotR, 5)}:${cellRef(expTotR, 6)}`);
 
     const incHdrR = rows.length + 1;
     rows.push({

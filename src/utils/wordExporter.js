@@ -1835,9 +1835,9 @@ export async function exportMinistryReportToWord(ministryModel) {
 
   // Build Office Supplies Semester Tables XML (ច.៣ & ច.៤)
   const buildOfficeSemTablesXml = (semData) => {
-    const expCols = fitColumns([612, 4082, 1327, 1633, 1327, 1225], contentWidth);
+    const expCols = fitColumns([612, 3980, 1327, 1531, 1633, 1123], contentWidth);
     const expBanner = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${hCell('តារាងចំណាយ', contentWidth, { gridSpan: 6 })}</w:tr>`;
-    const expHdr = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${['ល.រ', 'បរិយាយ', 'ចំណូលរួម', 'ចំណាយ', 'ចំនួន', 'ផ្សេងៗ']
+    const expHdr = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${['ល.រ', 'បរិយាយ', 'ចំនួន', 'តម្លៃរាយ', 'តម្លៃសរុប', 'ផ្សេងៗ']
       .map((h, i) => hCell(h, expCols[i]))
       .join('')}</w:tr>`;
     const expRows =
@@ -1846,17 +1846,17 @@ export async function exportMinistryReportToWord(ministryModel) {
         : semData.expenseRows.map(
           r =>
             `<w:tr>${dCell(r.no, expCols[0])}${dCell(r.desc, expCols[1], 'left')}${dCell(
-              r.source,
+              r.qty,
               expCols[2]
-            )}${dCell(r.amountText, expCols[3])}${dCell(r.qty, expCols[4])}${dCell(
+            )}${dCell(r.unitPriceText, expCols[3])}${dCell(r.amountText, expCols[4])}${dCell(
               r.note,
               expCols[5]
             )}</w:tr>`
         );
     const expTotal = `<w:tr>
-      ${dCell('ចំណាយសរុប', expCols[0] + expCols[1] + expCols[2], 'center', { gridSpan: 3, moul: true })}
-      ${dCell(semData?.totalExpenseText, expCols[3], 'center', { bold: true })}
-      ${dCell('', expCols[4] + expCols[5], 'center', { gridSpan: 2 })}
+      ${dCell('ចំណាយសរុប', expCols[0] + expCols[1] + expCols[2] + expCols[3], 'center', { gridSpan: 4, moul: true })}
+      ${dCell(semData?.totalExpenseText, expCols[4], 'center', { bold: true })}
+      ${dCell('', expCols[5], 'center')}
     </w:tr>`;
 
     const incCols = fitColumns([800, 4100, 1850, 1450, 2006], contentWidth);
